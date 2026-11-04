@@ -10,6 +10,7 @@ import { SAMPLE_SONG } from "../src/lib/sample-song";
 import { prepareSong } from "../src/lib/songs";
 import { ensureTemplateAssets } from "../src/lib/template-assets";
 import { loadTemplate, resolveValues } from "../src/lib/templates";
+import { thumbSection } from "../src/lib/thumbs";
 
 const USAGE = "Usage: npm run thumbs -- <template> [--song <file>] [--at <seconds>]";
 
@@ -53,11 +54,11 @@ async function main(): Promise<void> {
       presets.slice(i, i + 3).map(async (preset, j) => {
         const jobDir = path.join(work, String(i + j));
         const values = resolveValues(template, { preset: preset.name });
-        // Only the part of the song around the moment is needed for a still.
-        const section = { start: Math.max(0, at - 1), end: at + 1 };
+        // Only a few seconds around the moment are needed for a still.
+        const { start, end, local } = thumbSection(at, song.duration);
+        const section = { start, end };
         await prepareJob({ template, song, values, jobDir, section, run: runCommand });
         const snapDir = path.join(jobDir, "snap");
-        const local = at - section.start;
         await run("npx", [
           ...["hyperframes", "snapshot", `"${jobDir}"`, "--at", String(local), "--no-end"],
           ...["--json", "-o", `"${snapDir}"`],

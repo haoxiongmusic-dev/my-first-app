@@ -3,7 +3,9 @@
  * analysis in its fixed asset paths, its song-length durations set, and the chosen settings
  * applied. HyperFrames renders the folder as it is; the template itself is never modified.
  */
+import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { type Analysis, isCurrentAnalysis, toAudioDataJs } from "@/lib/analysis";
 import type { RunCommand } from "@/lib/run-command";
@@ -93,6 +95,23 @@ export function sliceAnalysis(
   };
 }
 
+/**
+ * Beats in the Hz beat ranges are judged against the whole song's loudness. A section only
+ * holds part of the song, so it carries the whole song's scales, worked out by the template's
+ * own toolkit (templates without a toolkit get none).
+ */
+function wholeSongBeatScales(
+  template: Template,
+  full: Analysis,
+): { beatScales?: Record<string, number> } {
+  const toolkitPath = path.join(template.dir, "assets", "viz-toolkit.js");
+  if (!existsSync(toolkitPath)) return {};
+  const toolkit = createRequire(toolkitPath)(toolkitPath) as {
+    beatScales?: (frames: Analysis["frames"]) => Record<string, number>;
+  };
+  return toolkit.beatScales ? { beatScales: toolkit.beatScales(full.frames) } : {};
+}
+
 export type PrepareJobOptions = {
   template: Template;
   song: { wavPath: string; analysisPath: string };
@@ -140,7 +159,7 @@ export async function prepareJob(opts: PrepareJobOptions): Promise<PreparedJob> 
     if (start < 0 || start >= full.duration || end <= start) {
       throw new JobError(`The section must be inside the song (0 to ${full.duration} s)`);
     }
-    analysis = sliceAnalysis(full, start, end);
+    analysis = { ...sliceAnalysis(full, start, end), ...wholeSongBeatScales(opts.template, full) };
     // Trim with 50 ms fades so the cut doesn't click.
     const length = analysis.duration;
     const trim = await opts.run("ffmpeg", [

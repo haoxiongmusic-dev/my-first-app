@@ -100,10 +100,10 @@
    * Hits and a decaying pulse from how much bands firstBand..lastBand rise each frame.
    * Returns {hits: [[time, strength], ...], pulse: Float32Array (one value per frame)}.
    */
-  function beatTrack(frames, fps, firstBand, lastBand) {
-    var n = frames.length;
-    var rise = new Float64Array(n);
-    for (var i = 1; i < n; i++) {
+  /** How much bands firstBand..lastBand rose since the previous frame, for every frame. */
+  function bandRises(frames, firstBand, lastBand) {
+    var rise = new Float64Array(frames.length);
+    for (var i = 1; i < frames.length; i++) {
       var sum = 0;
       for (var k = firstBand; k <= lastBand; k++) {
         var d = frames[i].b[k] - frames[i - 1].b[k];
@@ -111,8 +111,36 @@
       }
       rise[i] = sum;
     }
-    var scale = Math.max(percentile(rise, 99), 1e-6);
-    for (i = 0; i < n; i++) rise[i] /= scale;
+    return rise;
+  }
+
+  /** The bands a beat range covers, as [first, last]. */
+  function rangeBands(range) {
+    var first = Math.round(bandIndexForHz(range.low));
+    return [first, Math.max(first, Math.round(bandIndexForHz(range.high)))];
+  }
+
+  /**
+   * Each Hz beat range's loudness scale over a whole song. A section of a song carries these
+   * (analysis.beatScales), so its beats are judged against the whole song, as in a full render.
+   */
+  function beatScales(frames) {
+    var scales = {};
+    for (var r = 0; r < BEAT_RANGES.length; r++) {
+      var range = BEAT_RANGES[r];
+      if (range.value === "kick") continue;
+      var bands = rangeBands(range);
+      scales[range.value] = Math.max(percentile(bandRises(frames, bands[0], bands[1]), 99), 1e-6);
+    }
+    return scales;
+  }
+
+  function beatTrack(frames, fps, firstBand, lastBand, scale) {
+    var n = frames.length;
+    var rise = bandRises(frames, firstBand, lastBand);
+    // The bands' smoothed levels are used (the analyzer uses unsmoothed ones); the rule is the same.
+    scale = scale || Math.max(percentile(rise, 99), 1e-6);
+    for (var i = 0; i < n; i++) rise[i] /= scale;
 
     var total = new Float64Array(n + 1);
     for (i = 0; i < n; i++) total[i + 1] = total[i] + rise[i];
@@ -171,9 +199,9 @@
     if (!range) throw new Error("Unknown beat range: " + opts.beatRange);
     var track = null;
     if (range.value !== "kick") {
-      var first = Math.round(bandIndexForHz(range.low));
-      var lastBand = Math.max(first, Math.round(bandIndexForHz(range.high)));
-      track = beatTrack(frames, fps, first, lastBand);
+      var bands = rangeBands(range);
+      var scale = data.beatScales ? data.beatScales[range.value] : undefined;
+      track = beatTrack(frames, fps, bands[0], bands[1], scale);
     }
     var hitList = track ? track.hits : data.hits;
 
@@ -392,6 +420,7 @@
     bandIndexForHz: bandIndexForHz,
     BEAT_RANGES: BEAT_RANGES,
     beatTrack: beatTrack,
+    beatScales: beatScales,
     createAudio: createAudio,
   };
 });

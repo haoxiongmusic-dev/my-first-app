@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -252,6 +252,11 @@ describe("prepareJob with a section", () => {
       calls.push([cmd, ...args]);
       return ok;
     };
+    // The template's own toolkit works out each beat range's whole-song scale.
+    await copyFile(
+      path.join(process.cwd(), "templates", "shared", "viz-toolkit.js"),
+      path.join(template.dir, "assets", "viz-toolkit.js"),
+    );
     const jobDir = path.join(work, "section");
     const job = await prepareJob({
       template,
@@ -270,6 +275,7 @@ describe("prepareJob with a section", () => {
     expect(trim?.at(-1)).toBe(path.join(jobDir, "assets", "song.wav"));
     const data = await readFile(path.join(jobDir, "assets", "audio-data.js"), "utf8");
     expect(data).toContain('"offset":6');
+    expect(data).toMatch(/"beatScales":\{"20-90":[0-9.e-]+,/);
   });
 
   it("rejects a section outside the song", async () => {

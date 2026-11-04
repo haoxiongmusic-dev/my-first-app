@@ -9,6 +9,8 @@ export type ToolkitAnalysis = {
   hits: [number, number][];
   /** seconds of analysis kept before a section's start (0 for a whole song) */
   offset?: number;
+  /** for a section: each Hz beat range's scale over the whole song (see beatScales) */
+  beatScales?: Record<string, number>;
 };
 
 export type BeatRange = { value: string; label: string; low?: number; high?: number };
@@ -65,6 +67,8 @@ export interface VizToolkit {
     fps: number,
     firstBand: number,
     lastBand: number,
+    scale?: number,
   ): { hits: [number, number][]; pulse: Float32Array };
+  beatScales(frames: ToolkitAnalysis["frames"]): Record<string, number>;
   createAudio(data: ToolkitAnalysis, opts?: AudioOptions): ToolkitAudio;
 }

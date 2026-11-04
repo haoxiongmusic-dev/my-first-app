@@ -217,3 +217,32 @@ describe("WebGL helpers", () => {
     expect(calls.texType).toBe(8);
   });
 });
+
+describe("Hz beat ranges in a section", () => {
+  it("find the same hits as the whole song, scaled against the whole song", () => {
+    // A loud passage early on, then a quieter passage with smaller bass rises.
+    const frames = Array.from({ length: 900 }, (_, i) => {
+      const loudPart = i < 450;
+      const onBeat = i % 15 === 0;
+      const level = onBeat ? (loudPart ? 1 : 0.3) : 0;
+      return frame({ b: Array.from({ length: 32 }, (_, k) => (k <= 5 ? level : 0)) });
+    });
+    const full = fakeAnalysis(frames);
+    const whole = viz.createAudio(full, { beatRange: "20-90" });
+    // The section 20–28 s with 6 s of pre-roll, as the job builder slices it.
+    const first = 14 * 30;
+    const part = {
+      ...fakeAnalysis(frames.slice(first, 28 * 30 + 1)),
+      duration: 8,
+      offset: 6,
+      beatScales: viz.beatScales(full.frames),
+    };
+    const section = viz.createAudio(part, { beatRange: "20-90" });
+    for (const t of [21, 23.5, 26]) {
+      expect(section.recentHits(t - 20, 3)).toEqual(
+        whole.recentHits(t, 3).map(([age, s]) => [expect.closeTo(age, 6), expect.closeTo(s, 6)]),
+      );
+      expect(section.sample(t - 20).beat).toBeCloseTo(whole.sample(t).beat, 6);
+    }
+  });
+});
