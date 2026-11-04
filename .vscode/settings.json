@@ -1,0 +1,14 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python"
+  },
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/node_modules": true
+  },
+  "search.exclude": {
+    "test-renders/**": true
+  }
+}
