@@ -27,14 +27,20 @@ describe(".gitignore keeps private files out of the public repo", () => {
     "analyzer/.venv/Scripts/python.exe",
     ".claude/settings.local.json",
     ".env",
+    "templates/particle-horizon/assets/audio-data.js",
+    "templates/particle-horizon/assets/song.wav",
   ])("ignores %s", (path) => {
     expect(isIgnored(path)).toBe(true);
   });
 
-  it.each(["src/app/page.tsx", ".claude/launch.json", "analyzer/bands.py", ".env.example"])(
-    "still tracks %s",
-    (path) => {
-      expect(isIgnored(path)).toBe(false);
-    },
-  );
+  it.each([
+    "src/app/page.tsx",
+    ".claude/launch.json",
+    "analyzer/bands.py",
+    ".env.example",
+    "templates/particle-horizon/assets/viz-toolkit.js",
+    "templates/particle-horizon/template.json",
+  ])("still tracks %s", (path) => {
+    expect(isIgnored(path)).toBe(false);
+  });
 });
