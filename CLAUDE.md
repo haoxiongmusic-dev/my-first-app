@@ -9,7 +9,7 @@ visual style → upload a song → customize (title, colors, intensity) with a l
 export an MP4 that reacts to the music. Version 1 runs only on the owner's PC.
 
 The owner is building their **first app** and wants to learn good practice: explain the
-*why* of choices in plain language, avoid jargon, and keep steps small.
+_why_ of choices in plain language, avoid jargon, and keep steps small.
 
 ## Status (update as milestones land)
 
@@ -41,7 +41,7 @@ No app code exists yet. Follow the spec; don't start building before the plan is
 - Draw only from the `hf-seek` time; no `Math.random()`, `Date.now()` or timers. Use the
   seeded `mulberry32` from the toolkit.
 - **WebGL: 8-bit render targets only.** Half-float targets silently render blank on this
-  PC's Intel UHD 620 (ANGLE/D3D11). Always check shader compile *and* link status.
+  PC's Intel UHD 620 (ANGLE/D3D11). Always check shader compile _and_ link status.
 - Keep grain subtle and slow (≤ 0.02, ≤ 6 updates/s); per-frame noise makes files huge.
 - Elements that span the song carry `data-song-length`; the job builder sets their duration.
 - Every template must pass `npx hyperframes check`.
