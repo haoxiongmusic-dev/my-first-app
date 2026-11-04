@@ -2,8 +2,14 @@
   "name": "Particle Horizon",
   "description": "A glowing particle sea rolling toward a warm horizon.",
   "groups": [
-    { "name": "Text", "fields": ["title", "artist", "font"] },
-    { "name": "Colors", "fields": ["mainColor", "highlightColor", "tint"] },
+    {
+      "name": "Text",
+      "fields": ["title", "artist", "font"]
+    },
+    {
+      "name": "Colors",
+      "fields": ["mainColor", "highlightColor", "tint"]
+    },
     {
       "name": "Effects",
       "fields": ["intensity", "letterbox", "showBackground", "backgroundBlur"]
@@ -12,7 +18,10 @@
       "name": "Wave",
       "fields": ["densityX", "densityY", "waveScale", "waveHeight", "flowSpeed", "waveSpeed"]
     },
-    { "name": "Audio", "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost"] }
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost"]
+    }
   ],
   "basic": [
     "mainColor",
@@ -24,5 +33,60 @@
     "densityX"
   ],
   "content": ["title", "artist"],
-  "presets": []
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": {
+        "mainColor": "#ff6a12",
+        "highlightColor": "#ffd38a",
+        "tint": 20
+      }
+    },
+    {
+      "name": "Ice",
+      "thumbnail": "presets/ice.jpg",
+      "values": {
+        "mainColor": "#12b8ff",
+        "highlightColor": "#bff4ff",
+        "tint": 20
+      }
+    },
+    {
+      "name": "Ember",
+      "thumbnail": "presets/ember.jpg",
+      "values": {
+        "mainColor": "#ff1e12",
+        "highlightColor": "#ff9a6a",
+        "tint": 15
+      }
+    },
+    {
+      "name": "Emerald",
+      "thumbnail": "presets/emerald.jpg",
+      "values": {
+        "mainColor": "#19e36a",
+        "highlightColor": "#c8ffb0",
+        "tint": 20
+      }
+    },
+    {
+      "name": "Silver",
+      "thumbnail": "presets/silver.jpg",
+      "values": {
+        "mainColor": "#b9c2cc",
+        "highlightColor": "#ffffff",
+        "tint": 0
+      }
+    },
+    {
+      "name": "Prism",
+      "thumbnail": "presets/prism.jpg",
+      "values": {
+        "mainColor": "#ff3df0",
+        "highlightColor": "#ffffff",
+        "tint": 100
+      }
+    }
+  ]
 }

@@ -229,3 +229,24 @@ describe("Particle Horizon settings", () => {
     ]);
   });
 });
+
+describe("Particle Horizon presets", () => {
+  it("has the six presets with thumbnails on disk", async () => {
+    const dir = path.join(process.cwd(), "templates", "particle-horizon");
+    const t = await loadTemplate(dir);
+    const { existsSync } = await import("node:fs");
+    expect(t.manifest.presets.map((p) => p.name)).toEqual([
+      "Original",
+      "Ice",
+      "Ember",
+      "Emerald",
+      "Silver",
+      "Prism",
+    ]);
+    expect(validateTemplate(t)).toEqual([]);
+    for (const preset of t.manifest.presets) {
+      expect(preset.thumbnail).toBe(`presets/${preset.name.toLowerCase()}.jpg`);
+      expect(existsSync(path.join(dir, preset.thumbnail ?? ""))).toBe(true);
+    }
+  });
+});

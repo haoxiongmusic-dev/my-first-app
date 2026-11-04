@@ -23,7 +23,8 @@
     "sync:toolkit": "tsx scripts/sync-toolkit.ts",
     "template:assets": "tsx scripts/template-assets.ts",
     "check:templates": "tsx scripts/check-templates.ts",
-    "render": "tsx scripts/render.ts"
+    "render": "tsx scripts/render.ts",
+    "thumbs": "tsx scripts/thumbs.ts"
   },
   "dependencies": {
     "next": "16.4.5",
