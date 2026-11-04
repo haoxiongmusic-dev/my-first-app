@@ -54,3 +54,18 @@ storage/
 
 # Local agent workspace (plan progress ledgers)
 .superpowers/
+
+# Music and video: never commit (the repo is public).
+# If tests ever need a tiny generated clip, allow it narrowly, e.g. !analyzer/tests/fixtures/*.wav
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.mp4
+*.mov
+*.webm
+
+# Claude Code local settings (may hold personal paths or tokens)
+.claude/settings.local.json

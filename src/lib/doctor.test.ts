@@ -93,8 +93,35 @@ describe("runDoctor", () => {
     const checks = await runDoctor({ ...base, run: fake(table) });
     expect(byName(checks, "Python")).toMatchObject({
       ok: false,
-      fix: "Install Python 3.10+ from https://www.python.org",
+      detail: "found 3.8.10, need 3.10+",
     });
+  });
+
+  it("explains the PATH tick box when Windows runs the Microsoft Store stub", async () => {
+    const stub: CommandResult = {
+      code: 9009,
+      stdout: "",
+      stderr: "Python was not found; run without arguments to install from the Microsoft Store",
+    };
+    const checks = await runDoctor({
+      ...base,
+      run: fake({ ...ALL_GOOD, "python --version": stub }),
+    });
+    expect(byName(checks, "Python")).toMatchObject({
+      ok: false,
+      detail: "not found",
+      fix: 'Install Python 3.10+ from https://www.python.org (tick "Add python.exe to PATH"), then open a new terminal',
+    });
+  });
+
+  it("keeps the plain Python advice on macOS and Linux", async () => {
+    const checks = await runDoctor({
+      ...base,
+      platform: "linux",
+      projectRoot: "/app",
+      run: fake({}),
+    });
+    expect(byName(checks, "Python").fix).toBe("Install Python 3.10+ from https://www.python.org");
   });
 
   it("asks for setup:py when the venv has no NumPy", async () => {

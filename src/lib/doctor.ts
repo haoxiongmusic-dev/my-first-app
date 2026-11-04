@@ -49,7 +49,12 @@ async function checkFfTool(run: RunCommand, tool: "ffmpeg" | "ffprobe"): Promise
 }
 
 async function checkPython(run: RunCommand, platform: NodeJS.Platform): Promise<ToolCheck> {
-  const fix = `Install Python 3.${MIN_PYTHON_MINOR}+ from https://www.python.org`;
+  // The python.org Windows installer leaves "Add python.exe to PATH" unticked by default;
+  // without it, `python` keeps running the Microsoft Store stub (exit code 9009).
+  const fix =
+    platform === "win32"
+      ? `Install Python 3.${MIN_PYTHON_MINOR}+ from https://www.python.org (tick "Add python.exe to PATH"), then open a new terminal`
+      : `Install Python 3.${MIN_PYTHON_MINOR}+ from https://www.python.org`;
   const result = await tryRun(run, systemPythonCommand(platform), ["--version"]);
   // Older Pythons print the version on stderr.
   const text = result ? `${result.stdout} ${result.stderr}` : "";
