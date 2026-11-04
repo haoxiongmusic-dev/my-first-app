@@ -15,7 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "setup:py": "tsx scripts/setup-py.ts",
-    "test:py": "tsx scripts/py.ts -m pytest -c analyzer/pytest.ini"
+    "test:py": "tsx scripts/py.ts -m pytest -c analyzer/pytest.ini",
+    "doctor": "tsx scripts/doctor.ts"
   },
   "dependencies": {
     "next": "16.4.5",
@@ -30,6 +31,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
     "eslint-config-prettier": "^10.1.8",
+    "hyperframes": "0.9.10",
     "prettier": "^3.9.10",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
