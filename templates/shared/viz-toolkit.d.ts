@@ -7,6 +7,8 @@ export type ToolkitAnalysis = {
   duration: number;
   frames: { b: number[]; l: number; k: number; f: number }[];
   hits: [number, number][];
+  /** seconds of analysis kept before a section's start (0 for a whole song) */
+  offset?: number;
 };
 
 export type BeatRange = { value: string; label: string; low?: number; high?: number };
@@ -31,6 +33,7 @@ export type AudioSample = {
 export type ToolkitAudio = {
   fps: number;
   duration: number;
+  offset: number;
   sample(t: number): AudioSample;
   spectrum(t: number, out?: Float32Array): Float32Array;
   /** [age in seconds, strength] of up to n hits at or before t, newest first */

@@ -22,7 +22,8 @@
     "analyze": "tsx scripts/analyze.ts",
     "sync:toolkit": "tsx scripts/sync-toolkit.ts",
     "template:assets": "tsx scripts/template-assets.ts",
-    "check:templates": "tsx scripts/check-templates.ts"
+    "check:templates": "tsx scripts/check-templates.ts",
+    "render": "tsx scripts/render.ts"
   },
   "dependencies": {
     "next": "16.4.5",

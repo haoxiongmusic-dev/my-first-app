@@ -120,6 +120,40 @@ describe("createAudio", () => {
   });
 });
 
+describe("createAudio with an offset (a section of a song)", () => {
+  // A sliced analysis keeps a few seconds before the section; `offset` says how many.
+  const frames = Array.from({ length: 300 }, (_, i) =>
+    frame({ l: i / 300, b: new Array(32).fill(i / 300) }),
+  );
+  const data = {
+    ...fakeAnalysis(frames, [
+      [5.5, 0.7],
+      [6.5, 0.9],
+    ]),
+    offset: 6,
+  };
+
+  it("time 0 is the section start", () => {
+    const audio = viz.createAudio(data);
+    expect(audio.sample(0).loud).toBeCloseTo(180 / 300, 6);
+    expect(audio.spectrum(-1)[0]).toBeCloseTo(150 / 300, 6);
+  });
+
+  it("hits from before the section still count", () => {
+    const recent = viz.createAudio(data).recentHits(1, 4);
+    expect(recent).toHaveLength(2);
+    expect(recent[0][0]).toBeCloseTo(0.5, 6);
+    expect(recent[1][0]).toBeCloseTo(1.5, 6);
+  });
+
+  it("spectrum is silent before the song begins", () => {
+    const steady = Array.from({ length: 60 }, () => frame({ b: new Array(32).fill(0.5) }));
+    const audio = viz.createAudio(fakeAnalysis(steady));
+    expect(Array.from(audio.spectrum(-0.5)).every((v) => v === 0)).toBe(true);
+    expect(audio.spectrum(0)[0]).toBeCloseTo(0.5, 6);
+  });
+});
+
 describe("WebGL helpers", () => {
   // A stand-in for a WebGL context: just enough to drive createProgram and createTarget.
   function fakeGl(opts: { compiles?: (type: number) => boolean; links?: boolean; log?: string }) {

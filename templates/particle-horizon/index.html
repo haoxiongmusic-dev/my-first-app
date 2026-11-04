@@ -376,8 +376,7 @@
             var a = audio.sample(t);
             for (var r = 0; r < ROWS_HIST; r++) {
               var past = t - r * HIST_DT;
-              if (past < 0) row.fill(0);
-              else audio.spectrum(past, row);
+              audio.spectrum(past, row); // silent before the song begins
               for (var k = 0; k < NB; k++) specBytes[r * NB + k] = Math.round(row[k] * 255);
             }
             gl.bindTexture(gl.TEXTURE_2D, specTex);

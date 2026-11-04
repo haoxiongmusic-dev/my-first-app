@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Analysis } from "@/lib/analysis";
-import { JobError, prepareJob, setSongLength, withVariableDefaults } from "@/lib/jobs";
+import {
+  JobError,
+  prepareJob,
+  setSongLength,
+  sliceAnalysis,
+  withVariableDefaults,
+} from "@/lib/jobs";
 import type { CommandResult, RunCommand } from "@/lib/run-command";
 import {
   loadTemplate,
@@ -195,5 +201,87 @@ describe("prepareJob", () => {
       run: failing,
     });
     await expect(attempt).rejects.toThrow("Couldn't read this image. Try JPG or PNG.");
+  });
+});
+
+describe("sliceAnalysis", () => {
+  const frames = Array.from({ length: 300 }, (_, i) => ({ b: [i], l: i, k: 0, f: 0 }));
+  const full: Analysis = {
+    version: 1,
+    fps: 30,
+    bands: 1,
+    duration: 10,
+    frames,
+    hits: [
+      [1, 0.5],
+      [4.5, 1],
+      [8, 0.2],
+      [9.9, 0.3],
+    ],
+  };
+
+  it("keeps the section plus 6 s before it", () => {
+    const part = sliceAnalysis(full, 7, 9);
+    expect(part.duration).toBe(2);
+    expect(part.offset).toBeCloseTo(6, 6);
+    expect(part.frames[0].l).toBe(30); // 1 s into the song
+    expect(part.frames.at(-1)?.l).toBe(270); // 9 s
+    expect(part.hits).toEqual([
+      [0, 0.5],
+      [3.5, 1],
+      [7, 0.2],
+    ]);
+  });
+
+  it("uses less pre-roll near the start of the song", () => {
+    const part = sliceAnalysis(full, 2, 5);
+    expect(part.offset).toBeCloseTo(2, 6);
+    expect(part.frames[0].l).toBe(0);
+    expect(part.duration).toBe(3);
+  });
+});
+
+describe("prepareJob with a section", () => {
+  it("trims the song with short fades and slices the analysis", async () => {
+    await writeFile(
+      song.analysisPath,
+      JSON.stringify({ ...analysis(10), frames: Array(300).fill(analysis(10).frames[0]) }),
+    );
+    const calls: string[][] = [];
+    const run: RunCommand = async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      return ok;
+    };
+    const jobDir = path.join(work, "section");
+    const job = await prepareJob({
+      template,
+      song,
+      values: {},
+      jobDir,
+      section: { start: 7, end: 9 },
+      run,
+    });
+    expect(job.duration).toBe(2);
+    expect(durations(await readFile(job.indexPath, "utf8"))[0]).toBe("2.000");
+    const trim = calls.find((c) => c.includes("-ss"));
+    expect(trim).toBeDefined();
+    expect(trim?.join(" ")).toContain("-ss 7 -t 2");
+    expect(trim?.join(" ")).toContain("afade=t=in");
+    expect(trim?.at(-1)).toBe(path.join(jobDir, "assets", "song.wav"));
+    const data = await readFile(path.join(jobDir, "assets", "audio-data.js"), "utf8");
+    expect(data).toContain('"offset":6');
+  });
+
+  it("rejects a section outside the song", async () => {
+    const run: RunCommand = async () => ok;
+    const attempt = prepareJob({
+      template,
+      song,
+      values: {},
+      jobDir: path.join(work, "s2"),
+      section: { start: 20, end: 30 },
+      run,
+    });
+    await expect(attempt).rejects.toThrow(/inside the song/);
   });
 });

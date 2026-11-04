@@ -160,6 +160,9 @@
     var fps = data.fps;
     var n = frames.length;
     var bandCount = data.bands || N_BANDS;
+    // A section of a song keeps a few seconds of analysis before its start; offset says how
+    // many, so time 0 here is the section's first frame while the past is still known.
+    var offset = data.offset || 0;
 
     var range = null;
     for (var r = 0; r < BEAT_RANGES.length; r++) {
@@ -190,7 +193,7 @@
     }
 
     function position(t) {
-      var x = Math.max(0, Math.min(n - 1, t * fps));
+      var x = Math.max(0, Math.min(n - 1, (t + offset) * fps));
       var i0 = Math.floor(x);
       return { i0: i0, i1: Math.min(n - 1, i0 + 1), f: x - i0 };
     }
@@ -217,6 +220,10 @@
 
     function spectrum(t, out) {
       out = out || new Float32Array(count);
+      if (t + offset < 0) {
+        out.fill(0); // before the song begins: silence
+        return out;
+      }
       var p = position(t);
       var a = frames[p.i0].b;
       var b = frames[p.i1].b;
@@ -233,8 +240,9 @@
 
     function recentHits(t, count) {
       var result = [];
+      var now = t + offset;
       for (var i = hitList.length - 1; i >= 0 && result.length < count; i--) {
-        if (hitList[i][0] <= t) result.push([t - hitList[i][0], hitList[i][1]]);
+        if (hitList[i][0] <= now) result.push([now - hitList[i][0], hitList[i][1]]);
       }
       return result;
     }
@@ -242,6 +250,7 @@
     return {
       fps: fps,
       duration: data.duration,
+      offset: offset,
       sample: sample,
       spectrum: spectrum,
       recentHits: recentHits,

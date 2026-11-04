@@ -5,7 +5,7 @@
  */
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { isCurrentAnalysis, toAudioDataJs } from "@/lib/analysis";
+import { type Analysis, isCurrentAnalysis, toAudioDataJs } from "@/lib/analysis";
 import type { RunCommand } from "@/lib/run-command";
 import { type Template, type TemplateValues, validateValues } from "@/lib/templates";
 
@@ -66,6 +66,33 @@ export function withVariableDefaults(html: string, values: TemplateValues): stri
   );
 }
 
+/** Seconds of analysis kept before a section, so effects that look back in time (like the
+ * spectrum history of Particle Horizon) are already full on the section's first frame. */
+export const SECTION_PREROLL = 6;
+
+/** The part of an analysis from `start` to `end` (seconds), plus up to `preroll` before it. */
+export function sliceAnalysis(
+  analysis: Analysis,
+  start: number,
+  end: number,
+  preroll: number = SECTION_PREROLL,
+): Analysis & { offset: number } {
+  const fps = analysis.fps;
+  const first = Math.max(0, Math.round((start - preroll) * fps));
+  const last = Math.min(analysis.frames.length - 1, Math.round(end * fps));
+  const from = first / fps;
+  const round = (x: number) => Math.round(x * 1e6) / 1e6;
+  return {
+    ...analysis,
+    duration: round(end - start),
+    offset: round(start - from),
+    frames: analysis.frames.slice(first, last + 1),
+    hits: analysis.hits
+      .filter(([t]) => t >= from && t <= end)
+      .map(([t, s]) => [round(t - from), s] as [number, number]),
+  };
+}
+
 export type PrepareJobOptions = {
   template: Template;
   song: { wavPath: string; analysisPath: string };
@@ -73,6 +100,8 @@ export type PrepareJobOptions = {
   jobDir: string;
   /** an image to use as assets/background.jpg */
   backgroundPath?: string;
+  /** render only this part of the song (seconds) */
+  section?: { start: number; end: number };
   run: RunCommand;
 };
 
@@ -98,11 +127,30 @@ export async function prepareJob(opts: PrepareJobOptions): Promise<PreparedJob> 
 
   const assets = path.join(opts.jobDir, "assets");
   await mkdir(assets, { recursive: true });
-  await cp(opts.song.wavPath, path.join(assets, "song.wav"));
 
-  const analysis: unknown = JSON.parse(await readFile(opts.song.analysisPath, "utf8"));
-  if (!isCurrentAnalysis(analysis)) {
+  const full: unknown = JSON.parse(await readFile(opts.song.analysisPath, "utf8"));
+  if (!isCurrentAnalysis(full)) {
     throw new JobError("The song's analysis is missing or out of date: analyze it again");
+  }
+  let analysis: Analysis = full;
+  const wavOut = path.join(assets, "song.wav");
+  if (opts.section) {
+    const start = opts.section.start;
+    const end = Math.min(opts.section.end, full.duration);
+    if (start < 0 || start >= full.duration || end <= start) {
+      throw new JobError(`The section must be inside the song (0 to ${full.duration} s)`);
+    }
+    analysis = sliceAnalysis(full, start, end);
+    // Trim with 50 ms fades so the cut doesn't click.
+    const length = analysis.duration;
+    const trim = await opts.run("ffmpeg", [
+      ...["-y", "-v", "error", "-ss", String(start), "-t", String(length), "-i", opts.song.wavPath],
+      ...["-af", `afade=t=in:d=0.05,afade=t=out:st=${Math.max(0, length - 0.05)}:d=0.05`],
+      ...["-c:a", "pcm_s16le", wavOut],
+    ]);
+    if (trim.code !== 0) throw new JobError(`Couldn't cut the section: ${trim.stderr.trim()}`);
+  } else {
+    await cp(opts.song.wavPath, wavOut);
   }
   await writeFile(path.join(assets, "audio-data.js"), toAudioDataJs(analysis));
 

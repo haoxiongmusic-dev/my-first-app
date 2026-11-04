@@ -26,6 +26,8 @@ export type Analysis = {
   frames: AnalysisFrame[];
   /** [time in seconds, strength 0..1] */
   hits: [number, number][];
+  /** for a section of a song: seconds of analysis kept before the section's start */
+  offset?: number;
 };
 
 /** True for an analysis written by the current analyzer version. */

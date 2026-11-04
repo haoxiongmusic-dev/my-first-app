@@ -8,7 +8,7 @@
 export function finalEncodeArgs(input: string, output: string): string[] {
   return [
     ...["-y", "-v", "error", "-i", input],
-    ...["-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p"],
+    ...["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p"],
     ...["-c:a", "aac", "-b:a", "320k", "-movflags", "+faststart"],
     output,
   ];
@@ -24,7 +24,7 @@ export function phoneCopyArgs(input: string, output: string, seconds: number): s
   const kbps = phoneVideoKbps(seconds);
   return [
     ...["-y", "-v", "error", "-i", input, "-vf", "scale=-2:720"],
-    ...["-c:v", "libx264", "-preset", "slow", "-b:v", `${kbps}k`],
+    ...["-c:v", "libx264", "-preset", "medium", "-b:v", `${kbps}k`],
     ...[
       "-maxrate",
       `${Math.round(kbps * 1.5)}k`,
