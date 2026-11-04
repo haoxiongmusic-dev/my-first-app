@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   listTemplates,
+  loadTemplate,
   parseVariables,
   resolveValues,
   TemplateError,
@@ -195,5 +196,36 @@ describe("the real templates folder", () => {
       toolkit.BEAT_RANGES.map(({ value, label }) => ({ value, label })),
     );
     expect(beatRange.default).toBe("kick");
+  });
+});
+
+describe("Particle Horizon settings", () => {
+  it("declares every §4.1 setting, in group order", async () => {
+    const t = await loadTemplate(path.join(process.cwd(), "templates", "particle-horizon"));
+    const ids = [
+      ...["title", "artist", "font"],
+      ...["mainColor", "highlightColor", "tint"],
+      ...["intensity", "letterbox", "showBackground", "backgroundBlur"],
+      ...["densityX", "densityY", "waveScale", "waveHeight", "flowSpeed", "waveSpeed"],
+      ...["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost"],
+    ];
+    expect(t.variables.map((v) => v.id)).toEqual(ids);
+    expect(t.manifest.groups.map((g) => g.name)).toEqual([
+      "Text",
+      "Colors",
+      "Effects",
+      "Wave",
+      "Audio",
+    ]);
+    expect(t.manifest.groups.flatMap((g) => g.fields)).toEqual(ids);
+    expect(t.manifest.basic).toEqual([
+      "mainColor",
+      "intensity",
+      "font",
+      "showBackground",
+      "backgroundBlur",
+      "densityY",
+      "densityX",
+    ]);
   });
 });
