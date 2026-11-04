@@ -168,8 +168,13 @@ describe("WebGL helpers", () => {
   });
 
   it("createProgram throws when a shader fails to compile", () => {
-    const { gl } = fakeGl({ compiles: (type) => type !== 2, log: "syntax error" });
-    expect(() => viz.createProgram(gl, "vs", "fs")).toThrow(/didn't compile \(fragment\)/);
+    const { gl } = fakeGl({
+      compiles: (type) => type !== 2,
+      log: `syntax error${String.fromCharCode(0)}`,
+    });
+    expect(() => viz.createProgram(gl, "vs", "fs")).toThrow(
+      /didn't compile \(fragment\): syntax error$/,
+    );
   });
 
   it("createTarget uses 8-bit textures", () => {

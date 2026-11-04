@@ -171,3 +171,29 @@ describe("listTemplates", () => {
     expect(list[0].variables).toEqual(REQUIRED);
   });
 });
+
+describe("the real templates folder", () => {
+  const root = path.join(process.cwd(), "templates");
+
+  it("every template in templates/ is valid", async () => {
+    const list = await listTemplates(root);
+    expect(list.length).toBeGreaterThan(0);
+    for (const t of list)
+      expect({ id: t.id, problems: validateTemplate(t) }).toEqual({ id: t.id, problems: [] });
+  });
+
+  it("Particle Horizon's beatRange options match the toolkit", async () => {
+    const { createRequire } = await import("node:module");
+    const toolkit = createRequire(import.meta.url)("../../templates/shared/viz-toolkit.js") as {
+      BEAT_RANGES: { value: string; label: string }[];
+    };
+    const t = (await listTemplates(root)).find((x) => x.id === "particle-horizon");
+    const beatRange = t?.variables.find((v) => v.id === "beatRange");
+    expect(beatRange?.type).toBe("enum");
+    if (beatRange?.type !== "enum") return;
+    expect(beatRange.options).toEqual(
+      toolkit.BEAT_RANGES.map(({ value, label }) => ({ value, label })),
+    );
+    expect(beatRange.default).toBe("kick");
+  });
+});

@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "historyId": "1f4b06a8-a1e0-45b7-a385-2cd7abaefa57",
+  "currentRevision": "094ec5c6-4942-463c-b45e-70754097dae3",
+  "pendingChanges": false,
+  "files": {
+    "assets/audio-data.js": {
+      "hash": "468551d51f34d910ac9f9b0acc50b757bc17eb158fab400c84a2dc4bf13ed5f3",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\46\\468551d51f34d910ac9f9b0acc50b757bc17eb158fab400c84a2dc4bf13ed5f3"
+    },
+    "assets/background.jpg": {
+      "hash": "531c5a7d84fa7ebe9d23acc43bc7224a0e5fe03455d0ba50a765f76cb0bf4026",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\53\\531c5a7d84fa7ebe9d23acc43bc7224a0e5fe03455d0ba50a765f76cb0bf4026"
+    },
+    "assets/viz-toolkit.js": {
+      "hash": "b31324d2354ec097f453d3f4d08fb89b634180ad2d75a451244c88ea7b32c207",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\b3\\b31324d2354ec097f453d3f4d08fb89b634180ad2d75a451244c88ea7b32c207"
+    },
+    "hyperframes.json": {
+      "hash": "53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\53\\53dbce1e19aa713cbb12ee0bc4d206143b45ab15e6ffbfcaa8f69572d4d24d50"
+    },
+    "index.html": {
+      "hash": "1efa977b821a056edbc2a25ac0d627ccb99952b501a827cd6967dc138edd3c3b",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\1e\\1efa977b821a056edbc2a25ac0d627ccb99952b501a827cd6967dc138edd3c3b"
+    },
+    "template.json": {
+      "hash": "99eb6d1054229dbde4a0a3cbd7f1d378596a3bf912fe06fa9c5bef3288290e98",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\99\\99eb6d1054229dbde4a0a3cbd7f1d378596a3bf912fe06fa9c5bef3288290e98"
+    },
+    "assets/song.wav": {
+      "hash": "2e3bbc73f00a74dc32003fa5a255108cb619f9628b893e3c53d1918c6749560b",
+      "content": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\2e\\2e3bbc73f00a74dc32003fa5a255108cb619f9628b893e3c53d1918c6749560b"
+    }
+  },
+  "revisions": {
+    "094ec5c6-4942-463c-b45e-70754097dae3": {
+      "actor": {
+        "kind": "outside",
+        "name": "Outside"
+      },
+      "label": "Changed outside the app",
+      "startedAt": 1793829729214,
+      "endedAt": 1793829729240,
+      "files": {
+        "assets/viz-toolkit.js": {
+          "before": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\c5\\c5c7398b4eff7711ceda83ca5133b07ac20d8de5f2fdf443f97bb8768c8b2e16",
+          "after": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\b3\\b31324d2354ec097f453d3f4d08fb89b634180ad2d75a451244c88ea7b32c207"
+        },
+        "index.html": {
+          "before": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\bd\\bd20b1ebadc4031637aba140d03f8f92f6c66414e6f705243bc6053c5b604d1a",
+          "after": "C:\\Users\\ydogg\\.cache\\hyperframes\\history\\1f4b06a8-a1e0-45b7-a385-2cd7abaefa57\\blobs\\1e\\1efa977b821a056edbc2a25ac0d627ccb99952b501a827cd6967dc138edd3c3b"
+        }
+      }
+    }
+  },
+  "checks": {
+    "latest": {
+      "revision": "094ec5c6-4942-463c-b45e-70754097dae3",
+      "id": "7048a4c0-fa4e-4fd0-89b3-aa0637432ca3"
+    },
+    "revisions": {
+      "094ec5c6-4942-463c-b45e-70754097dae3": [
+        {
+          "id": "7048a4c0-fa4e-4fd0-89b3-aa0637432ca3",
+          "scope": "project",
+          "report": "C:\\dev\\AppProject\\templates\\particle-horizon\\.hyperframes\\artifacts\\checks\\7048a4c0-fa4e-4fd0-89b3-aa0637432ca3.json",
+          "metadata": {
+            "ok": true,
+            "browserSkipped": false,
+            "options": {
+              "samples": 9,
+              "atTransitions": false,
+              "maxIssues": 80,
+              "collapseStatic": true,
+              "tolerance": 2,
+              "timeout": 45000,
+              "contrast": true,
+              "strict": false,
+              "snapshots": false,
+              "browserGpuMode": "auto"
+            }
+          },
+          "createdAt": 1793829743736,
+          "contentHash": "77494b97b3d6e0d47c4cf338e8944cda6a6a83df71d70979680a86ab178b96ae",
+          "revision": "094ec5c6-4942-463c-b45e-70754097dae3",
+          "inputFingerprint": "f915be45873d103cd96d137975a150228a1410df5e313f7c1d9ccc576bde0f5e",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        }
+      ]
+    },
+    "unversioned": [
+      {
+        "id": "f60da608-e3b2-4c6d-a599-fca9be781826",
+        "scope": "project",
+        "report": "C:\\dev\\AppProject\\templates\\particle-horizon\\.hyperframes\\artifacts\\checks\\f60da608-e3b2-4c6d-a599-fca9be781826.json",
+        "metadata": {
+          "ok": true,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 45000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1793829450302,
+        "contentHash": "094c88c24d5fc695b949ab2ea127da76e81fe52bfe5d537e36f7a8b5913021fc",
+        "revision": null,
+        "inputFingerprint": "b62ea29d4c9fbcf678788da67f96f595487cdd085890a38e041e4944960948ba",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      },
+      {
+        "id": "623a2e61-8d06-47b8-b8e0-402b928febd9",
+        "scope": "project",
+        "report": "C:\\dev\\AppProject\\templates\\particle-horizon\\.hyperframes\\artifacts\\checks\\623a2e61-8d06-47b8-b8e0-402b928febd9.json",
+        "metadata": {
+          "ok": true,
+          "browserSkipped": false,
+          "options": {
+            "samples": 9,
+            "atTransitions": false,
+            "maxIssues": 80,
+            "collapseStatic": true,
+            "tolerance": 2,
+            "timeout": 45000,
+            "contrast": true,
+            "strict": false,
+            "snapshots": false,
+            "browserGpuMode": "auto"
+          }
+        },
+        "createdAt": 1793829547667,
+        "contentHash": "094c88c24d5fc695b949ab2ea127da76e81fe52bfe5d537e36f7a8b5913021fc",
+        "revision": null,
+        "inputFingerprint": "b62ea29d4c9fbcf678788da67f96f595487cdd085890a38e041e4944960948ba",
+        "inputScope": "local-project-files",
+        "attribution": "unversioned"
+      }
+    ]
+  },
+  "snapshots": {
+    "latest": {
+      "revision": "094ec5c6-4942-463c-b45e-70754097dae3",
+      "id": "da2925d7-d8a8-4aef-b9cc-1c8f07fd1259-1"
+    },
+    "revisions": {
+      "094ec5c6-4942-463c-b45e-70754097dae3": [
+        {
+          "scope": "full",
+          "id": "da2925d7-d8a8-4aef-b9cc-1c8f07fd1259-0",
+          "image": "C:\\dev\\AppProject\\storage\\checks\\particle-horizon\\frame-00-at-4s.png",
+          "time": 4,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793829762178,
+          "contentHash": "2ec808343aafab69c3802d9d71df3883d8d762c5df580394470ae96c2ede09f7",
+          "revision": "094ec5c6-4942-463c-b45e-70754097dae3",
+          "inputFingerprint": "f915be45873d103cd96d137975a150228a1410df5e313f7c1d9ccc576bde0f5e",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        },
+        {
+          "scope": "full",
+          "id": "da2925d7-d8a8-4aef-b9cc-1c8f07fd1259-1",
+          "image": "C:\\dev\\AppProject\\storage\\checks\\particle-horizon\\frame-01-at-14s.png",
+          "time": 14,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "zoomScale": 1,
+            "browserGpuMode": "auto",
+            "warnings": [],
+            "partial": false
+          },
+          "createdAt": 1793829762179,
+          "contentHash": "04b56c3f81c0a020fdc7042f6acbb564fadc1cb6dd4924f06e09a48cf8094fcb",
+          "revision": "094ec5c6-4942-463c-b45e-70754097dae3",
+          "inputFingerprint": "f915be45873d103cd96d137975a150228a1410df5e313f7c1d9ccc576bde0f5e",
+          "inputScope": "local-project-files",
+          "attribution": "recorded-revision"
+        }
+      ]
+    },
+    "unversioned": []
+  }
+}

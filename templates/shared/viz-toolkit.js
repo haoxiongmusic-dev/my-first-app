@@ -250,13 +250,22 @@
 
   // ---------- WebGL helpers ----------
 
+  /** Browser shader logs can end in invisible null characters; drop them. */
+  function cleanLog(log) {
+    return String(log || "")
+      .replace(/\u0000/g, "")
+      .trim();
+  }
+
   function compileShader(gl, type, source) {
     var shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
       var kind = type === gl.VERTEX_SHADER ? "vertex" : "fragment";
-      throw new Error("Shader didn't compile (" + kind + "): " + gl.getShaderInfoLog(shader));
+      throw new Error(
+        "Shader didn't compile (" + kind + "): " + cleanLog(gl.getShaderInfoLog(shader)),
+      );
     }
     return shader;
   }
@@ -271,7 +280,7 @@
     gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, fragmentSrc));
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error("Shaders didn't link: " + gl.getProgramInfoLog(program));
+      throw new Error("Shaders didn't link: " + cleanLog(gl.getProgramInfoLog(program)));
     }
     program.u = {};
     var count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) || 0;

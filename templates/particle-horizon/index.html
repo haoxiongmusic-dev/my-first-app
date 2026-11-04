@@ -1,0 +1,499 @@
+<!doctype html>
+<!--
+  Particle Horizon (in the style of the owner's "Sunlight" videos): a glowing particle sea
+  rolling toward a warm horizon. The surface swells with the music: the spectrum history
+  shapes it, loudness lifts it, and each beat sends a ripple outward from the front.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SUNLIGHT","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"AXIOM","maxLength":60},
+    {"id":"mainColor","type":"color","label":"React color","default":"#ff6a12"},
+    {"id":"highlightColor","type":"color","label":"Highlight color","default":"#ffd38a"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"letterbox","type":"boolean","label":"Movie box (letterbox bars)","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":16000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"1","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      .bar {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 132px;
+        background: #000;
+      }
+      #titles {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 742px;
+        text-align: center;
+        font-family: "Montserrat", sans-serif;
+        color: #fbeee0;
+        opacity: 0;
+      }
+      #title {
+        font-size: 58px;
+        font-weight: 300;
+        letter-spacing: 0.3em;
+        padding-left: 0.3em;
+        white-space: nowrap;
+        text-shadow: 0 0 22px rgba(255, 150, 60, 0.55);
+      }
+      #artist {
+        font-size: 28px;
+        font-weight: 400;
+        opacity: 0.75;
+        letter-spacing: 0.55em;
+        padding-left: 0.55em;
+        margin-top: 10px;
+        white-space: nowrap;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div id="barTop" class="bar" style="top: 0"></div>
+      <div id="barBottom" class="bar" style="bottom: 0"></div>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="title" data-var-text="title">SUNLIGHT</div>
+        <div id="artist" data-var-text="artist">AXIOM</div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var vars =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        function setting(id, fallback) {
+          return vars[id] === undefined || vars[id] === null ? fallback : vars[id];
+        }
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        if (setting("letterbox", true) === false) {
+          document.getElementById("barTop").style.display = "none";
+          document.getElementById("barBottom").style.display = "none";
+        }
+
+        // ---------- shaders (from the approved prototype) ----------
+        var PARTICLE_VS = [
+          "precision highp float;",
+          "attribute vec3 g;",
+          "uniform sampler2D spec;",
+          "uniform float t, loud, kick, flux, inten;",
+          "uniform vec4 hits;      // ages of the last 4 hits (seconds)",
+          "uniform vec4 hitStr;    // their strengths",
+          "varying float vBright; varying float vHeight;",
+          "void main(){",
+          "  float x = (g.x - 0.5) * 34.0;",
+          "  float z = 1.6 + pow(g.y, 1.35) * 30.0;",
+          "  float zt = z + t * 1.6;",
+          "  float h = sin(x*0.23 + zt*0.33)*0.55 + sin(x*0.51 - zt*0.27 + 1.3)*0.32 + sin(x*1.13 + zt*0.71 - t*0.4)*0.14;",
+          "  h *= 0.55 + loud * 0.85 * inten;",
+          "  float sb = clamp(abs(x) / 17.0, 0.0, 1.0);",
+          "  float s = texture2D(spec, vec2(0.02 + sb * 0.96, g.y)).r;",
+          "  h += pow(s, 1.6) * 1.35 * inten * (1.0 - 0.4 * g.y);",
+          "  float rr = length(vec2(x, (z - 3.0) * 1.4));",
+          "  for (int i = 0; i < 4; i++) {",
+          "    float age = hits[i]; float front = age * 11.0;",
+          "    float ring = exp(-pow(rr - front, 2.0) / 5.0) * exp(-age * 1.6) * hitStr[i];",
+          "    h += ring * 0.9 * inten;",
+          "  }",
+          "  h *= 0.5 + 0.5 * smoothstep(2.0, 11.0, z);",
+          "  float camY = 2.25;",
+          "  float sx = x / z * 0.62;",
+          "  float sy = (h - camY) / z * 1.10 + 0.17;",
+          "  gl_Position = vec4(sx, sy, 0.0, 1.0);",
+          "  float sparkle = step(0.93, fract(g.z * 13.0 + t * 0.7)) * flux * 1.8;",
+          "  gl_PointSize = clamp(2.8 * 4.0 / z, 1.1, 4.5) * (1.0 + sparkle * 0.7);",
+          "  float fog = smoothstep(31.0, 6.0, z);",
+          "  vBright = (0.35 + 0.65 * fog) * (0.6 + 0.55 * loud + 0.35 * kick) * (1.0 + sparkle);",
+          "  vHeight = clamp(h * 0.5 + 0.5, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var PARTICLE_FS = [
+          "precision highp float;",
+          "uniform vec3 mainCol, hiCol;",
+          "varying float vBright; varying float vHeight;",
+          "void main(){",
+          "  vec2 d = gl_PointCoord - 0.5; float a = exp(-dot(d,d) * 14.0);",
+          "  vec3 col = mix(mainCol * vec3(0.9,0.55,0.45), hiCol, smoothstep(0.3, 1.0, vHeight));",
+          "  gl_FragColor = vec4(col * a * vBright * 0.85, 1.0);",
+          "}",
+        ].join("\n");
+        var BOKEH_VS = [
+          "precision highp float;",
+          "attribute vec4 b;",
+          "uniform float t, loud;",
+          "varying float vA;",
+          "void main(){",
+          "  float x = fract(b.x + t * (0.004 + b.w * 0.006)) * 2.2 - 1.1;",
+          "  float y = (b.y - 0.5) * 1.3 + sin(t * 0.3 + b.w * 6.0) * 0.03;",
+          "  gl_Position = vec4(x, y, 0.0, 1.0);",
+          "  gl_PointSize = b.z;",
+          "  vA = (0.012 + 0.03 * b.w) * (0.6 + 0.8 * loud);",
+          "}",
+        ].join("\n");
+        var BOKEH_FS = [
+          "precision highp float;",
+          "uniform vec3 mainCol;",
+          "varying float vA;",
+          "void main(){",
+          "  float r = length(gl_PointCoord - 0.5) * 2.0;",
+          "  float a = smoothstep(1.0, 0.85, r) * (0.75 + 0.25 * smoothstep(0.6, 0.95, r));",
+          "  gl_FragColor = vec4(mainCol * a * vA, 1.0);",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D scene, bloomA, bloomB;",
+          "uniform vec3 mainCol, hiCol;",
+          "uniform float loud, kick, t;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }",
+          "void main(){",
+          "  float horizon = 0.585;",
+          "  float dy = uv.y - horizon;",
+          "  vec3 sky = mix(mainCol * 0.05, vec3(0.008, 0.004, 0.003), smoothstep(0.0, 0.35, dy));",
+          "  float haze = exp(-pow(dy * 7.0, 2.0)) * exp(-pow((uv.x - 0.5) * 1.6, 2.0));",
+          "  sky += mainCol * haze * (0.16 + 0.22 * loud + 0.25 * kick);",
+          "  sky += hiCol * exp(-pow(dy * 40.0, 2.0)) * exp(-pow((uv.x - 0.5) * 2.4, 2.0)) * (0.05 + 0.12 * loud);",
+          "  vec3 c = sky + texture2D(scene, uv).rgb + texture2D(bloomA, uv).rgb * 1.1 + texture2D(bloomB, uv).rgb * (1.4 + kick);",
+          "  c = vec3(1.0) - exp(-c * 1.6);",
+          "  float v = smoothstep(1.15, 0.35, length((uv - 0.5) * vec2(1.25, 1.0)));",
+          "  c *= mix(0.55, 1.0, v);",
+          "  // film grain: subtle (±0.009) and changing only 6 times a second, so files stay small",
+          "  c += (hash(floor(uv * vec2(960.0, 540.0)) + floor(t * 6.0)) - 0.5) * 0.018;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange", "kick"),
+            spectrumLow: setting("spectrumLow", 30),
+            spectrumHigh: setting("spectrumHigh", 16000),
+            spectrumBoost: Number(setting("spectrumBoost", "1")),
+          });
+          var MAIN = V.hexToRGB(setting("mainColor", "#ff6a12"));
+          var HI = V.hexToRGB(setting("highlightColor", "#ffd38a"));
+          var INT = setting("intensity", 1);
+
+          var W = 1920,
+            H = 1080;
+          var gl = document
+            .getElementById("viz")
+            .getContext("webgl", { preserveDrawingBuffer: true, antialias: false, alpha: false });
+          if (!gl) throw new Error("WebGL is not available in this browser");
+
+          var scene = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, W / 2, H / 2),
+            hB = V.createTarget(gl, W / 2, H / 2);
+          var qA = V.createTarget(gl, W / 8, H / 8),
+            qB = V.createTarget(gl, W / 8, H / 8);
+
+          // Spectrum history: one row per 0.05 s into the past (row 0 = now).
+          var NB = 32,
+            ROWS_HIST = 120,
+            HIST_DT = 0.05;
+          var specTex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, specTex);
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          var specBytes = new Uint8Array(NB * ROWS_HIST);
+          var row = new Float32Array(NB);
+
+          // Particle grid: columns across, rows into the distance.
+          var COLS = 560,
+            ROWS = 120;
+          var grid = new Float32Array(COLS * ROWS * 3);
+          for (var r = 0; r < ROWS; r++)
+            for (var c = 0; c < COLS; c++) {
+              var o = (r * COLS + c) * 3;
+              grid[o] = c / (COLS - 1);
+              grid[o + 1] = r / (ROWS - 1);
+              grid[o + 2] = (((c * 73856093) ^ (r * 19349663)) % 1000) / 1000; // per-particle id
+            }
+          var gridBuf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, grid, gl.STATIC_DRAW);
+
+          // Soft out-of-focus orbs drifting across the sky (seeded, so every render is identical).
+          var rnd = V.mulberry32(777),
+            BOKEH = 38,
+            bok = new Float32Array(BOKEH * 4);
+          for (var i = 0; i < BOKEH; i++) {
+            bok[i * 4] = rnd();
+            bok[i * 4 + 1] = 0.25 + rnd() * 0.6;
+            bok[i * 4 + 2] = 14 + rnd() * 56;
+            bok[i * 4 + 3] = rnd();
+          }
+          var bokBuf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, bokBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, bok, gl.STATIC_DRAW);
+
+          var pProg = V.createProgram(gl, PARTICLE_VS, PARTICLE_FS);
+          var bProg = V.createProgram(gl, BOKEH_VS, BOKEH_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+          function drawPoints(prog, buffer, name, size, count) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            var loc = gl.getAttribLocation(prog, name);
+            gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.POINTS, 0, count);
+            gl.disableVertexAttribArray(loc);
+          }
+
+          return function renderAt(t) {
+            var a = audio.sample(t);
+            for (var r = 0; r < ROWS_HIST; r++) {
+              var past = t - r * HIST_DT;
+              if (past < 0) row.fill(0);
+              else audio.spectrum(past, row);
+              for (var k = 0; k < NB; k++) specBytes[r * NB + k] = Math.round(row[k] * 255);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, specTex);
+            gl.texImage2D(
+              gl.TEXTURE_2D,
+              0,
+              gl.LUMINANCE,
+              NB,
+              ROWS_HIST,
+              0,
+              gl.LUMINANCE,
+              gl.UNSIGNED_BYTE,
+              specBytes,
+            );
+
+            var recent = audio.recentHits(t, 4),
+              ages = [99, 99, 99, 99],
+              strengths = [0, 0, 0, 0];
+            for (var j = 0; j < recent.length; j++) {
+              ages[j] = recent[j][0];
+              strengths[j] = recent[j][1];
+            }
+
+            // 1. scene: bokeh + particles, added together (additive light)
+            bindTarget(scene);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            gl.useProgram(bProg);
+            gl.uniform1f(bProg.u.t, t);
+            gl.uniform1f(bProg.u.loud, a.loud);
+            gl.uniform3fv(bProg.u.mainCol, MAIN);
+            drawPoints(bProg, bokBuf, "b", 4, BOKEH);
+            gl.useProgram(pProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, specTex);
+            gl.uniform1i(pProg.u.spec, 0);
+            gl.uniform1f(pProg.u.t, t);
+            gl.uniform1f(pProg.u.loud, a.loud);
+            gl.uniform1f(pProg.u.kick, a.beat);
+            gl.uniform1f(pProg.u.flux, a.flux);
+            gl.uniform1f(pProg.u.inten, INT);
+            gl.uniform4fv(pProg.u.hits, ages);
+            gl.uniform4fv(pProg.u.hitStr, strengths);
+            gl.uniform3fv(pProg.u.mainCol, MAIN);
+            gl.uniform3fv(pProg.u.hiCol, HI);
+            drawPoints(pProg, gridBuf, "g", 3, COLS * ROWS);
+            gl.disable(gl.BLEND);
+
+            // 2. bloom: half-size medium glow, eighth-size wide glow
+            copy(scene, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5);
+            V.blur(gl, blurProg, hA, hB, 3.0);
+            copy(hA, qA);
+            V.blur(gl, blurProg, qA, qB, 1.5);
+            V.blur(gl, blurProg, qA, qB, 3.0);
+
+            // 3. sky, haze and glow combined onto the screen
+            bindTarget(null);
+            gl.useProgram(compProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, scene.tex);
+            gl.uniform1i(compProg.u.scene, 0);
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, hA.tex);
+            gl.uniform1i(compProg.u.bloomA, 1);
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, qA.tex);
+            gl.uniform1i(compProg.u.bloomB, 2);
+            gl.uniform3fv(compProg.u.mainCol, MAIN);
+            gl.uniform3fv(compProg.u.hiCol, HI);
+            gl.uniform1f(compProg.u.loud, a.loud);
+            gl.uniform1f(compProg.u.kick, a.beat);
+            gl.uniform1f(compProg.u.t, t);
+            V.drawQuad(gl, compProg);
+            gl.activeTexture(gl.TEXTURE0);
+          };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var renderAt = null;
+        try {
+          renderAt = setup();
+          renderAt(0);
+        } catch (error) {
+          renderAt = null;
+          fail(error);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          if (!renderAt) return;
+          try {
+            renderAt(e.detail.time);
+          } catch (error) {
+            renderAt = null;
+            fail(error);
+          }
+        });
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

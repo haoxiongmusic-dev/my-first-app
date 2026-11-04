@@ -1,0 +1,13 @@
+{
+  "name": "Particle Horizon",
+  "description": "A glowing particle sea rolling toward a warm horizon.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist"] },
+    { "name": "Colors", "fields": ["mainColor", "highlightColor"] },
+    { "name": "Effects", "fields": ["intensity", "letterbox"] },
+    { "name": "Audio", "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost"] }
+  ],
+  "basic": ["mainColor", "intensity"],
+  "content": ["title", "artist"],
+  "presets": []
+}

@@ -21,7 +21,8 @@
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run test:py",
     "analyze": "tsx scripts/analyze.ts",
     "sync:toolkit": "tsx scripts/sync-toolkit.ts",
-    "template:assets": "tsx scripts/template-assets.ts"
+    "template:assets": "tsx scripts/template-assets.ts",
+    "check:templates": "tsx scripts/check-templates.ts"
   },
   "dependencies": {
     "next": "16.4.5",
