@@ -248,7 +248,126 @@
     };
   }
 
+  // ---------- WebGL helpers ----------
+
+  function compileShader(gl, type, source) {
+    var shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      var kind = type === gl.VERTEX_SHADER ? "vertex" : "fragment";
+      throw new Error("Shader didn't compile (" + kind + "): " + gl.getShaderInfoLog(shader));
+    }
+    return shader;
+  }
+
+  /**
+   * Compile and link a shader program. Throws a readable error if either step fails (a
+   * shader that fails silently renders a black video). Uniform locations go in program.u.
+   */
+  function createProgram(gl, vertexSrc, fragmentSrc) {
+    var program = gl.createProgram();
+    gl.attachShader(program, compileShader(gl, gl.VERTEX_SHADER, vertexSrc));
+    gl.attachShader(program, compileShader(gl, gl.FRAGMENT_SHADER, fragmentSrc));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error("Shaders didn't link: " + gl.getProgramInfoLog(program));
+    }
+    program.u = {};
+    var count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) || 0;
+    for (var i = 0; i < count; i++) {
+      var info = gl.getActiveUniform(program, i);
+      if (!info) continue;
+      program.u[info.name.replace("[0]", "")] = gl.getUniformLocation(program, info.name);
+    }
+    return program;
+  }
+
+  /**
+   * An offscreen render target. Always 8-bit (UNSIGNED_BYTE): half-float targets draw
+   * nothing on this PC's Intel UHD 620 even though they report complete.
+   */
+  function createTarget(gl, w, h) {
+    var tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    var fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    var complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (!complete) throw new Error("Render target incomplete");
+    return { tex: tex, fb: fb, w: w, h: h };
+  }
+
+  var quadBuffers = typeof WeakMap === "function" ? new WeakMap() : null;
+
+  /** Draw a full-screen quad with a program whose vertex attribute is named "p". */
+  function drawQuad(gl, program) {
+    var buffer = quadBuffers && quadBuffers.get(gl);
+    if (!buffer) {
+      buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+      if (quadBuffers) quadBuffers.set(gl, buffer);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    var loc = gl.getAttribLocation(program, "p");
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disableVertexAttribArray(loc);
+  }
+
+  function blurStep(gl, program, src, dst, dirX, dirY) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(program.u.src, 0);
+    gl.uniform2f(program.u.dir, dirX, dirY);
+    drawQuad(gl, program);
+  }
+
+  /**
+   * Two-pass blur of target a (result ends up back in a; b is scratch of the same size).
+   * The program needs uniforms `src` (sampler) and `dir` (step in texture units).
+   */
+  function blur(gl, program, a, b, scale) {
+    blurStep(gl, program, a, b, scale / a.w, 0);
+    blurStep(gl, program, b, a, 0, scale / a.h);
+  }
+
+  /** Show an error on the frame itself, so a broken template never renders silent black. */
+  function showError(message) {
+    if (typeof document === "undefined") return;
+    var el = document.getElementById("viz-error");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "viz-error";
+      el.style.cssText =
+        "position:absolute;inset:0;z-index:999;padding:60px;background:#000;color:#ff4d4d;" +
+        "font:28px/1.4 monospace;white-space:pre-wrap;";
+      document.body.appendChild(el);
+    }
+    el.textContent = "Template error:\n" + message;
+  }
+
   return {
+    createProgram: createProgram,
+    createTarget: createTarget,
+    drawQuad: drawQuad,
+    blur: blur,
+    showError: showError,
     mulberry32: mulberry32,
     hexToRGB: hexToRGB,
     bandEdges: bandEdges,

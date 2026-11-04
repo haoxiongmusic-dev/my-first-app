@@ -37,7 +37,21 @@ export type ToolkitAudio = {
   recentHits(t: number, n: number): [number, number][];
 };
 
+export type ToolkitProgram = WebGLProgram & { u: Record<string, WebGLUniformLocation | null> };
+export type RenderTarget = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number };
+
 export interface VizToolkit {
+  createProgram(gl: WebGLRenderingContext, vertexSrc: string, fragmentSrc: string): ToolkitProgram;
+  createTarget(gl: WebGLRenderingContext, w: number, h: number): RenderTarget;
+  drawQuad(gl: WebGLRenderingContext, program: WebGLProgram): void;
+  blur(
+    gl: WebGLRenderingContext,
+    program: ToolkitProgram,
+    a: RenderTarget,
+    b: RenderTarget,
+    scale: number,
+  ): void;
+  showError(message: string): void;
   mulberry32(seed: number): () => number;
   hexToRGB(hex: string): [number, number, number];
   bandEdges(): number[];

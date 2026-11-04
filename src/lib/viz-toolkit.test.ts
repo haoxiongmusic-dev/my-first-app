@@ -119,3 +119,62 @@ describe("createAudio", () => {
     expect(Array.from(same).every((v) => Number.isFinite(v) && v >= 0 && v <= 1)).toBe(true);
   });
 });
+
+describe("WebGL helpers", () => {
+  // A stand-in for a WebGL context: just enough to drive createProgram and createTarget.
+  function fakeGl(opts: { compiles?: (type: number) => boolean; links?: boolean; log?: string }) {
+    const calls: { texType?: number } = {};
+    const gl = {
+      VERTEX_SHADER: 1,
+      FRAGMENT_SHADER: 2,
+      COMPILE_STATUS: 3,
+      LINK_STATUS: 4,
+      ACTIVE_UNIFORMS: 5,
+      TEXTURE_2D: 6,
+      RGBA: 7,
+      UNSIGNED_BYTE: 8,
+      FRAMEBUFFER: 9,
+      COLOR_ATTACHMENT0: 10,
+      FRAMEBUFFER_COMPLETE: 11,
+      createShader: (type: number) => ({ type }),
+      shaderSource: () => {},
+      compileShader: () => {},
+      getShaderParameter: (s: { type: number }) => (opts.compiles ? opts.compiles(s.type) : true),
+      getShaderInfoLog: () => opts.log ?? "",
+      createProgram: () => ({}),
+      attachShader: () => {},
+      linkProgram: () => {},
+      getProgramParameter: (_p: unknown, what: number) => (what === 4 ? (opts.links ?? true) : 0),
+      getProgramInfoLog: () => opts.log ?? "",
+      getActiveUniform: () => null,
+      getUniformLocation: () => null,
+      createTexture: () => ({}),
+      bindTexture: () => {},
+      texImage2D: (...args: unknown[]) => {
+        calls.texType = args[7] as number;
+      },
+      texParameteri: () => {},
+      createFramebuffer: () => ({}),
+      bindFramebuffer: () => {},
+      framebufferTexture2D: () => {},
+      checkFramebufferStatus: () => 11,
+    };
+    return { gl: gl as unknown as WebGLRenderingContext, calls };
+  }
+
+  it("createProgram throws a clear error when shaders fail to link", () => {
+    const { gl } = fakeGl({ links: false, log: "precision mismatch" });
+    expect(() => viz.createProgram(gl, "vs", "fs")).toThrow(/didn't link: precision mismatch/);
+  });
+
+  it("createProgram throws when a shader fails to compile", () => {
+    const { gl } = fakeGl({ compiles: (type) => type !== 2, log: "syntax error" });
+    expect(() => viz.createProgram(gl, "vs", "fs")).toThrow(/didn't compile \(fragment\)/);
+  });
+
+  it("createTarget uses 8-bit textures", () => {
+    const { gl, calls } = fakeGl({});
+    viz.createTarget(gl, 64, 32);
+    expect(calls.texType).toBe(8);
+  });
+});
