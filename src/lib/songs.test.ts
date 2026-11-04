@@ -154,6 +154,16 @@ describe("prepareSong", () => {
     expect(tempFiles()).toEqual([]);
   });
 
+  it("reports a converted file with no audio in it as unreadable", async () => {
+    // e.g. an interrupted recording: FFmpeg converts it, but there are no samples to analyze
+    const stderr = "Couldn't read this audio file. Try WAV or MP3.\nno audio found\n";
+    const { run } = fakeRun({ python: { code: 2, stdout: "", stderr } });
+    const error = await rejection(prepareSong(options(run)));
+    expect(error.kind).toBe("unreadable");
+    expect(error.message).toBe("Couldn't read this audio file. Try WAV or MP3.");
+    expect(existsSync(path.join(songDir(), "analysis.json"))).toBe(false);
+  });
+
   it("reports a missing source file", async () => {
     const { run, calls } = fakeRun();
     const error = await rejection(

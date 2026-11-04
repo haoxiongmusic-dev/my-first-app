@@ -36,6 +36,7 @@ from features import (
 ANALYSIS_VERSION = 1  # change this whenever the output changes; it invalidates cached analyses
 MIN_SECONDS = 1.0
 LOUD_MIN_RANGE_DB = 3.0
+SILENCE_BELOW_PEAK_DB = 60.0  # frames this far below the loudest moments count as silence
 
 
 UNREADABLE_MESSAGE = "Couldn't read this audio file. Try WAV or MP3."
@@ -72,10 +73,15 @@ def analyze_samples(y: np.ndarray, sr: int = SR) -> dict:
         raise TooShortError("Song is too short: it needs to be at least 1 second long.")
 
     db, rms_db = band_levels_db(y, sr, FPS)
-    levels = scale_to_unit(apply_floor(db), 20, 97)
+    # Measure the song's range on frames with sound in them: a long silent stretch is "no
+    # music", not "quiet music", and would otherwise push every level up for the whole song.
+    active = rms_db > np.percentile(rms_db, 99.5) - SILENCE_BELOW_PEAK_DB
+    if active.sum() < FPS:  # under a second of sound: use everything
+        active = None
+    levels = scale_to_unit(apply_floor(db), 20, 97, rows=active)
     # Loudness only needs a minimum range so silence doesn't divide by zero; a large one
     # would dull loud, heavily compressed masters (T-REX swings only 11.6 dB).
-    loud = scale_to_unit(rms_db[:, None], 15, 98, min_range=LOUD_MIN_RANGE_DB)[:, 0]
+    loud = scale_to_unit(rms_db[:, None], 15, 98, min_range=LOUD_MIN_RANGE_DB, rows=active)[:, 0]
     flux, hits, kick = onsets(levels, FPS)
 
     bands = _round(smooth(levels, 0.55, 0.12))

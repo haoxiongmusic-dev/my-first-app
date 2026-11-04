@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from analyze import TooShortError, analyze_samples
-from sounds import gated_tone, kick_bursts, silence, tone
+from sounds import gated_tone, kick_bursts, music_like, silence, tone
 
 FRAME = 1 / 30
 
@@ -17,14 +17,18 @@ def on_frames(result):
     return [i for i in range(len(result["frames"])) if 0.1 < (i / 30) % 1.0 < 0.4]
 
 
+# The tone tests drop to 20 dB quieter rather than to silence: silence is left out when the
+# analyzer measures a song's range, so a tone that is either full or silent never varies.
+
+
 def test_60hz_tone_lights_the_lowest_bands_only():
-    r = analyze_samples(gated_tone(60, 4.0))
+    r = analyze_samples(gated_tone(60, 4.0, low=0.1))
     assert np.mean([r["frames"][i]["b"][3] for i in on_frames(r)]) >= 0.9
     assert max(f["b"][b] for f in r["frames"] for b in range(8, 32)) <= 0.05
 
 
 def test_5khz_tone_lights_its_matching_band():
-    r = analyze_samples(gated_tone(5000, 4.0))
+    r = analyze_samples(gated_tone(5000, 4.0, low=0.1))
     assert np.mean([r["frames"][i]["b"][26] for i in on_frames(r)]) >= 0.9
     others = [b for b in range(32) if abs(b - 26) > 1]
     assert max(f["b"][b] for f in r["frames"] for b in others) <= 0.05
@@ -83,6 +87,20 @@ def test_loudness_uses_full_range_on_a_compressed_song():
     y[(np.arange(len(y)) // 22050) % 2 == 1] *= 0.4
     r = analyze_samples(y)
     assert max(f["l"] for f in r["frames"]) >= 0.9
+
+
+def test_silent_ending_does_not_change_how_the_music_looks():
+    # A long silent ending (here 30% of the file) must not push every level up for the
+    # whole song: the music section should look the same with or without it.
+    music = music_like(20.0)
+    plain = analyze_samples(music)
+    padded = analyze_samples(np.concatenate([music, silence(8.6)]))
+    n = len(plain["frames"])
+    bands = lambda r: np.array([f["b"] for f in r["frames"][:n]])
+    loud = lambda r: np.array([f["l"] for f in r["frames"][:n]])
+    assert np.abs(bands(plain) - bands(padded)).mean() <= 0.03
+    assert np.abs(loud(plain) - loud(padded)).mean() <= 0.03
+    assert abs(len(padded["hits"]) - len(plain["hits"])) <= 2
 
 
 def test_too_short_is_rejected():

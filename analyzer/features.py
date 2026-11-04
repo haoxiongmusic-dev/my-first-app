@@ -74,15 +74,21 @@ def apply_floor(db: np.ndarray, range_db: float = 60.0) -> np.ndarray:
 
 
 def scale_to_unit(
-    x: np.ndarray, lo_pct: float, hi_pct: float, min_range: float = 12.0
+    x: np.ndarray,
+    lo_pct: float,
+    hi_pct: float,
+    min_range: float = 12.0,
+    rows: np.ndarray | None = None,
 ) -> np.ndarray:
     """Scale each column so its lo_pct percentile is 0 and its hi_pct percentile is 1.
 
     Each column's range is at least min_range, so a steady column stays 0 instead of
-    dividing by zero.
+    dividing by zero. `rows` (a True/False per row) picks which rows the percentiles are
+    measured on; every row is scaled.
     """
-    lo = np.percentile(x, lo_pct, axis=0)
-    hi = np.maximum(np.percentile(x, hi_pct, axis=0), lo + min_range)
+    ref = x if rows is None else x[rows]
+    lo = np.percentile(ref, lo_pct, axis=0)
+    hi = np.maximum(np.percentile(ref, hi_pct, axis=0), lo + min_range)
     return np.clip((x - lo) / (hi - lo), 0, 1).astype(np.float32)
 
 

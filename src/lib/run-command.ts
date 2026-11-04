@@ -15,7 +15,10 @@ export const runCommand: RunCommand = (cmd, args) =>
     const shell = process.platform === "win32" && cmd === "npx";
     const file = shell ? [cmd, ...args].join(" ") : cmd;
     const fileArgs = shell ? [] : args;
-    execFile(file, fileArgs, { shell, windowsHide: true }, (error, stdout, stderr) => {
+    // FFmpeg can print a line per broken packet of a damaged file (well over Node's 1 MB
+    // default), and hitting the limit would kill it instead of returning its exit code.
+    const options = { shell, windowsHide: true, maxBuffer: 64 * 1024 * 1024 };
+    execFile(file, fileArgs, options, (error, stdout, stderr) => {
       if (error && typeof error.code !== "number") {
         reject(error); // could not start the program at all
         return;

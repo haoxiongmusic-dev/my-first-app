@@ -110,6 +110,8 @@ export async function prepareSong(opts: PrepareSongOptions): Promise<PreparedSon
     const python = venvPythonPath(opts.projectRoot, opts.platform);
     const analyzer = path.join(opts.projectRoot, "analyzer", "analyze.py");
     const analyze = await opts.run(python, [analyzer, wavPath, "--out", tmpAnalysis]);
+    // Exit 2: converted, but no audio inside (e.g. an interrupted recording).
+    if (analyze.code === 2) throw new SongError("unreadable", UNREADABLE_MESSAGE);
     if (analyze.code === 3) throw new SongError("too-short", analyze.stderr.trim());
     if (analyze.code !== 0) {
       throw new SongError("analyzer-failed", `Analysis failed: ${lastLine(analyze.stderr)}`);
