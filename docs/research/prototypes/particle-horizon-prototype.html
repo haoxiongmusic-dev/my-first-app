@@ -1,0 +1,289 @@
+<!doctype html>
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"T-REX"},
+    {"id":"artist","type":"string","label":"Artist","default":"AXIOM"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ff6a12"},
+    {"id":"highlightColor","type":"color","label":"Highlight color","default":"#ffd38a"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"letterbox","type":"boolean","label":"Letterbox bars","default":true}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <script src="assets/trex-data.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+      #root { width: 100%; height: 100%; position: relative; background: #000; }
+      #viz { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+      .bar { position: absolute; left: 0; right: 0; height: 132px; background: #000; }
+      #titles { position: absolute; left: 0; right: 0; top: 742px; text-align: center; font-family: "Montserrat", sans-serif; color: #fbeee0; }
+      #title { font-size: 58px; font-weight: 300; letter-spacing: 0.3em; padding-left: 0.3em;
+        text-shadow: 0 0 22px rgba(255, 150, 60, 0.55); }
+      #artist { font-size: 28px; font-weight: 400; opacity: 0.75; letter-spacing: 0.55em; padding-left: 0.55em; margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="252.4" data-width="1920" data-height="1080">
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div id="barTop" class="bar" style="top:0"></div>
+      <div id="barBottom" class="bar" style="bottom:0"></div>
+      <div id="titles" class="clip" data-start="0" data-duration="252.4" data-track-index="0">
+        <div id="title" data-var-text="title">T-REX</div>
+        <div id="artist" data-var-text="artist">AXIOM</div>
+      </div>
+      <div id="fade" class="clip" data-start="0" data-duration="252.4" data-track-index="2" style="position:absolute;inset:0;background:#000;opacity:0;"></div>
+      <audio id="music" class="clip" data-start="0" data-duration="252.4" data-track-index="1" data-volume="1" src="assets/trex.wav"></audio>
+    </div>
+    <script>
+      // ---------- audio ----------
+      var A = window.AUDIO_DATA, FPS = A.fps, N = A.frames.length, NB = A.bands;
+      function lerp(a, b, f) { return a + (b - a) * f; }
+      function frameAt(t) { return A.frames[Math.max(0, Math.min(N - 1, Math.round(t * FPS)))]; }
+      function sample(t) {
+        var x = Math.max(0, Math.min(N - 1, t * FPS)), i0 = Math.floor(x), i1 = Math.min(N - 1, i0 + 1), f = x - i0;
+        var a = A.frames[i0], b = A.frames[i1];
+        return { loud: lerp(a.l, b.l, f), kick: lerp(a.k, b.k, f), flux: lerp(a.f, b.f, f) };
+      }
+      function hexRGB(h) { h = h.replace("#", ""); return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255]; }
+
+      var vars = (window.__hyperframes && window.__hyperframes.getVariables) ? window.__hyperframes.getVariables() : {};
+      var MAIN = hexRGB(vars.mainColor || "#ff6a12"), HI = hexRGB(vars.highlightColor || "#ffd38a");
+      var INT = vars.intensity || 1;
+      if (vars.letterbox === false) { document.getElementById("barTop").style.display = "none"; document.getElementById("barBottom").style.display = "none"; }
+
+      // ---------- WebGL ----------
+      var W = 1920, H = 1080;
+      var cv = document.getElementById("viz");
+      var gl = cv.getContext("webgl", { preserveDrawingBuffer: true, antialias: false, alpha: false });
+      var hf = gl.getExtension("OES_texture_half_float"); gl.getExtension("EXT_color_buffer_half_float");
+      var TEX_TYPE = gl.UNSIGNED_BYTE; // half-float targets render blank on some GPUs (Intel UHD 620 via ANGLE)
+
+      function shader(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + "\n" + src); return s; }
+      function program(vs, fs) {
+        var p = gl.createProgram(); gl.attachShader(p, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+        gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error("link: " + gl.getProgramInfoLog(p));
+        p.u = {}; var n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+        for (var i = 0; i < n; i++) { var info = gl.getActiveUniform(p, i), name = info.name.replace("[0]", ""); p.u[name] = gl.getUniformLocation(p, info.name); }
+        return p;
+      }
+      function target(w, h, type) {
+        var tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        var fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        var ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        return ok ? { tex: tex, fb: fb, w: w, h: h } : null;
+      }
+      var scene = target(W, H, TEX_TYPE);
+      if (!scene) { TEX_TYPE = gl.UNSIGNED_BYTE; scene = target(W, H, TEX_TYPE); }
+      var hA = target(W / 2, H / 2, TEX_TYPE), hB = target(W / 2, H / 2, TEX_TYPE);
+      var qA = target(W / 8, H / 8, TEX_TYPE), qB = target(W / 8, H / 8, TEX_TYPE);
+
+      // spectrum history texture: 32 bands x ROWS rows (row 0 = now, further rows = the past)
+      var COLS = 560, ROWS = 120, HIST_DT = 0.05;
+      var specTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, specTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      var specBytes = new Uint8Array(NB * ROWS);
+
+      // particle grid
+      var grid = new Float32Array(COLS * ROWS * 3);
+      for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
+        var o = (r * COLS + c) * 3; grid[o] = c / (COLS - 1); grid[o + 1] = r / (ROWS - 1);
+        grid[o + 2] = ((c * 73856093) ^ (r * 19349663)) % 1000 / 1000;   // per-particle random-ish id
+      }
+      var gridBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf); gl.bufferData(gl.ARRAY_BUFFER, grid, gl.STATIC_DRAW);
+
+      // bokeh orbs (seeded)
+      function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+      var rnd = mulberry32(777), BOKEH = 38, bok = new Float32Array(BOKEH * 4);
+      for (var i = 0; i < BOKEH; i++) { bok[i * 4] = rnd(); bok[i * 4 + 1] = 0.25 + rnd() * 0.6; bok[i * 4 + 2] = 14 + rnd() * 56; bok[i * 4 + 3] = rnd(); }
+      var bokBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bokBuf); gl.bufferData(gl.ARRAY_BUFFER, bok, gl.STATIC_DRAW);
+
+      var quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+      var PARTICLE_VS = [
+        "precision highp float;",
+        "attribute vec3 g;",
+        "uniform sampler2D spec;",
+        "uniform float t, loud, kick, flux, inten;",
+        "uniform vec4 hits;      // ages of the last 4 hits (seconds)",
+        "uniform vec4 hitStr;    // their strengths",
+        "varying float vBright; varying float vHeight;",
+        "void main(){",
+        "  float x = (g.x - 0.5) * 34.0;",
+        "  float z = 1.6 + pow(g.y, 1.35) * 30.0;",
+        "  float zt = z + t * 1.6;",
+        "  float h = sin(x*0.23 + zt*0.33)*0.55 + sin(x*0.51 - zt*0.27 + 1.3)*0.32 + sin(x*1.13 + zt*0.71 - t*0.4)*0.14;",
+        "  h *= 0.55 + loud * 0.85 * inten;",
+        "  float sb = clamp(abs(x) / 17.0, 0.0, 1.0);",
+        "  float s = texture2D(spec, vec2(0.02 + sb * 0.96, g.y)).r;",
+        "  h += pow(s, 1.6) * 1.35 * inten * (1.0 - 0.4 * g.y);",
+        "  float rr = length(vec2(x, (z - 3.0) * 1.4));",
+        "  for (int i = 0; i < 4; i++) {",
+        "    float age = hits[i]; float front = age * 11.0;",
+        "    float ring = exp(-pow(rr - front, 2.0) / 5.0) * exp(-age * 1.6) * hitStr[i];",
+        "    h += ring * 0.9 * inten;",
+        "  }",
+        "  h *= 0.5 + 0.5 * smoothstep(2.0, 11.0, z);",
+        "  float camY = 2.25;",
+        "  float sx = x / z * 0.62;",
+        "  float sy = (h - camY) / z * 1.10 + 0.17;",
+        "  gl_Position = vec4(sx, sy, 0.0, 1.0);",
+        "  float sparkle = step(0.93, fract(g.z * 13.0 + t * 0.7)) * flux * 1.8;",
+        "  gl_PointSize = clamp(2.8 * 4.0 / z, 1.1, 4.5) * (1.0 + sparkle * 0.7);",
+        "  float fog = smoothstep(31.0, 6.0, z);",
+        "  vBright = (0.35 + 0.65 * fog) * (0.6 + 0.55 * loud + 0.35 * kick) * (1.0 + sparkle);",
+        "  vHeight = clamp(h * 0.5 + 0.5, 0.0, 1.0);",
+        "}"
+      ].join("\n");
+      var PARTICLE_FS = [
+        "precision highp float;",
+        "uniform vec3 mainCol, hiCol;",
+        "varying float vBright; varying float vHeight;",
+        "void main(){",
+        "  vec2 d = gl_PointCoord - 0.5; float a = exp(-dot(d,d) * 14.0);",
+        "  vec3 col = mix(mainCol * vec3(0.9,0.55,0.45), hiCol, smoothstep(0.3, 1.0, vHeight));",
+        "  gl_FragColor = vec4(col * a * vBright * 0.85, 1.0);",
+        "}"
+      ].join("\n");
+      var BOKEH_VS = [
+        "precision highp float;",
+        "attribute vec4 b;",
+        "uniform float t, loud;",
+        "varying float vA;",
+        "void main(){",
+        "  float x = fract(b.x + t * (0.004 + b.w * 0.006)) * 2.2 - 1.1;",
+        "  float y = (b.y - 0.5) * 1.3 + sin(t * 0.3 + b.w * 6.0) * 0.03;",
+        "  gl_Position = vec4(x, y, 0.0, 1.0);",
+        "  gl_PointSize = b.z;",
+        "  vA = (0.012 + 0.03 * b.w) * (0.6 + 0.8 * loud);",
+        "}"
+      ].join("\n");
+      var BOKEH_FS = [
+        "precision highp float;",
+        "uniform vec3 mainCol;",
+        "varying float vA;",
+        "void main(){",
+        "  float r = length(gl_PointCoord - 0.5) * 2.0;",
+        "  float a = smoothstep(1.0, 0.85, r) * (0.75 + 0.25 * smoothstep(0.6, 0.95, r));",
+        "  gl_FragColor = vec4(mainCol * a * vA, 1.0);",
+        "}"
+      ].join("\n");
+      var QUAD_VS = "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+      var COPY_FS = "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+      var BLUR_FS = [
+        "precision highp float;",
+        "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+        "void main(){",
+        "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+        "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+        "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+        "  gl_FragColor = vec4(c, 1.0);",
+        "}"
+      ].join("\n");
+      var COMPOSITE_FS = [
+        "precision highp float;",
+        "uniform sampler2D scene, bloomA, bloomB;",
+        "uniform vec3 mainCol, hiCol;",
+        "uniform float loud, kick, t;",
+        "varying vec2 uv;",
+        "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }",
+        "void main(){",
+        "  float horizon = 0.585;",
+        "  float dy = uv.y - horizon;",
+        "  vec3 sky = mix(mainCol * 0.05, vec3(0.008, 0.004, 0.003), smoothstep(0.0, 0.35, dy));",
+        "  float haze = exp(-pow(dy * 7.0, 2.0)) * exp(-pow((uv.x - 0.5) * 1.6, 2.0));",
+        "  sky += mainCol * haze * (0.16 + 0.22 * loud + 0.25 * kick);",
+        "  sky += hiCol * exp(-pow(dy * 40.0, 2.0)) * exp(-pow((uv.x - 0.5) * 2.4, 2.0)) * (0.05 + 0.12 * loud);",
+        "  vec3 c = sky + texture2D(scene, uv).rgb + texture2D(bloomA, uv).rgb * 1.1 + texture2D(bloomB, uv).rgb * (1.4 + kick);",
+        "  c = vec3(1.0) - exp(-c * 1.6);",
+        "  float v = smoothstep(1.15, 0.35, length((uv - 0.5) * vec2(1.25, 1.0)));",
+        "  c *= mix(0.55, 1.0, v);",
+        "  c += (hash(floor(uv * vec2(960.0, 540.0)) + floor(t * 6.0)) - 0.5) * 0.018;",
+        "  gl_FragColor = vec4(c, 1.0);",
+        "}"
+      ].join("\n");
+
+      var pProg = program(PARTICLE_VS, PARTICLE_FS), bProg = program(BOKEH_VS, BOKEH_FS);
+      var copyProg = program(QUAD_VS, COPY_FS), blurProg = program(QUAD_VS, BLUR_FS), compProg = program(QUAD_VS, COMPOSITE_FS);
+
+      function bindTarget(tg) { gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null); gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H); }
+      function drawQuad(prog) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, quad); var loc = gl.getAttribLocation(prog, "p");
+        gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.disableVertexAttribArray(loc);
+      }
+      function pass(prog, src, dst, setup) {
+        bindTarget(dst); gl.useProgram(prog); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+        gl.uniform1i(prog.u.src, 0); if (setup) setup(); drawQuad(prog);
+      }
+      function blur(a, b, scale) {
+        pass(blurProg, a, b, function () { gl.uniform2f(blurProg.u.dir, scale / a.w, 0); });
+        pass(blurProg, b, a, function () { gl.uniform2f(blurProg.u.dir, 0, scale / a.h); });
+      }
+
+      function renderAt(t) {
+        var a = sample(t);
+        // spectrum history rows
+        for (var r = 0; r < ROWS; r++) {
+          var fr = frameAt(t - r * HIST_DT), past = t - r * HIST_DT < 0;
+          for (var k = 0; k < NB; k++) specBytes[r * NB + k] = past ? 0 : Math.round(fr.b[k] * 255);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, specTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, NB, ROWS, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, specBytes);
+        // last 4 hits
+        var ages = [99, 99, 99, 99], strs = [0, 0, 0, 0], j = 0;
+        for (var h = A.hits.length - 1; h >= 0 && j < 4; h--) { if (A.hits[h][0] <= t) { ages[j] = t - A.hits[h][0]; strs[j] = A.hits[h][1]; j++; } }
+
+        // 1. scene: particles + bokeh, additive
+        bindTarget(scene); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+        gl.useProgram(bProg);
+        gl.uniform1f(bProg.u.t, t); gl.uniform1f(bProg.u.loud, a.loud); gl.uniform3fv(bProg.u.mainCol, MAIN);
+        gl.bindBuffer(gl.ARRAY_BUFFER, bokBuf); var bl = gl.getAttribLocation(bProg, "b");
+        gl.enableVertexAttribArray(bl); gl.vertexAttribPointer(bl, 4, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.POINTS, 0, BOKEH); gl.disableVertexAttribArray(bl);
+        gl.useProgram(pProg);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, specTex); gl.uniform1i(pProg.u.spec, 0);
+        gl.uniform1f(pProg.u.t, t); gl.uniform1f(pProg.u.loud, a.loud); gl.uniform1f(pProg.u.kick, a.kick);
+        gl.uniform1f(pProg.u.flux, a.flux); gl.uniform1f(pProg.u.inten, INT);
+        gl.uniform4fv(pProg.u.hits, ages); gl.uniform4fv(pProg.u.hitStr, strs);
+        gl.uniform3fv(pProg.u.mainCol, MAIN); gl.uniform3fv(pProg.u.hiCol, HI);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf); var gloc = gl.getAttribLocation(pProg, "g");
+        gl.enableVertexAttribArray(gloc); gl.vertexAttribPointer(gloc, 3, gl.FLOAT, false, 0, 0); gl.drawArrays(gl.POINTS, 0, COLS * ROWS); gl.disableVertexAttribArray(gloc);
+        gl.disable(gl.BLEND);
+
+        // 2. bloom: half-res medium glow, eighth-res wide glow
+        pass(copyProg, scene, hA); blur(hA, hB, 1.5); blur(hA, hB, 3.0);
+        pass(copyProg, hA, qA); blur(qA, qB, 1.5); blur(qA, qB, 3.0);
+
+        // 3. composite to screen
+        bindTarget(null); gl.useProgram(compProg);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, scene.tex); gl.uniform1i(compProg.u.scene, 0);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hA.tex); gl.uniform1i(compProg.u.bloomA, 1);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, qA.tex); gl.uniform1i(compProg.u.bloomB, 2);
+        gl.uniform3fv(compProg.u.mainCol, MAIN); gl.uniform3fv(compProg.u.hiCol, HI);
+        gl.uniform1f(compProg.u.loud, a.loud); gl.uniform1f(compProg.u.kick, a.kick); gl.uniform1f(compProg.u.t, t);
+        drawQuad(compProg);
+        gl.activeTexture(gl.TEXTURE0);
+      }
+      window.addEventListener("hf-seek", function (e) { renderAt(e.detail.time); });
+      renderAt(0);
+
+      var tl = gsap.timeline({ paused: true });
+      tl.fromTo("#titles", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" }, 0.3);
+      tl.fromTo("#fade", { opacity: 0 }, { opacity: 1, duration: 2.5, ease: "power1.in" }, 249.7);
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
