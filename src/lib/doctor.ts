@@ -1,7 +1,7 @@
 import { systemPythonCommand, venvPythonPath } from "@/lib/python";
+import type { CommandResult, RunCommand } from "@/lib/run-command";
 
-export type CommandResult = { code: number; stdout: string; stderr: string };
-export type RunCommand = (cmd: string, args: string[]) => Promise<CommandResult>;
+export type { CommandResult, RunCommand };
 export type ToolCheck = { name: string; ok: boolean; detail: string; fix?: string };
 
 export const HYPERFRAMES_VERSION = "0.9.10";
