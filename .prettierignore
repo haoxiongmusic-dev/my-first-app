@@ -1,0 +1,9 @@
+.next
+node_modules
+storage
+test-renders
+analyzer/.venv
+docs
+package-lock.json
+.superpowers
+.pytest_cache
