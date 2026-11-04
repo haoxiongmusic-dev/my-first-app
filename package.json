@@ -16,7 +16,9 @@
     "format:check": "prettier --check .",
     "setup:py": "tsx scripts/setup-py.ts",
     "test:py": "tsx scripts/py.ts -m pytest -c analyzer/pytest.ini",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run test:py"
   },
   "dependencies": {
     "next": "16.4.5",
