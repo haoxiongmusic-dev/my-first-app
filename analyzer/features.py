@@ -14,7 +14,7 @@ HOP = SR // FPS  # 1470 samples between frames
 FFT_SIZE = 4096  # analysis window length (about 93 ms)
 N_BANDS = 32
 
-_CHUNK_FRAMES = 512  # frames per FFT batch, so long songs never hold every spectrum at once
+_CHUNK_FRAMES = 256  # frames per FFT batch, so long songs never hold every spectrum at once
 
 
 def _band_matrix(sr: int, edges: np.ndarray) -> np.ndarray:
@@ -40,21 +40,27 @@ def band_levels_db(y: np.ndarray, sr: int = SR, fps: int = FPS) -> tuple[np.ndar
     n = len(y) // hop
     y = np.asarray(y, np.float32)
     half = FFT_SIZE // 2
-    padded = np.concatenate([np.zeros(half, np.float32), y, np.zeros(half, np.float32)])
-    windows = np.lib.stride_tricks.sliding_window_view(padded, FFT_SIZE)[::hop][:n]
     hann = np.hanning(FFT_SIZE).astype(np.float32)
     bands = _band_matrix(sr, log_band_edges(N_BANDS))
 
     db = np.empty((n, N_BANDS), np.float32)
+    rms_db = np.empty(n, np.float32)
+    # Work through the song a batch of frames at a time; nothing here is the size of the
+    # whole song, so an hour-long album needs no more memory than a short track.
     for start in range(0, n, _CHUNK_FRAMES):
-        chunk = windows[start : start + _CHUNK_FRAMES]
-        power = np.abs(np.fft.rfft(chunk * hann, axis=1)) ** 2
-        db[start : start + len(chunk)] = 10 * np.log10(power @ bands + 1e-12)
+        end = min(n, start + _CHUNK_FRAMES)
+        # Samples covering every window in this batch, zero-padded past either end of the song.
+        lo, hi = start * hop - half, (end - 1) * hop + half
+        segment = np.zeros(hi - lo, np.float32)
+        segment[max(0, -lo) : min(hi, len(y)) - lo] = y[max(0, lo) : min(hi, len(y))]
+        windows = np.lib.stride_tricks.sliding_window_view(segment, FFT_SIZE)[::hop]
 
-    # Loudness: RMS of the hop-long stretch of samples centred on each frame.
-    rms_windows = windows[:, half - hop // 2 : half - hop // 2 + hop]
-    rms = np.sqrt(np.mean(rms_windows.astype(np.float64) ** 2, axis=1))
-    rms_db = (20 * np.log10(rms + 1e-9)).astype(np.float32)
+        power = np.abs(np.fft.rfft(windows * hann, axis=1)) ** 2
+        db[start:end] = 10 * np.log10(power @ bands + 1e-12)
+
+        # Loudness: RMS of the hop-long stretch of samples centred on each frame.
+        middle = windows[:, half - hop // 2 : half - hop // 2 + hop].astype(np.float64)
+        rms_db[start:end] = 20 * np.log10(np.sqrt(np.mean(middle**2, axis=1)) + 1e-9)
     return db, rms_db
 
 
@@ -107,19 +113,32 @@ def onsets(
     flux = np.clip(_normalize(rise.sum(axis=1)), 0, 1).astype(np.float32)
     low = _normalize(rise[:, :KICK_BANDS].sum(axis=1))
 
-    hits: list[tuple[float, float]] = []
-    kick = np.zeros(n, np.float32)
-    last_t, last_s = -1e9, 0.0
+    # Whole-array versions of three per-frame checks (fast even for an hour of frames):
+    # 1. adaptive threshold: mean rise over about ±0.5 s, from a running total
+    idx = np.arange(n)
     w = int(fps * HIT_WINDOW)
-    for i in range(n):
-        t = i / fps
-        threshold = np.mean(low[max(0, i - w) : min(n, i + w)]) * HIT_THRESH_MULT + HIT_THRESH_ADD
-        is_peak = low[i] >= low[max(0, i - 2) : i + 3].max()
-        if is_peak and low[i] > threshold and t - last_t > HIT_MIN_GAP:
-            last_t, last_s = t, float(min(1.0, low[i]))
-            hits.append((last_t, last_s))
-        kick[i] = last_s * np.exp(-(t - last_t) / KICK_DECAY)
-    return flux, hits, kick
+    lo, hi = np.maximum(0, idx - w), np.minimum(n, idx + w)
+    total = np.concatenate([[0.0], np.cumsum(low)])
+    threshold = (total[hi] - total[lo]) / (hi - lo) * HIT_THRESH_MULT + HIT_THRESH_ADD
+    # 2. local peak: at least as big as the 2 frames either side
+    padded = np.concatenate([np.full(2, -np.inf), low, np.full(2, -np.inf)])
+    is_peak = low >= np.lib.stride_tricks.sliding_window_view(padded, 5).max(axis=1)
+    # 3. keep candidates at least HIT_MIN_GAP apart (only candidates are looped over)
+    hit_frames: list[int] = []
+    for i in np.flatnonzero(is_peak & (low > threshold)):
+        if not hit_frames or i / fps - hit_frames[-1] / fps > HIT_MIN_GAP:
+            hit_frames.append(int(i))
+    strengths = np.minimum(1.0, low[hit_frames])
+    hits = [(i / fps, float(s)) for i, s in zip(hit_frames, strengths)]
+
+    # Kick: each frame decays from the most recent hit at or before it.
+    is_hit = np.full(n, -1)
+    is_hit[hit_frames] = np.arange(len(hit_frames))
+    last = np.maximum.accumulate(is_hit)  # index into hit_frames, -1 before the first hit
+    # A trailing 0 entry makes index -1 (no hit yet) read as strength 0.
+    since = (idx - np.append(hit_frames, 0)[last]) / fps
+    kick = np.append(strengths, 0.0)[last] * np.exp(-since / KICK_DECAY)
+    return flux, hits, kick.astype(np.float32)
 
 
 def smooth(x: np.ndarray, attack: float, release: float) -> np.ndarray:

@@ -1,3 +1,5 @@
+import tracemalloc
+
 import numpy as np
 
 from bands import log_band_edges
@@ -18,6 +20,23 @@ def test_60hz_tone_is_loudest_in_its_band():
 def test_5khz_tone_is_loudest_in_its_band():
     db, _ = band_levels_db(tone(5000, 2.0))
     assert int(np.argmax(db.mean(axis=0))) == np.searchsorted(log_band_edges(), 5000) - 1  # 26
+
+
+def _peak_memory_of_band_levels(y: np.ndarray) -> int:
+    tracemalloc.start()
+    try:
+        band_levels_db(y)
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_band_levels_memory_does_not_grow_with_song_length():
+    # Album-length songs (60 min = 635 MB of samples) must not need extra whole-song copies:
+    # working memory for a 5-minute song should be about the same as for a 1-minute one.
+    one_minute = _peak_memory_of_band_levels(tone(60, 60.0))
+    five_minutes = _peak_memory_of_band_levels(tone(60, 300.0))
+    assert five_minutes < 1.5 * one_minute, f"{one_minute / 1e6:.0f} MB → {five_minutes / 1e6:.0f} MB"
 
 
 def test_scale_maps_percentiles_to_0_and_1():

@@ -76,6 +76,15 @@ def test_output_format_and_rounding():
     assert not re.search(r"\d\.\d{4,}", json.dumps(r))
 
 
+def test_loudness_uses_full_range_on_a_compressed_song():
+    # Loud masters vary little in loudness (T-REX: 11.6 dB). Alternating 0.5 / 0.2 amplitude
+    # is an 8 dB swing; the loud parts must still reach the top of the 0..1 range.
+    y = tone(60, 4.0)
+    y[(np.arange(len(y)) // 22050) % 2 == 1] *= 0.4
+    r = analyze_samples(y)
+    assert max(f["l"] for f in r["frames"]) >= 0.9
+
+
 def test_too_short_is_rejected():
     with pytest.raises(TooShortError, match="at least 1 second"):
         analyze_samples(tone(60, 0.5))

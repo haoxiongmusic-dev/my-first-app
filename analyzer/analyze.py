@@ -35,6 +35,7 @@ from features import (
 
 ANALYSIS_VERSION = 1  # change this whenever the output changes; it invalidates cached analyses
 MIN_SECONDS = 1.0
+LOUD_MIN_RANGE_DB = 3.0
 
 
 UNREADABLE_MESSAGE = "Couldn't read this audio file. Try WAV or MP3."
@@ -72,7 +73,9 @@ def analyze_samples(y: np.ndarray, sr: int = SR) -> dict:
 
     db, rms_db = band_levels_db(y, sr, FPS)
     levels = scale_to_unit(apply_floor(db), 20, 97)
-    loud = scale_to_unit(rms_db[:, None], 15, 98)[:, 0]
+    # Loudness only needs a minimum range so silence doesn't divide by zero; a large one
+    # would dull loud, heavily compressed masters (T-REX swings only 11.6 dB).
+    loud = scale_to_unit(rms_db[:, None], 15, 98, min_range=LOUD_MIN_RANGE_DB)[:, 0]
     flux, hits, kick = onsets(levels, FPS)
 
     bands = _round(smooth(levels, 0.55, 0.12))
@@ -115,8 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 3
 
+    # json.dumps then one write: json.dump streams in tiny pieces and is ~5x slower here.
+    text = json.dumps(result, separators=(",", ":"))
     with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(result, fh, separators=(",", ":"))
+        fh.write(text)
     seconds = time.perf_counter() - started
     print(f"{len(result['frames'])} frames, {len(result['hits'])} hits, {seconds:.1f} s")
     return 0
