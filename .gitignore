@@ -31,3 +31,25 @@ desktop.ini
 
 # Local test renders (large video files)
 test-renders/
+
+# Next.js / Node extras (from create-next-app)
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+*.pem
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# App data (songs, analysis, renders): never commit
+storage/
+
+# Local agent workspace (plan progress ledgers)
+.superpowers/
