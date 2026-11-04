@@ -6,3 +6,4 @@ analyzer/.venv
 docs
 package-lock.json
 .superpowers
+.pytest_cache

@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "setup:py": "tsx scripts/setup-py.ts",
+    "test:py": "tsx scripts/py.ts -m pytest -c analyzer/pytest.ini"
   },
   "dependencies": {
     "next": "16.4.5",
@@ -30,6 +32,7 @@
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.10",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^4.1.12"
   }
