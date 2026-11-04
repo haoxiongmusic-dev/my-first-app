@@ -72,3 +72,5 @@ storage/
 
 # Template dev data made from a song (npm run template:assets): never commit
 templates/*/assets/audio-data.js
+# HyperFrames' local check/preview history (paths on this PC)
+templates/**/.hyperframes/

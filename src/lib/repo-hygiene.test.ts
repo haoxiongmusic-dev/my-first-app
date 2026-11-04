@@ -29,6 +29,7 @@ describe(".gitignore keeps private files out of the public repo", () => {
     ".env",
     "templates/particle-horizon/assets/audio-data.js",
     "templates/particle-horizon/assets/song.wav",
+    "templates/particle-horizon/.hyperframes/video-state.json",
   ])("ignores %s", (path) => {
     expect(isIgnored(path)).toBe(true);
   });
