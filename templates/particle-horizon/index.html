@@ -257,7 +257,19 @@
         function fitTitles() {
           var title = document.getElementById("title");
           var artist = document.getElementById("artist");
-          var key = title.textContent + "|" + artist.textContent;
+          // Re-measure when the text, the font, or the set of loaded fonts changes: measuring
+          // with a stand-in font before the real one loads would size the title wrongly.
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            title.textContent,
+            artist.textContent,
+            document.getElementById("titles").style.fontFamily,
+            loaded,
+          ].join("|");
           if (key === fitted) return;
           fitted = key;
           [
@@ -628,6 +640,11 @@
         fitTitles();
         draw(0);
         if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
         window.addEventListener("hf-seek", function (e) {
           fitTitles(); // titles are measured here, not in the timeline callback below
           draw(e.detail.time);

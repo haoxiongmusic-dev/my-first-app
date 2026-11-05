@@ -42,11 +42,14 @@ export function advancedSections(t: FormTemplate): FormSection[] {
 
 /**
  * Turn raw input into a value for the variable, or null if it isn't valid yet (e.g. a half-typed
- * colour). Numbers are clamped to their range and text is cut to its maximum length.
+ * colour). Numbers are clamped to their range (when leaving the box) or, with `clamp: false`
+ * (while typing), treated as not valid yet: typing 50 passes through "5", which must not jump
+ * to the minimum. Text is cut to its maximum length.
  */
 export function parseFieldInput(
   v: TemplateVariable,
   raw: string | boolean,
+  options: { clamp?: boolean } = {},
 ): string | number | boolean | null {
   switch (v.type) {
     case "boolean":
@@ -55,7 +58,10 @@ export function parseFieldInput(
       if (typeof raw !== "string" || raw.trim() === "") return null;
       const n = Number(raw);
       if (!Number.isFinite(n)) return null;
-      return Math.min(v.max ?? Infinity, Math.max(v.min ?? -Infinity, n));
+      const min = v.min ?? -Infinity;
+      const max = v.max ?? Infinity;
+      if (options.clamp === false) return n >= min && n <= max ? n : null;
+      return Math.min(max, Math.max(min, n));
     }
     case "color": {
       const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";

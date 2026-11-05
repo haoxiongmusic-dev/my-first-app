@@ -57,6 +57,18 @@ describe("form model", () => {
     expect(parseFieldInput(short, "abcdef")).toBe("abc");
   });
 
+  it("while typing, numbers outside the range are not valid yet", () => {
+    // Typing 50 into Threads X (25–200) passes through "5"; it must not jump to 25.
+    const typing = { clamp: false };
+    expect(parseFieldInput(variable("densityX"), "5", typing)).toBeNull();
+    expect(parseFieldInput(variable("densityX"), "50", typing)).toBe(50);
+    expect(parseFieldInput(variable("densityX"), "500", typing)).toBeNull();
+    expect(parseFieldInput(variable("intensity"), "0", typing)).toBeNull();
+    expect(parseFieldInput(variable("intensity"), "0.5", typing)).toBe(0.5);
+    // Leaving the box still clamps what was typed.
+    expect(parseFieldInput(variable("densityX"), "500")).toBe(200);
+  });
+
   it("mergeValues keeps valid saved values and ignores the rest", () => {
     const merged = mergeValues(ph, { intensity: 1.5, mainColor: "nope", gone: 1 });
     expect(merged.intensity).toBe(1.5);

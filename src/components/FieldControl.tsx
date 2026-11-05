@@ -40,13 +40,22 @@ function useDraft(variable: TemplateVariable, value: Value, onChange: (v: Value)
     invalid,
     edit(raw: string) {
       setDraft(raw);
-      const parsed = parseFieldInput(variable, raw);
+      const parsed = parseFieldInput(variable, raw, { clamp: false });
       setInvalid(parsed === null);
-      if (parsed !== null && parsed !== value) onChange(parsed);
+      if (parsed !== null && parsed !== value) {
+        setShown(parsed); // our own edit: keep the text as typed (e.g. "1." stays "1.")
+        onChange(parsed);
+      }
     },
-    // On leaving the box, show the value actually in use (e.g. a number clamped to its range).
+    // On leaving the box, use the closest valid value (e.g. 500 → 200) and show it.
     settle() {
-      setDraft(String(value));
+      const parsed = parseFieldInput(variable, draft);
+      const final = parsed ?? value;
+      if (final !== value) {
+        setShown(final);
+        onChange(final);
+      }
+      setDraft(String(final));
       setInvalid(false);
     },
   };

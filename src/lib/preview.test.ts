@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { injectRuntime, parseRange, resolvePreviewFile, RUNTIME_URL } from "@/lib/preview";
+import {
+  fontStylesheetUrl,
+  injectRuntime,
+  parseRange,
+  resolvePreviewFile,
+  RUNTIME_URL,
+} from "@/lib/preview";
 
 const SONG = "a".repeat(64);
 let templatesRoot: string;
@@ -98,5 +104,47 @@ describe("resolvePreviewFile", () => {
     expect(await resolve(["index.html"], "..")).toBeNull();
     expect(await resolve(["index.html"], "demo", "b".repeat(64))).toBeNull();
     expect(await resolve(["index.html"], "demo", "../songs")).toBeNull();
+  });
+});
+
+describe("preview fonts", () => {
+  it("fontStylesheetUrl asks Google Fonts for every family at the weights templates use", () => {
+    expect(fontStylesheetUrl([])).toBeNull();
+    expect(fontStylesheetUrl(["Montserrat", "Playfair Display"])).toBe(
+      "https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400&family=Playfair+Display:wght@300;400&display=block",
+    );
+  });
+
+  it("the preview page loads the fonts of the template's Font setting", async () => {
+    const demo = path.join(templatesRoot, "demo");
+    const vars = [
+      {
+        id: "font",
+        type: "enum",
+        label: "Font",
+        default: "Inter",
+        options: [
+          { value: "Inter", label: "Inter" },
+          { value: "EB Garamond", label: "EB Garamond" },
+        ],
+      },
+    ];
+    await writeFile(
+      path.join(demo, "index.html"),
+      `<!doctype html>
+<html data-composition-variables='${JSON.stringify(vars)}'><head></head><body>
+` + '<div id="root" data-composition-id="main" data-duration="20"></div></body></html>',
+    );
+    const file = await resolve(["index.html"]);
+    expect(file?.kind).toBe("html");
+    if (file?.kind !== "html") return;
+    expect(file.body).toContain(
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400&family=EB+Garamond:wght@300;400&display=block">',
+    );
+  });
+
+  it("a template without a Font setting gets no font stylesheet", async () => {
+    const file = await resolve(["index.html"]);
+    if (file?.kind === "html") expect(file.body).not.toContain("fonts.googleapis.com");
   });
 });

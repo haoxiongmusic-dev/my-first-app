@@ -12,6 +12,7 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { isCurrentAnalysis, toAudioDataJs } from "@/lib/analysis";
 import { setSongLength } from "@/lib/jobs";
+import { parseVariables } from "@/lib/templates";
 
 export type PreviewFile =
   | { kind: "html"; body: string }
@@ -35,6 +36,27 @@ const CONTENT_TYPES: Record<string, string> = {
 
 const TEMPLATE_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SONG_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * Google Fonts stylesheet for the given families, at the weights templates use for titles
+ * (300 and 400). Renders get the same fonts bundled by HyperFrames; the live preview (a plain
+ * browser page) has to load them itself, or a Font change would show nothing.
+ */
+export function fontStylesheetUrl(families: string[]): string | null {
+  if (families.length === 0) return null;
+  const params = families.map((f) => `family=${f.replace(/ /g, "+")}:wght@300;400`).join("&");
+  return `https://fonts.googleapis.com/css2?${params}&display=block`;
+}
+
+/** The families a template offers in its Font setting (an enum variable with id "font"). */
+function templateFontFamilies(html: string): string[] {
+  try {
+    const font = parseVariables(html).find((v) => v.id === "font");
+    return font?.type === "enum" ? font.options.map((o) => o.value) : [];
+  } catch {
+    return []; // no settings declared: nothing to load
+  }
+}
 
 /** Add the HyperFrames runtime as the first script in <head>. */
 export function injectRuntime(html: string, runtimeUrl: string): string {
@@ -124,10 +146,10 @@ export async function resolvePreviewFile(opts: ResolvePreviewOptions): Promise<P
     if (relative === "assets/audio-data.js")
       return { kind: "script", body: toAudioDataJs(analysis) };
     const html = await readFile(path.join(templateDir, "index.html"), "utf8");
-    return {
-      kind: "html",
-      body: injectRuntime(setSongLength(html, analysis.duration), RUNTIME_URL),
-    };
+    let body = injectRuntime(setSongLength(html, analysis.duration), RUNTIME_URL);
+    const fonts = fontStylesheetUrl(templateFontFamilies(html));
+    if (fonts) body = body.replace("</head>", `<link rel="stylesheet" href="${fonts}"></head>`);
+    return { kind: "html", body };
   }
 
   const filePath = path.resolve(templateDir, ...(segments as string[]));
