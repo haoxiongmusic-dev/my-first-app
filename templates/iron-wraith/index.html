@@ -124,7 +124,7 @@
         position: absolute;
         left: 0;
         right: 0;
-        top: 880px;
+        top: 800px;
         text-align: center;
         font-family: "Orbitron", sans-serif;
         font-weight: 700;
@@ -244,8 +244,39 @@
           var titles = document.getElementById("titles");
           titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
           titles.style.fontWeight = setting("font") === "Orbitron" ? "700" : "400";
+          titles.style.textShadow = "0 0 18px " + setting("lightColor");
         }
         applyPage();
+
+        // Shrink the title line until it fits the 80 % title-safe width. Measured on seeks,
+        // settings and font loads only, never in the timeline callback.
+        var TITLE_SAFE = 1536;
+        var TITLE_SIZE = 34;
+        var fitted = "";
+        function fitTitles() {
+          var line = document.getElementById("titleLine");
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [line.textContent, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var size = TITLE_SIZE;
+          line.style.fontSize = size + "px";
+          while (line.offsetWidth > TITLE_SAFE && size > 12) {
+            size = Math.floor(size * 0.95);
+            line.style.fontSize = size + "px";
+          }
+        }
+        fitTitles();
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
 
         // ---------- scene constants (from the approved 2026-11-05 sketch) ----------
         var REFLECTION = 0.22; // strength of the reflected room on the chrome
@@ -259,6 +290,7 @@
         var TOWER_RISE = 4.2;
         var TOWER_BASE = -70;
         var TOWER_DEPTH = -150;
+        var WAVE_BASELINE = 985; // px; the waves rise to about 83 % of the height, reflections reach 95 %
         var EYES = [
           [7.5, -0.5, 9],
           [-7.5, -0.5, 9],
@@ -428,18 +460,96 @@
           composer.addPass(bloom);
           composer.addPass(new K.OutputPass());
 
+          // ----- the two mirrored waveforms, on a 2D canvas over the 3D picture -----
+          var wavesCanvas = document.getElementById("waves");
+          var waves = wavesCanvas.getContext("2d");
+          var scaleNow = 1;
+
           function resize(scale) {
             var W = Math.round(1920 * scale),
               H = Math.round(1080 * scale);
             renderer.setSize(W, H, false);
             composer.setSize(W, H);
             bloom.setSize(Math.round(W / 2), Math.round(H / 2));
+            wavesCanvas.width = W;
+            wavesCanvas.height = H;
+            scaleNow = scale;
           }
           resize(PREVIEW_SCALE);
 
-          // ----- settings: colours, audio, towers (no new WebGL objects) -----
-          var audio, towerAudio, eyeColor, lightColor;
+          /** One waveform layer: a smooth mirrored line, its glow, and a faint reflection. */
+          function drawWave(layer, t) {
+            var s = scaleNow;
+            var values = layer.audio.spectrum(t);
+            var base = WAVE_BASELINE * s;
+            var pts = M.waveformPoints(values, 1920 * s, base, layer.amplitude * s);
+            waves.strokeStyle = layer.color;
+            waves.shadowColor = layer.color;
+            waves.shadowBlur = 12 * s;
+            waves.lineWidth = M.thicknessToPx(layer.thickness) * s;
+            waves.lineJoin = "round";
+            waves.lineCap = "round";
+            for (var pass = 0; pass < 2; pass++) {
+              // pass 0: the wave; pass 1: its reflection below the baseline, half height
+              var flip = pass === 0 ? 1 : -0.5;
+              waves.globalAlpha = pass === 0 ? 1 : 0.35;
+              var n = pts.length / 2;
+              var y = function (i) {
+                return base + (pts[2 * i + 1] - base) * flip;
+              };
+              waves.beginPath();
+              waves.moveTo(0, y(0));
+              waves.lineTo(pts[0], y(0));
+              for (var i = 1; i < n - 1; i++) {
+                var mx = (pts[2 * i] + pts[2 * i + 2]) / 2;
+                var my = (y(i) + y(i + 1)) / 2;
+                waves.quadraticCurveTo(pts[2 * i], y(i), mx, my);
+              }
+              waves.lineTo(pts[2 * (n - 1)], y(n - 1));
+              waves.lineTo(1920 * s, y(n - 1));
+              waves.stroke();
+            }
+            waves.globalAlpha = 1;
+          }
+
+          // ----- settings: colours, audio, towers, waves (no new WebGL objects) -----
+          var audio, towerAudio, eyeColor, lightColor, waveLayers;
+          function waveAudio(prefix) {
+            return V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: setting(prefix + "Low"),
+              spectrumHigh: setting(prefix + "High"),
+              spectrumBoost: Number(setting(prefix + "Boost")),
+              spectrumCount: M.bandsToCount(setting(prefix + "Bands")),
+            });
+          }
+          /** The wave colour mixed toward white by `amount` (0..1), as a CSS colour. */
+          function lighter(hex, amount) {
+            var rgb = V.hexToRGB(hex);
+            return (
+              "rgb(" +
+              rgb
+                .map(function (v) {
+                  return Math.round((v + (1 - v) * amount) * 255);
+                })
+                .join(",") +
+              ")"
+            );
+          }
           function apply() {
+            waveLayers = [
+              {
+                audio: waveAudio("waveA"),
+                amplitude: 90,
+                thickness: setting("waveAThickness"),
+                color: lighter(setting("waveColor"), 0),
+              },
+              {
+                audio: waveAudio("waveB"),
+                amplitude: 60,
+                thickness: setting("waveBThickness"),
+                color: lighter(setting("waveColor"), 0.4),
+              },
+            ];
             audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
             towerAudio = V.createAudio(window.AUDIO_DATA, {
               spectrumLow: 30,
@@ -505,6 +615,8 @@
               towers.instanceMatrix.needsUpdate = true;
             }
             composer.render();
+            waves.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
+            for (var w = 0; w < waveLayers.length; w++) drawWave(waveLayers[w], t);
           }
           function dispose() {
             for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
@@ -535,6 +647,7 @@
         }
         draw(0);
         window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // measured here, not in the timeline callback below
           draw(e.detail.time);
         });
 
@@ -548,6 +661,7 @@
             document.getElementById("title").textContent = setting("title");
             document.getElementById("artist").textContent = setting("artist");
             applyPage();
+            fitTitles();
             if (drawing) drawing.apply();
             draw(Math.max(0, lastTime));
           });
