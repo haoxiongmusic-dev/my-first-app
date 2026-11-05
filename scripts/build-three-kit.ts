@@ -12,15 +12,23 @@ import { build, type Plugin } from "esbuild";
  * generator only for object ids and some helpers, and its frame loop only for
  * `renderer.setAnimationLoop`, which templates never use. So inside three.js's own files:
  * - the random generator becomes a seeded one (`__threeKitRandom`, defined in the banner);
- * - the frame-loop functions are renamed to names that don't exist, so the loop is off.
+ * - the frame-loop functions are renamed (`frameLoopDisabled`, `frameLoopCancelDisabled`:
+ *   harmless stubs defined in the banner), and the renderer's loop is never plugged into the
+ *   window, so its start()/stop() do nothing. `renderer.dispose()` calls stop(); it must not
+ *   reach a missing function.
  */
+const UNPLUGGED_LOOP = "if ( typeof self !== 'undefined' ) animation.setContext( self );";
 const deterministicThree: Plugin = {
   name: "deterministic-three",
   setup(b) {
     b.onLoad({ filter: /[\\/]node_modules[\\/]three[\\/].*\.js$/ }, async (args) => {
       const source = await readFile(args.path, "utf8");
+      if (args.path.endsWith("three.module.js") && !source.includes(UNPLUGGED_LOOP)) {
+        throw new Error("three.js changed: update UNPLUGGED_LOOP in build-three-kit.ts");
+      }
       return {
         contents: source
+          .replace(UNPLUGGED_LOOP, "/* three-kit: frame loop left unplugged */")
           .replaceAll("Math.random()", "__threeKitRandom()")
           .replaceAll("requestAnimationFrame", "frameLoopDisabled")
           .replaceAll("cancelAnimationFrame", "frameLoopCancelDisabled"),
@@ -41,6 +49,9 @@ const SEEDED_RANDOM = [
   "    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;",
   "  };",
   "})();",
+  "// Stand-ins for the browser's frame loop, which three.js's own files no longer call.",
+  "var frameLoopDisabled = function () { return 0; };",
+  "var frameLoopCancelDisabled = function () {};",
 ].join("\n");
 
 async function main(): Promise<void> {

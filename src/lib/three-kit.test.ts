@@ -57,6 +57,15 @@ describe("three-kit bundle", () => {
     expect(source).toContain("__threeKitRandom");
   });
 
+  it("leaves the renderer's frame loop unplugged, so dispose() and stop() can't crash", () => {
+    // WebGLRenderer.dispose() calls its animation loop's stop(), which would call the renamed
+    // (missing) frame-loop function on the window if the loop were plugged into it.
+    const source = readFileSync(kitPath, "utf8");
+    expect(source).not.toContain("setContext(self)");
+    expect(source).toMatch(/var frameLoopDisabled = function/);
+    expect(source).toMatch(/var frameLoopCancelDisabled = function/);
+  });
+
   it("can make 8-bit render targets", () => {
     const { THREE } = kit;
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType });

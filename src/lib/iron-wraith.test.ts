@@ -115,7 +115,12 @@ describe("Iron Wraith template", () => {
   it("uses 8-bit render targets only", async () => {
     const html = await readFile(path.join(dir, "index.html"), "utf8");
     expect(html).not.toMatch(/HalfFloatType|\bFloatType/);
-    expect(html.match(/UnsignedByteType/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // the composer's own target …
+    expect(html).toMatch(/new THREE\.WebGLRenderTarget\([^)]*type: THREE\.UnsignedByteType[^)]*\)/);
+    // … and every bloom target (three.js makes these half-float, which renders blank here)
+    expect(html).toMatch(
+      /\[bloom\.renderTargetBright\]\s*\.concat\(bloom\.renderTargetsHorizontal, bloom\.renderTargetsVertical\)\s*\.forEach\(function \(rt\) \{\s*rt\.texture\.type = THREE\.UnsignedByteType;/,
+    );
   });
 
   it("ships its fonts with their licences", async () => {
