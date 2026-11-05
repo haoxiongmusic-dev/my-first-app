@@ -221,22 +221,35 @@
     <script>
       (function () {
         var V = window.VizToolkit;
-        var vars =
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
           window.__hyperframes && window.__hyperframes.getVariables
             ? window.__hyperframes.getVariables()
             : {};
-        function setting(id, fallback) {
-          return vars[id] === undefined || vars[id] === null ? fallback : vars[id];
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
         }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
         var DURATION =
           parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
 
-        if (setting("letterbox", true) === false) {
-          document.getElementById("barTop").style.display = "none";
-          document.getElementById("barBottom").style.display = "none";
+        function applyPage() {
+          var bars = setting("letterbox") === false ? "none" : "";
+          document.getElementById("barTop").style.display = bars;
+          document.getElementById("barBottom").style.display = bars;
+          document.getElementById("titles").style.fontFamily =
+            '"' + setting("font") + '", sans-serif';
         }
-        document.getElementById("titles").style.fontFamily =
-          '"' + setting("font", "Montserrat") + '", sans-serif';
+        applyPage();
 
         // Shrink a title line until it fits the 80 % title-safe width; hide empty lines.
         var TITLE_SAFE = 1536;
@@ -358,41 +371,49 @@
         // ---------- set up drawing (any error is shown on the frame) ----------
         function setup() {
           var audio = V.createAudio(window.AUDIO_DATA, {
-            beatRange: setting("beatRange", "kick"),
-            spectrumLow: setting("spectrumLow", 30),
-            spectrumHigh: setting("spectrumHigh", 16000),
-            spectrumBoost: Number(setting("spectrumBoost", "1")),
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
           });
-          var MAIN = V.hexToRGB(setting("mainColor", "#ff6a12"));
-          var HI = V.hexToRGB(setting("highlightColor", "#ffd38a"));
-          var INT = setting("intensity", 1);
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var HI = V.hexToRGB(setting("highlightColor"));
+          var INT = setting("intensity");
           // Squared, so low values add a subtle drift and 100 % is a full rainbow.
-          var TINT = Math.pow(setting("tint", 20) / 100, 2);
-          var SHOW_BG = setting("showBackground", false) === true;
-          var BG_BLUR = setting("backgroundBlur", 100);
-          var DX = setting("densityX", 100),
-            DY = setting("densityY", 100);
-          var WAVE_K = 100 / setting("waveScale", 100);
-          var WAVE_H = setting("waveHeight", 100) / 100;
-          var FLOW = setting("flowSpeed", 100) / 100;
-          var EVO = setting("waveSpeed", 100) / 100;
+          var TINT = Math.pow(setting("tint") / 100, 2);
+          var SHOW_BG = setting("showBackground") === true;
+          var BG_BLUR = setting("backgroundBlur");
+          var DX = setting("densityX"),
+            DY = setting("densityY");
+          var WAVE_K = 100 / setting("waveScale");
+          var WAVE_H = setting("waveHeight") / 100;
+          var FLOW = setting("flowSpeed") / 100;
+          var EVO = setting("waveSpeed") / 100;
           // Fewer particles get bigger (and more get smaller) so the field stays as full.
           var SIZE_MUL = Math.min(2, Math.max(0.75, Math.sqrt(100 / Math.sqrt(DX * DY))));
           // ...and brighter, since the glow is the sum of many particles.
           var DENS_GAIN = Math.min(4, Math.max(0.75, Math.sqrt(10000 / (DX * DY))));
 
-          var W = 1920,
-            H = 1080;
-          var gl = document
-            .getElementById("viz")
-            .getContext("webgl", { preserveDrawingBuffer: true, antialias: false, alpha: false });
-          if (!gl) throw new Error("WebGL is not available in this browser");
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
 
           var scene = V.createTarget(gl, W, H);
-          var hA = V.createTarget(gl, W / 2, H / 2),
-            hB = V.createTarget(gl, W / 2, H / 2);
-          var qA = V.createTarget(gl, W / 8, H / 8),
-            qB = V.createTarget(gl, W / 8, H / 8);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8)),
+            qB = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8));
 
           // Spectrum history: one row per 0.05 s into the past (row 0 = now).
           var NB = 32,
@@ -425,7 +446,7 @@
             c2.width = W;
             c2.height = H;
             var ctx = c2.getContext("2d");
-            var blurPx = (BG_BLUR / 100) * 80;
+            var blurPx = (BG_BLUR / 100) * 80 * PREVIEW_SCALE;
             ctx.filter = blurPx > 0 ? "blur(" + blurPx + "px)" : "none";
             var pad = blurPx * 2; // draw past the edges so the blur doesn't darken them
             var scale = Math.max(
@@ -483,7 +504,7 @@
             gl.disableVertexAttribArray(loc);
           }
 
-          return function renderAt(t) {
+          function renderAt(t) {
             loadBackground();
             var a = audio.sample(t);
             for (var r = 0; r < ROWS_HIST; r++) {
@@ -535,7 +556,7 @@
             gl.uniform1f(pProg.u.waveH, WAVE_H);
             gl.uniform1f(pProg.u.flow, FLOW);
             gl.uniform1f(pProg.u.evo, EVO);
-            gl.uniform1f(pProg.u.sizeMul, SIZE_MUL);
+            gl.uniform1f(pProg.u.sizeMul, SIZE_MUL * PREVIEW_SCALE);
             gl.uniform1f(pProg.u.densGain, DENS_GAIN);
             gl.uniform1f(pProg.u.tint, TINT);
             drawPoints(pProg, gridBuf, "g", 3, COLS * ROWS);
@@ -572,31 +593,69 @@
             gl.uniform1f(compProg.u.t, t);
             V.drawQuad(gl, compProg);
             gl.activeTexture(gl.TEXTURE0);
-          };
+          }
+          return { render: renderAt, dispose: tracked.dispose };
         }
 
         function fail(error) {
           V.showError(String((error && error.message) || error));
         }
-        var renderAt = null;
-        try {
-          renderAt = setup();
-          renderAt(0);
-          if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
-        } catch (error) {
-          renderAt = null;
-          fail(error);
-        }
-        window.addEventListener("hf-seek", function (e) {
-          if (!renderAt) return;
-          fitTitles();
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
           try {
-            renderAt(e.detail.time);
+            drawing.render(t);
+            lastTime = t;
           } catch (error) {
-            renderAt = null;
+            drawing = null;
             fail(error);
           }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
         });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("title").textContent = setting("title");
+            document.getElementById("artist").textContent = setting("artist");
+            fitted = "";
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
 
         // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
         var tl = gsap.timeline({ paused: true });
@@ -611,6 +670,12 @@
           { opacity: 1, duration: 2.5, ease: "power1.in" },
           Math.max(0, DURATION - 2.5),
         );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
         window.__timelines["main"] = tl;
       })();
     </script>

@@ -408,8 +408,65 @@
     el.textContent = "Template error:\n" + message;
   }
 
+  // ---------- live preview helpers ----------
+
+  /** Each variable's default from a data-composition-variables value (JSON, maybe escaped). */
+  function declaredDefaults(json) {
+    var text = String(json || "[]")
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&");
+    var defaults = {};
+    var list = JSON.parse(text);
+    for (var i = 0; i < list.length; i++) defaults[list[i].id] = list[i]["default"];
+    return defaults;
+  }
+
+  var DELETERS = {
+    createBuffer: "deleteBuffer",
+    createTexture: "deleteTexture",
+    createFramebuffer: "deleteFramebuffer",
+    createProgram: "deleteProgram",
+    createShader: "deleteShader",
+  };
+
+  /**
+   * A stand-in for a WebGL context that remembers every buffer, texture, framebuffer, program
+   * and shader made through it, so a template can rebuild (after a settings change in the
+   * preview) without leaking GPU memory: dispose() deletes them all.
+   */
+  function trackGl(gl) {
+    var created = [];
+    var bound = {};
+    var proxy = new Proxy(gl, {
+      get: function (target, name) {
+        var value = target[name];
+        if (typeof value !== "function") return value;
+        if (bound[name]) return bound[name];
+        var deleter = DELETERS[name];
+        bound[name] = deleter
+          ? function () {
+              var made = value.apply(target, arguments);
+              if (made) created.push([deleter, made]);
+              return made;
+            }
+          : value.bind(target);
+        return bound[name];
+      },
+    });
+    return {
+      gl: proxy,
+      dispose: function () {
+        for (var i = created.length - 1; i >= 0; i--) gl[created[i][0]](created[i][1]);
+        created = [];
+      },
+    };
+  }
+
   return {
     createProgram: createProgram,
+    declaredDefaults: declaredDefaults,
+    trackGl: trackGl,
     createTarget: createTarget,
     drawQuad: drawQuad,
     blur: blur,

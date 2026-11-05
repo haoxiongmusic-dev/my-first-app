@@ -250,3 +250,14 @@ describe("Particle Horizon presets", () => {
     }
   });
 });
+
+describe("Particle Horizon live preview", () => {
+  it("has no hand-written fallback defaults", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const html = await readFile(
+      path.join(process.cwd(), "templates", "particle-horizon", "index.html"),
+      "utf8",
+    );
+    expect(html).not.toMatch(/setting\("[^"]+",/);
+  });
+});
