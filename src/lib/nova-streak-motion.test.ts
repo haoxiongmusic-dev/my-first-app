@@ -83,9 +83,9 @@ describe("Nova Streak motion", () => {
     expect(m.bandsToCount(100)).toBe(96);
   });
 
-  it("barHeights scale by intensity and cap at 300", () => {
-    expect(Array.from(m.barHeights([0, 0.5, 1], 1))).toEqual([0, 130, 260]);
-    expect(Array.from(m.barHeights([0, 0.5, 1], 2))).toEqual([0, 260, 300]);
+  it("barHeights scale by intensity and cap at 200", () => {
+    expect(Array.from(m.barHeights([0, 0.5, 1], 1))).toEqual([0, 80, 160]);
+    expect(Array.from(m.barHeights([0, 0.5, 1], 2))).toEqual([0, 160, 200]);
   });
 
   it("barLayout starts at the cover's edge or the centre and ends at 921.6", () => {

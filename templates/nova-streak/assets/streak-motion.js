@@ -11,8 +11,8 @@
   "use strict";
 
   var STREAK_BASE = 0.55;
-  var BAR_SCALE = 260; // px of bar for a full-scale band at intensity 1
-  var BAR_MAX = 300; // px, each way from the streak
+  var BAR_SCALE = 160; // px of bar for a full-scale band at intensity 1
+  var BAR_MAX = 200; // px, each way from the streak (clear of the title at 760 px)
   var COVER_GAP = 200; // bars start here with a cover: its half-size (180) plus 20 px
   var BAR_OUTER = 921.6; // 96 % of the half-width
   var COVER_RELEASE = 0.18; // seconds for the cover pulse to fall to about a third
