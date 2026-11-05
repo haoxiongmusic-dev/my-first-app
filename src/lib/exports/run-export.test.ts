@@ -177,6 +177,23 @@ describe("runExport", () => {
     expect(existsSync(exportsDir) ? await readdir(exportsDir) : []).toEqual([]);
   });
 
+  it("settings not given in the request use the template's defaults", async () => {
+    const { spawn } = fakeSpawner({
+      render: { code: 0, lines: [] },
+      encode: { code: 0, lines: [] },
+    });
+    const result = await runExport({
+      exportId: "20261105-120000-dddd",
+      request: { ...request(), values: { title: "T-REX" } },
+      projectRoot: root,
+      spawn,
+      run: okRun,
+      onUpdate: () => {},
+      signal: new AbortController().signal,
+    });
+    expect(path.basename(result.file)).toBe("AXIOM - T-REX (Demo).mp4");
+  });
+
   it("uniqueExportPath adds a number when the name is taken", async () => {
     const dir = path.join(root, "out");
     await mkdir(dir);

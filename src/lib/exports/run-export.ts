@@ -21,7 +21,7 @@ import {
 import { prepareJob } from "@/lib/jobs";
 import { outputName } from "@/lib/render-args";
 import type { RunCommand } from "@/lib/run-command";
-import { loadTemplate, type TemplateValues } from "@/lib/templates";
+import { defaultValues, loadTemplate, type TemplateValues } from "@/lib/templates";
 
 export type ExportRequest = {
   templateId: string;
@@ -121,6 +121,8 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
   o.onUpdate({ stage: "preparing", percent: overallPercent("preparing", 0), framesCaptured: 0 });
   await stopIfCancelled();
   const template = await loadTemplate(path.join(o.projectRoot, "templates", request.templateId));
+  // Anything the request leaves out takes the template's default (title, artist… name the file).
+  const values = { ...defaultValues(template.variables), ...request.values };
   const songDir = path.join(storage, "songs", request.songId);
   const section =
     request.start !== undefined || request.end !== undefined
@@ -132,7 +134,7 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
       wavPath: path.join(songDir, "song.wav"),
       analysisPath: path.join(songDir, "analysis.json"),
     },
-    values: request.values,
+    values,
     jobDir,
     section,
     backgroundPath: request.backgroundId
@@ -171,7 +173,7 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
   // Encode into storage/exports/, under a temporary name until it's complete.
   const exportsDir = path.join(storage, "exports");
   await mkdir(exportsDir, { recursive: true });
-  const name = outputName(request.values, template.manifest.name, request.start, request.end);
+  const name = outputName(values, template.manifest.name, request.start, request.end);
   const finalFile = uniqueExportPath(exportsDir, name);
   partFile = finalFile.replace(/\.mp4$/, ".part.mp4");
   const encodeCode = await step(
