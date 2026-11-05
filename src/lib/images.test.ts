@@ -90,6 +90,33 @@ describe("image settings: storage and conversion", SLOW, () => {
     expect(await pixel(stored, 512, 512)).toBeLessThan(16); // transparent → black, not red
   });
 
+  it("saveImage crops a tall picture from the centre instead of squashing it", async () => {
+    // 200×600: red top, green middle, blue bottom. A centre crop keeps only the green band;
+    // squashing would put red at the top edge and blue at the bottom edge.
+    const root = await tempRoot();
+    const source = path.join(root, "bands.png");
+    const band = (c: string) => `color=${c}:s=200x200`;
+    const args = ["-y", "-v", "error", "-f", "lavfi", "-i", band("red"), "-f", "lavfi"];
+    args.push("-i", band("lime"), "-f", "lavfi", "-i", band("blue"));
+    args.push("-filter_complex", "[0][1][2]vstack=3", "-frames:v", "1", source);
+    expect((await runCommand("ffmpeg", args)).code).toBe(0);
+    const storage = path.join(root, "storage");
+    const stored = imagePath(
+      storage,
+      await saveImage(source, storage, runCommand, "square"),
+      "square",
+    );
+    const green = 150; // the grey level of pure green (red ≈ 76, blue ≈ 29)
+    for (const [x, y] of [
+      [512, 512],
+      [512, 4],
+      [512, 1018],
+      [4, 512],
+    ]) {
+      expect(Math.abs((await pixel(stored, x, y)) - green), `${x},${y}`).toBeLessThan(20);
+    }
+  });
+
   it("saveImage converts once and reuses the stored image", async () => {
     const root = await tempRoot();
     const source = path.join(root, "photo.png");
