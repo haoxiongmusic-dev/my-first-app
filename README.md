@@ -29,7 +29,11 @@ The app runs at http://localhost:3000.
 To analyze a song (for template work): `npm run analyze -- "C:\Music\song.wav"`. Results are
 cached in `storage/songs/` (never committed); add `--js out.js` to also write `window.AUDIO_DATA`.
 
-To render a template with your own song (a test video, before the editor exists):
+To make a video: run `npm run dev`, open http://localhost:3000, pick a template, upload a song
+on the Content tab, and change the look on the Customize tab while the preview plays. If the
+preview stutters, lower the preview resolution under Preferences (exports are unaffected).
+
+To render a template with your own song from the command line (a test video):
 
 ```bash
 npm run render -- particle-horizon "C:\Music\song.wav" --set "title=My Song" --start 190 --end 220 --phone

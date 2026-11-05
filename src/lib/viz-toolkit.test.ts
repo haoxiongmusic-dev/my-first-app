@@ -246,3 +246,40 @@ describe("Hz beat ranges in a section", () => {
     }
   });
 });
+
+describe("live preview helpers", () => {
+  it("declaredDefaults reads every default", () => {
+    const json = JSON.stringify([
+      { id: "title", type: "string", label: "Title", default: "It&#39;s" },
+      { id: "intensity", type: "number", label: "Intensity", default: 1 },
+    ]);
+    expect(viz.declaredDefaults(json)).toEqual({ title: "It's", intensity: 1 });
+  });
+
+  it("trackGl deletes what it created", () => {
+    const deleted: string[] = [];
+    const fake = {
+      createBuffer: () => ({ kind: "buffer" }),
+      createTexture: () => ({ kind: "texture" }),
+      createFramebuffer: () => ({ kind: "framebuffer" }),
+      createProgram: () => ({ kind: "program" }),
+      createShader: () => ({ kind: "shader" }),
+      deleteBuffer: () => deleted.push("buffer"),
+      deleteTexture: () => deleted.push("texture"),
+      deleteFramebuffer: () => deleted.push("framebuffer"),
+      deleteProgram: () => deleted.push("program"),
+      deleteShader: () => deleted.push("shader"),
+      getParameter: () => 7,
+    } as unknown as WebGLRenderingContext;
+    const tracked = viz.trackGl(fake);
+    tracked.gl.createBuffer();
+    tracked.gl.createBuffer();
+    tracked.gl.createTexture();
+    tracked.gl.createProgram();
+    expect(tracked.gl.getParameter(0)).toBe(7); // everything else passes straight through
+    tracked.dispose();
+    expect(deleted.sort()).toEqual(["buffer", "buffer", "program", "texture"]);
+    tracked.dispose();
+    expect(deleted).toHaveLength(4); // nothing deleted twice
+  });
+});

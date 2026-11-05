@@ -24,3 +24,14 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Editor preview in fullscreen: centred on black, as large as fits while staying 16:9. */
+.preview-area:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.preview-area:fullscreen > * {
+  width: min(100vw, calc(100vh * 16 / 9));
+}

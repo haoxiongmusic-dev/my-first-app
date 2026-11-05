@@ -4,7 +4,15 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ANALYSIS_VERSION } from "@/lib/analysis";
 import type { CommandResult, RunCommand } from "@/lib/run-command";
-import { prepareSong, SongError, songIdFor } from "@/lib/songs";
+import {
+  MAX_SONG_SECONDS,
+  peaksFromAnalysis,
+  prepareSong,
+  SongError,
+  songIdFor,
+  songInfo,
+  TOO_LONG_MESSAGE,
+} from "@/lib/songs";
 
 const HELLO_SHA256 = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
 const PROJECT = "C:\\dev\\AppProject";
@@ -191,5 +199,47 @@ describe("prepareSong", () => {
     expect(error.message).toBe("Analysis failed: ValueError: boom");
     expect(existsSync(path.join(songDir(), "analysis.json"))).toBe(false);
     expect(tempFiles()).toEqual([]);
+  });
+});
+
+describe("song limits and info", () => {
+  it("rejects a song longer than 60 minutes before analyzing it", async () => {
+    const { run, calls } = fakeRun();
+    const probing: RunCommand = async (cmd, args) => {
+      if (cmd === "ffprobe") return { code: 0, stdout: "3600.5\n", stderr: "" };
+      return run(cmd, args);
+    };
+    const error = await rejection(
+      prepareSong({ ...options(probing), maxSeconds: MAX_SONG_SECONDS }),
+    );
+    expect(error.kind).toBe("too-long");
+    expect(error.message).toBe(TOO_LONG_MESSAGE);
+    expect(calls).toHaveLength(0); // no conversion, no analysis
+  });
+
+  it("accepts a song at the limit", async () => {
+    const { run } = fakeRun();
+    const probing: RunCommand = async (cmd, args) =>
+      cmd === "ffprobe" ? { code: 0, stdout: "3599.9\n", stderr: "" } : run(cmd, args);
+    const song = await prepareSong({ ...options(probing), maxSeconds: MAX_SONG_SECONDS });
+    expect(song.duration).toBe(12.5);
+  });
+
+  it("peaksFromAnalysis takes the loudest moment of each slice", () => {
+    const frames = [0, 1, 0, 0, 0.5, 0, 0, 0.2].map((l) => ({ b: [], l, k: 0, f: 0 }));
+    const analysis = { version: 1, fps: 30, bands: 32, duration: 8 / 30, frames, hits: [] };
+    expect(peaksFromAnalysis(analysis, 4)).toEqual([1, 0, 0.5, 0.2]);
+  });
+
+  it("songInfo refuses ids that are not fingerprints", async () => {
+    expect(await songInfo(storageRoot, "../x")).toBeNull();
+    expect(await songInfo(storageRoot, HELLO_SHA256)).toBeNull(); // not analyzed yet
+  });
+
+  it("songInfo returns duration and peaks for a cached song", async () => {
+    const { run } = fakeRun();
+    await prepareSong(options(run));
+    const info = await songInfo(storageRoot, HELLO_SHA256);
+    expect(info).toEqual({ songId: HELLO_SHA256, duration: 12.5, peaks: [] });
   });
 });

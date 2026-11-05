@@ -18,10 +18,11 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] Catalog of 23 Videobolt visualizers to build later: `docs/research/2026-11-04-visualizer-catalog.md`
 - [x] M1 project skeleton (plan: `docs/superpowers/plans/2026-11-04-m1-project-skeleton.md`)
 - [x] M2 analyzer (plan: `docs/superpowers/plans/2026-11-04-m2-analyzer.md`): `npm run analyze`
-- [ ] M3 **Particle Horizon (Sunlight style), the first and only template until it's a success**
-      (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`): built; awaiting the
-      owner's look check on real tracks (`npm run render`)
-- [ ] M4 editor + preview · M5 export · M6 more templates (one at a time, spec §14) · M7 polish
+- [x] M3 Particle Horizon (Sunlight style) (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`):
+      the first and only template until it's a success; owner approved the look (orbs removed)
+- [ ] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`): built;
+      awaiting the owner's check in their own Chrome
+- [ ] M5 export · M6 more templates (one at a time, spec §14) · M7 polish
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
@@ -57,6 +58,14 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   `templates/`.
 - Don't use HyperFrames' `render --start/--end`: it switches to slow software rendering.
   Sections are cut by the job builder (`prepareJob({ section })`).
+- Live preview: `/preview/<template>/<songId|sample>/…` serves the template for a song with no
+  copying, and injects the HyperFrames runtime (the player won't for a page link). The editor
+  sends settings live on the `settings` and `preview` (`{scale}`) runtime-data channels; a
+  template must look identical without them (renders never send any). Templates redraw on
+  their timeline's `onUpdate` while the preview plays (`hf-seek` only comes on jumps), and must
+  not measure the DOM inside that callback.
+- Code the browser uses must not import `node:` modules: pure template types and checks live in
+  `src/lib/template-values.ts`; `src/lib/templates.ts` (file access) re-exports them.
 
 ## Machine facts
 

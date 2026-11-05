@@ -57,6 +57,8 @@ export interface VizToolkit {
     scale: number,
   ): void;
   showError(message: string): void;
+  declaredDefaults(json: string): Record<string, unknown>;
+  trackGl(gl: WebGLRenderingContext): { gl: WebGLRenderingContext; dispose(): void };
   mulberry32(seed: number): () => number;
   hexToRGB(hex: string): [number, number, number];
   bandEdges(): number[];
