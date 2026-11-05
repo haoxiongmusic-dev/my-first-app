@@ -17,7 +17,8 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] Design spec (approved): `docs/superpowers/specs/2026-11-04-music-visualizer-app-design.md`
 - [x] Catalog of 23 Videobolt visualizers to build later: `docs/research/2026-11-04-visualizer-catalog.md`
 - [x] M1 project skeleton (plan: `docs/superpowers/plans/2026-11-04-m1-project-skeleton.md`)
-- [ ] M2 analyzer · M3 **Particle Horizon (Sunlight style), the first and only template until it's a success** · M4 editor + preview · M5 export · M6 more templates (one at a time, spec §14) · M7 polish
+- [x] M2 analyzer (plan: `docs/superpowers/plans/2026-11-04-m2-analyzer.md`): `npm run analyze`
+- [ ] M3 **Particle Horizon (Sunlight style), the first and only template until it's a success** · M4 editor + preview · M5 export · M6 more templates (one at a time, spec §14) · M7 polish
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
@@ -50,7 +51,7 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 
 - Windows 11; Node 26; Python 3.14 + NumPy; FFmpeg 8; Git. GPU used for rendering: Intel
   UHD 620 (an NVIDIA Quadro P500 is present but not used by Chrome).
-- Final-quality render ≈ 4× song length (4:12 song → 17 min). Analysis ≈ 4 s per song.
+- Final-quality render ≈ 4× song length (4:12 song → 17 min). Analysis (`npm run analyze`): T-REX 4:12 in 6–9 s, a 60-min song in ≈ 2 min (≈ 1.1 GB RAM).
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` (e.g. `T-REX.wav`). **Never copy music into
   the repo**: it is public.
 
@@ -63,17 +64,18 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 
 ## Commands
 
-| Command            | What it does                                                                  |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `npm run dev`      | Start the app at http://localhost:3000 (reloads as you edit)                  |
-| `npm run build`    | Make a production build; catches type and build errors                        |
-| `npm run check`    | **Run before every commit**: lint, formatting, type check, all tests          |
-| `npm test`         | TypeScript tests (Vitest), `src/**/*.test.ts`                                 |
-| `npm run test:py`  | Python analyzer tests (pytest), `analyzer/tests/`                             |
-| `npm run lint`     | ESLint: catches likely mistakes                                               |
-| `npm run format`   | Prettier: tidy all code formatting                                            |
-| `npm run doctor`   | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10 |
-| `npm run setup:py` | Create/update the analyzer's Python environment (`analyzer/.venv`)            |
+| Command                     | What it does                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `npm run dev`               | Start the app at http://localhost:3000 (reloads as you edit)                    |
+| `npm run build`             | Make a production build; catches type and build errors                          |
+| `npm run check`             | **Run before every commit**: lint, formatting, type check, all tests            |
+| `npm test`                  | TypeScript tests (Vitest), `src/**/*.test.ts`                                   |
+| `npm run test:py`           | Python analyzer tests (pytest), `analyzer/tests/`                               |
+| `npm run lint`              | ESLint: catches likely mistakes                                                 |
+| `npm run format`            | Prettier: tidy all code formatting                                              |
+| `npm run doctor`            | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10   |
+| `npm run setup:py`          | Create/update the analyzer's Python environment (`analyzer/.venv`)              |
+| `npm run analyze -- <song>` | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work) |
 
 Notes: dev scripts in `scripts/` run with `tsx` and compile as CommonJS, so no top-level
 `await` (wrap in `main()`). Shared helpers live in `src/lib/` so the app can reuse them.

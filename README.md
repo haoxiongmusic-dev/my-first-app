@@ -26,4 +26,7 @@ npm run dev
 `npm run doctor` checks every tool is ready and tells you how to fix anything missing.
 The app runs at http://localhost:3000.
 
+To analyze a song (for template work): `npm run analyze -- "C:\Music\song.wav"`. Results are
+cached in `storage/songs/` (never committed); add `--js out.js` to also write `window.AUDIO_DATA`.
+
 Before committing a change, run `npm run check` (lint, formatting, type check and all tests).
