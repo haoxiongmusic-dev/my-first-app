@@ -235,8 +235,12 @@ describe("export manager", () => {
     await settle();
     const file = path.join(root, "storage", "exports", `${started.exportId}.json`);
     expect(JSON.parse(await readFile(file, "utf8")).state).toBe("running");
-    await new Promise((r) => setTimeout(r, 100));
-    expect(JSON.parse(await readFile(file, "utf8")).state).toBe("failed");
+    // Then it is recorded (polled, so a busy machine running the whole suite can't fail this).
+    const state = async () => JSON.parse(await readFile(file, "utf8")).state as string;
+    for (let waited = 0; (await state()) !== "failed" && waited < 2000; waited += 20) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(await state()).toBe("failed");
   });
 
   it("latest shows an export interrupted by a restart", async () => {
