@@ -61,6 +61,57 @@ describe("Iron Wraith template", () => {
     expect(t.manifest.content).toEqual(["title", "artist"]);
   });
 
+  it("has the six presets from the spec, each with a thumbnail", async () => {
+    const t = await loadTemplate(dir);
+    const presets = t.manifest.presets;
+    expect(presets.map((p) => p.name)).toEqual([
+      "Original",
+      "Original Speed",
+      "Purple",
+      "Green",
+      "Blue Orange",
+      "Red",
+    ]);
+    const values = (name: string) => presets.find((p) => p.name === name)?.values;
+    expect(values("Original")).toEqual({
+      eyeColor: "#3fd0ff",
+      lightColor: "#1f5fff",
+      waveColor: "#5fb4ff",
+    });
+    expect(values("Original Speed")).toEqual({
+      eyeColor: "#3fd0ff",
+      lightColor: "#1f5fff",
+      waveColor: "#5fb4ff",
+      intensity: 1.5,
+      jawStrength: 85,
+      glow: 70,
+    });
+    expect(values("Purple")).toEqual({
+      eyeColor: "#d77bff",
+      lightColor: "#7a2cff",
+      waveColor: "#b56cff",
+    });
+    expect(values("Green")).toEqual({
+      eyeColor: "#6bff9a",
+      lightColor: "#11b84a",
+      waveColor: "#4dff88",
+    });
+    expect(values("Blue Orange")).toEqual({
+      eyeColor: "#ff9a2e",
+      lightColor: "#1f5fff",
+      waveColor: "#ff8a1e",
+    });
+    expect(values("Red")).toEqual({
+      eyeColor: "#ff3b30",
+      lightColor: "#c8102e",
+      waveColor: "#ff5a4a",
+    });
+    for (const p of presets) {
+      expect(p.thumbnail, p.name).toBeTruthy();
+      await expect(readFile(path.join(dir, p.thumbnail!)), p.name).resolves.toBeTruthy();
+    }
+  });
+
   it("uses 8-bit render targets only", async () => {
     const html = await readFile(path.join(dir, "index.html"), "utf8");
     expect(html).not.toMatch(/HalfFloatType|\bFloatType/);

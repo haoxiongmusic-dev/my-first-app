@@ -32,10 +32,59 @@
   "presets": [
     {
       "name": "Original",
+      "thumbnail": "presets/original.jpg",
       "values": {
         "eyeColor": "#3fd0ff",
         "lightColor": "#1f5fff",
         "waveColor": "#5fb4ff"
+      }
+    },
+    {
+      "name": "Original Speed",
+      "thumbnail": "presets/original-speed.jpg",
+      "values": {
+        "eyeColor": "#3fd0ff",
+        "lightColor": "#1f5fff",
+        "waveColor": "#5fb4ff",
+        "intensity": 1.5,
+        "jawStrength": 85,
+        "glow": 70
+      }
+    },
+    {
+      "name": "Purple",
+      "thumbnail": "presets/purple.jpg",
+      "values": {
+        "eyeColor": "#d77bff",
+        "lightColor": "#7a2cff",
+        "waveColor": "#b56cff"
+      }
+    },
+    {
+      "name": "Green",
+      "thumbnail": "presets/green.jpg",
+      "values": {
+        "eyeColor": "#6bff9a",
+        "lightColor": "#11b84a",
+        "waveColor": "#4dff88"
+      }
+    },
+    {
+      "name": "Blue Orange",
+      "thumbnail": "presets/blue-orange.jpg",
+      "values": {
+        "eyeColor": "#ff9a2e",
+        "lightColor": "#1f5fff",
+        "waveColor": "#ff8a1e"
+      }
+    },
+    {
+      "name": "Red",
+      "thumbnail": "presets/red.jpg",
+      "values": {
+        "eyeColor": "#ff3b30",
+        "lightColor": "#c8102e",
+        "waveColor": "#ff5a4a"
       }
     }
   ]
