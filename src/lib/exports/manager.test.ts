@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { IMAGE_MISSING_MESSAGE } from "@/lib/images";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createExportManager, ExportBusy, ExportInvalid } from "@/lib/exports/manager";
 import type { Spawner } from "@/lib/exports/processes";
@@ -23,6 +24,7 @@ beforeEach(async () => {
     { id: "title", type: "string", label: "Title", default: "SUNLIGHT" },
     { id: "artist", type: "string", label: "Artist", default: "AXIOM" },
     { id: "intensity", type: "number", label: "Intensity", default: 1, min: 0.2, max: 2 },
+    { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" },
   ];
   await writeFile(
     path.join(demo, "index.html"),
@@ -222,6 +224,15 @@ describe("export manager", () => {
     clock.now += 3_600_000;
     run.options?.onUpdate({ stage: "rendering", percent: 40, framesCaptured: 20000 });
     expect((await m.get(started.exportId))?.remainingSeconds).toBe(13500);
+  });
+
+  it("rejects an export whose image file is gone", async () => {
+    const m = manager(controllableRun());
+    const start = m.start(request({ values: { cover: "b".repeat(64) } }));
+    await expect(start).rejects.toBeInstanceOf(ExportInvalid);
+    await expect(m.start(request({ values: { cover: "b".repeat(64) } }))).rejects.toThrow(
+      IMAGE_MISSING_MESSAGE,
+    );
   });
 
   it("a failed run waits briefly before recording the failure", async () => {

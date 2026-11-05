@@ -7,6 +7,7 @@ import { statSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { finalEncodeArgs, phoneCopyArgs } from "../src/lib/encode";
+import { saveImage } from "../src/lib/images";
 import { prepareJob } from "../src/lib/jobs";
 import { outputName, parseRenderArgs, type RenderArgs } from "../src/lib/render-args";
 import { runCommand } from "../src/lib/run-command";
@@ -52,12 +53,20 @@ function stamp(): string {
 async function render(args: RenderArgs): Promise<void> {
   const root = process.cwd();
   const template = await loadTemplate(path.join(root, "templates", args.templateId));
-  const values = resolveValues(template, { preset: args.preset, overrides: args.overrides });
+  const storageRoot = path.join(root, "storage");
+  // Each --image picture is stored like an upload; its id becomes that setting's value.
+  const overrides = { ...args.overrides };
+  for (const [id, file] of Object.entries(args.images)) {
+    const variable = template.variables.find((v) => v.id === id);
+    if (variable?.type !== "image") throw new Error(`--image ${id}: not an image setting`);
+    overrides[id] = await saveImage(path.resolve(file), storageRoot, runCommand, variable.fit);
+  }
+  const values = resolveValues(template, { preset: args.preset, overrides });
 
   console.log(`Preparing the song…`);
   const song = await prepareSong({
     sourcePath: path.resolve(args.song),
-    storageRoot: path.join(root, "storage"),
+    storageRoot,
     projectRoot: root,
     platform: process.platform,
     run: runCommand,
@@ -70,6 +79,7 @@ async function render(args: RenderArgs): Promise<void> {
     values,
     jobDir,
     backgroundPath: args.background ? path.resolve(args.background) : undefined,
+    storageRoot,
     section:
       args.start !== undefined || args.end !== undefined
         ? { start: args.start ?? 0, end: args.end ?? Number.POSITIVE_INFINITY }

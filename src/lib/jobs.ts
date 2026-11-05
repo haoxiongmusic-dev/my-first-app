@@ -4,12 +4,18 @@
  * applied. HyperFrames renders the folder as it is; the template itself is never modified.
  */
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { type Analysis, isCurrentAnalysis, toAudioDataJs } from "@/lib/analysis";
+import { IMAGE_MISSING_MESSAGE, imagePath } from "@/lib/images";
 import type { RunCommand } from "@/lib/run-command";
-import { type Template, type TemplateValues, validateValues } from "@/lib/templates";
+import {
+  type Template,
+  type TemplateValues,
+  type TemplateVariable,
+  validateValues,
+} from "@/lib/templates";
 
 export class JobError extends Error {
   constructor(message: string) {
@@ -119,6 +125,8 @@ export type PrepareJobOptions = {
   jobDir: string;
   /** an image to use as assets/background.jpg */
   backgroundPath?: string;
+  /** the app's storage folder, where image settings' pictures are kept (storage/images/) */
+  storageRoot?: string;
   /** render only this part of the song (seconds) */
   section?: { start: number; end: number };
   run: RunCommand;
@@ -131,6 +139,31 @@ export type PreparedJob = {
   /** seconds */
   duration: number;
 };
+
+/**
+ * Copy each image setting's picture into the job as assets/images/<settingId>.jpg and return
+ * the values with that path in place of the image id (the template loads the path; ids never
+ * reach templates). An empty image stays "". A picture that is gone stops the job.
+ */
+export async function placeImages(
+  variables: TemplateVariable[],
+  values: TemplateValues,
+  storageRoot: string | undefined,
+  jobDir: string,
+): Promise<TemplateValues> {
+  const placed = { ...values };
+  for (const v of variables) {
+    const id = values[v.id];
+    if (v.type !== "image" || typeof id !== "string" || id === "") continue;
+    const stored = storageRoot ? imagePath(storageRoot, id, v.fit) : null;
+    if (!stored || !existsSync(stored)) throw new JobError(IMAGE_MISSING_MESSAGE);
+    const relative = `assets/images/${v.id}.jpg`;
+    await mkdir(path.join(jobDir, "assets", "images"), { recursive: true });
+    await copyFile(stored, path.join(jobDir, relative));
+    placed[v.id] = relative;
+  }
+  return placed;
+}
 
 /** Build a job folder ready for `hyperframes render` (or preview / snapshot). */
 export async function prepareJob(opts: PrepareJobOptions): Promise<PreparedJob> {
@@ -173,15 +206,20 @@ export async function prepareJob(opts: PrepareJobOptions): Promise<PreparedJob> 
   }
   await writeFile(path.join(assets, "audio-data.js"), toAudioDataJs(analysis));
 
-  const indexPath = path.join(opts.jobDir, "index.html");
-  const html = await readFile(indexPath, "utf8");
-  await writeFile(
-    indexPath,
-    withVariableDefaults(setSongLength(html, analysis.duration), opts.values),
+  // Image ids were checked above; from here on the values hold picture paths instead.
+  const values = await placeImages(
+    opts.template.variables,
+    opts.values,
+    opts.storageRoot,
+    opts.jobDir,
   );
 
+  const indexPath = path.join(opts.jobDir, "index.html");
+  const html = await readFile(indexPath, "utf8");
+  await writeFile(indexPath, withVariableDefaults(setSongLength(html, analysis.duration), values));
+
   const variablesPath = path.join(opts.jobDir, "variables.json");
-  await writeFile(variablesPath, JSON.stringify(opts.values, null, 2));
+  await writeFile(variablesPath, JSON.stringify(values, null, 2));
 
   if (opts.backgroundPath) {
     const result = await opts.run("ffmpeg", [

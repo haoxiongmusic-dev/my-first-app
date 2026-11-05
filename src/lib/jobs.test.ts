@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Analysis } from "@/lib/analysis";
+import { IMAGE_MISSING_MESSAGE, imagePath } from "@/lib/images";
 import {
   JobError,
   prepareJob,
@@ -24,6 +25,7 @@ const VARS: TemplateVariable[] = [
   { id: "artist", type: "string", label: "Artist", default: "AXIOM" },
   { id: "intensity", type: "number", label: "Intensity", default: 1, min: 0.2, max: 2 },
   { id: "mainColor", type: "color", label: "Main color", default: "#ff6a12" },
+  { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" },
 ];
 
 function indexHtml(vars: TemplateVariable[] = VARS): string {
@@ -289,5 +291,67 @@ describe("prepareJob with a section", () => {
       run,
     });
     await expect(attempt).rejects.toThrow(/inside the song/);
+  });
+});
+
+describe("images in a job", () => {
+  const run: RunCommand = async () => ok;
+  const ID = "e".repeat(64);
+
+  /** The raw declared default of a setting in a job's index.html. */
+  function declaredDefault(html: string, id: string): unknown {
+    const json = /data-composition-variables='([^']*)'/.exec(html)?.[1] ?? "[]";
+    const vars = JSON.parse(json.replace(/&#39;/g, "'").replace(/&amp;/g, "&")) as {
+      id: string;
+      default: unknown;
+    }[];
+    return vars.find((v) => v.id === id)?.default;
+  }
+
+  it("copies an image to assets/images/<id>.jpg and puts that path in the variables", async () => {
+    const storageRoot = path.join(work, "storage");
+    const stored = imagePath(storageRoot, ID, "square");
+    await mkdir(path.dirname(stored), { recursive: true });
+    await writeFile(stored, "JPEG cover bytes");
+    const jobDir = path.join(work, "jobs", "img");
+    const job = await prepareJob({
+      template,
+      song,
+      values: { title: "T", cover: ID },
+      jobDir,
+      run,
+      storageRoot,
+    });
+    const variables = JSON.parse(await readFile(job.variablesPath, "utf8"));
+    expect(variables.cover).toBe("assets/images/cover.jpg");
+    const copied = path.join(jobDir, "assets", "images", "cover.jpg");
+    expect(await readFile(copied, "utf8")).toBe("JPEG cover bytes");
+    expect(declaredDefault(await readFile(job.indexPath, "utf8"), "cover")).toBe(
+      "assets/images/cover.jpg",
+    );
+  });
+
+  it("leaves an empty image empty", async () => {
+    const jobDir = path.join(work, "jobs", "noimg");
+    const job = await prepareJob({
+      template,
+      song,
+      values: { cover: "" },
+      jobDir,
+      run,
+      storageRoot: path.join(work, "storage"),
+    });
+    expect(JSON.parse(await readFile(job.variablesPath, "utf8")).cover).toBe("");
+    expect(existsSync(path.join(jobDir, "assets", "images"))).toBe(false);
+  });
+
+  it("stops with the missing-image message", async () => {
+    const options = { template, song, values: { cover: ID }, run };
+    await expect(
+      prepareJob({ ...options, jobDir: path.join(work, "jobs", "gone"), storageRoot: work }),
+    ).rejects.toThrow(IMAGE_MISSING_MESSAGE);
+    await expect(
+      prepareJob({ ...options, jobDir: path.join(work, "jobs", "noroot") }),
+    ).rejects.toThrow(IMAGE_MISSING_MESSAGE);
   });
 });

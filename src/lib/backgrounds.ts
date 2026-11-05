@@ -11,9 +11,8 @@ import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import type { RunCommand } from "@/lib/run-command";
 import { songIdFor } from "@/lib/songs";
 
-export const TOO_BIG_IMAGE_MESSAGE = "Images can be up to 50 MB.";
-export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
-export const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+// The picture limits are shared with image settings (images.ts owns them).
+export { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, TOO_BIG_IMAGE_MESSAGE } from "@/lib/images";
 
 /** FFmpeg arguments: cover 1920×1080 (crop the overflow), on black, one JPEG frame. */
 export function backgroundArgs(input: string, output: string): string[] {

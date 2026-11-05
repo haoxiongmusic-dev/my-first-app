@@ -13,6 +13,7 @@ describe("parseRenderArgs", () => {
       song: "C:\Music\T-REX.wav",
       preset: "Ice",
       overrides: {},
+      images: {},
       background: "bg.png",
       start: 190,
       end: 220,
@@ -58,5 +59,17 @@ describe("outputName", () => {
     expect(outputName({ artist: "A/B", title: 'Why? "Now"' }, "Particle Horizon")).toBe(
       "A_B - Why_ _Now_ (Particle Horizon).mp4",
     );
+  });
+});
+
+describe("--image", () => {
+  it("collects image settings by id", () => {
+    const args = parseRenderArgs(["nova-streak", "s.wav", "--image", "cover=C:\art\a.png"]);
+    expect(args.images).toEqual({ cover: "C:\art\a.png" });
+    expect(parseRenderArgs(["nova-streak", "s.wav"]).images).toEqual({});
+  });
+
+  it("needs id=file", () => {
+    expect(() => parseRenderArgs(["nova-streak", "s.wav", "--image", "novalue"])).toThrow(/Usage/);
   });
 });

@@ -9,6 +9,7 @@ export const USAGE = [
   "  --preset <name>        start from a preset (e.g. Ice)",
   "  --set <id>=<value>     change one setting (repeatable), e.g. --set title=T-REX",
   "  --background <image>   background image (JPG or PNG)",
+  "  --image <id>=<file>    a picture for an image setting, e.g. --image cover=art.png",
   "  --start <s> --end <s>  render only this part of the song (seconds)",
   "  --quality draft|final  draft is quicker, final is full quality (default: final)",
   "  --phone                also make a 720p copy under 30 MB",
@@ -21,6 +22,8 @@ export type RenderArgs = {
   song: string;
   preset?: string;
   overrides: Record<string, string>;
+  /** image setting id → picture file */
+  images: Record<string, string>;
   background?: string;
   start?: number;
   end?: number;
@@ -37,6 +40,7 @@ export function parseRenderArgs(argv: string[]): RenderArgs {
   const positional: string[] = [];
   const args: Omit<RenderArgs, "templateId" | "song"> = {
     overrides: {},
+    images: {},
     quality: "final",
     phone: false,
     preview: false,
@@ -73,6 +77,11 @@ export function parseRenderArgs(argv: string[]): RenderArgs {
       const eq = pair.indexOf("=");
       if (eq <= 0) fail(`--set needs id=value, not "${pair}"`);
       args.overrides[pair.slice(0, eq)] = pair.slice(eq + 1);
+    } else if (arg === "--image") {
+      const pair = next();
+      const eq = pair.indexOf("=");
+      if (eq <= 0 || eq === pair.length - 1) fail(`--image needs id=file, not "${pair}"`);
+      args.images[pair.slice(0, eq)] = pair.slice(eq + 1);
     } else if (arg.startsWith("--")) fail(`Unknown option ${arg}`);
     else positional.push(arg);
   }

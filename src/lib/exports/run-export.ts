@@ -148,6 +148,7 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
     backgroundPath: request.backgroundId
       ? path.join(storage, "backgrounds", `${request.backgroundId}.jpg`)
       : undefined,
+    storageRoot: storage,
     run: o.run,
   });
   o.onUpdate({ stage: "preparing", percent: overallPercent("preparing", 100), framesCaptured: 0 });

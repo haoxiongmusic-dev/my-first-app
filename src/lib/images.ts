@@ -10,13 +10,15 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { IMAGE_EXTENSIONS, MAX_IMAGE_BYTES, TOO_BIG_IMAGE_MESSAGE } from "@/lib/backgrounds";
 import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import type { RunCommand } from "@/lib/run-command";
 import { songIdFor } from "@/lib/songs";
 import { IMAGE_FITS, IMAGE_ID, type ImageFit } from "@/lib/template-values";
 import { saveUpload, type UploadKind } from "@/lib/uploads";
 
+export const TOO_BIG_IMAGE_MESSAGE = "Images can be up to 50 MB.";
+export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+export const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
 export const IMAGE_MISSING_MESSAGE = "This image is no longer available: please upload it again.";
 export const UNKNOWN_FIT_MESSAGE = "Unknown image fit.";
 
