@@ -24,7 +24,8 @@
     "template:assets": "tsx scripts/template-assets.ts",
     "check:templates": "tsx scripts/check-templates.ts",
     "render": "tsx scripts/render.ts",
-    "thumbs": "tsx scripts/thumbs.ts"
+    "thumbs": "tsx scripts/thumbs.ts",
+    "build:three": "tsx scripts/build-three-kit.ts"
   },
   "dependencies": {
     "next": "16.4.5",
@@ -36,12 +37,14 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
     "eslint-config-prettier": "^10.1.8",
     "hyperframes": "0.9.10",
     "prettier": "^3.9.10",
     "tailwindcss": "^4",
+    "three": "0.187.0",
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^4.1.12"
