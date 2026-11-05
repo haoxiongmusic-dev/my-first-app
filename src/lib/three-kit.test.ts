@@ -51,6 +51,12 @@ describe("three-kit bundle", () => {
     expect(head).toContain("three.js");
   });
 
+  it("draws deterministically: no browser random generator or frame loop", () => {
+    const source = readFileSync(kitPath, "utf8");
+    expect(source).not.toMatch(/Math\.random|requestAnimationFrame|cancelAnimationFrame/);
+    expect(source).toContain("__threeKitRandom");
+  });
+
   it("can make 8-bit render targets", () => {
     const { THREE } = kit;
     const target = new THREE.WebGLRenderTarget(4, 4, { type: THREE.UnsignedByteType });

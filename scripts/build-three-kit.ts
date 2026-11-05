@@ -4,7 +4,44 @@
 // it into every template that references assets/three-kit.js).
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { build } from "esbuild";
+import { build, type Plugin } from "esbuild";
+
+/**
+ * Templates must draw the same picture on every render, and `hyperframes check` rejects
+ * scripts that call the browser's random generator or frame loop. three.js uses the random
+ * generator only for object ids and some helpers, and its frame loop only for
+ * `renderer.setAnimationLoop`, which templates never use. So inside three.js's own files:
+ * - the random generator becomes a seeded one (`__threeKitRandom`, defined in the banner);
+ * - the frame-loop functions are renamed to names that don't exist, so the loop is off.
+ */
+const deterministicThree: Plugin = {
+  name: "deterministic-three",
+  setup(b) {
+    b.onLoad({ filter: /[\\/]node_modules[\\/]three[\\/].*\.js$/ }, async (args) => {
+      const source = await readFile(args.path, "utf8");
+      return {
+        contents: source
+          .replaceAll("Math.random()", "__threeKitRandom()")
+          .replaceAll("requestAnimationFrame", "frameLoopDisabled")
+          .replaceAll("cancelAnimationFrame", "frameLoopCancelDisabled"),
+        loader: "js",
+      };
+    });
+  },
+};
+
+// A seeded generator (mulberry32, the same as the template toolkit's), seed 1.
+const SEEDED_RANDOM = [
+  "var __threeKitRandom = (function () {",
+  "  var a = 1;",
+  "  return function () {",
+  "    a |= 0; a = (a + 0x6d2b79f5) | 0;",
+  "    var t = Math.imul(a ^ (a >>> 15), 1 | a);",
+  "    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;",
+  "    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;",
+  "  };",
+  "})();",
+].join("\n");
 
 async function main(): Promise<void> {
   const root = process.cwd();
@@ -24,6 +61,7 @@ async function main(): Promise<void> {
     target: "es2020",
     platform: "browser",
     legalComments: "none",
+    plugins: [deterministicThree],
     banner: {
       js: [
         `/* three-kit: three.js ${threePackage.version} (https://threejs.org) plus add-ons,`,
@@ -31,6 +69,7 @@ async function main(): Promise<void> {
         "",
         licence.trim(),
         "*/",
+        SEEDED_RANDOM,
       ].join("\n"),
     },
     footer: {

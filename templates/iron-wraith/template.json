@@ -1,0 +1,42 @@
+{
+  "name": "Iron Wraith",
+  "description": "A chrome voxel robot skull that bites on the beat, with spectrum towers and mirrored waves.",
+  "groups": [
+    {
+      "name": "Text",
+      "fields": ["title", "artist", "font"]
+    },
+    {
+      "name": "Colors",
+      "fields": ["eyeColor", "lightColor", "waveColor"]
+    },
+    {
+      "name": "Effects",
+      "fields": ["intensity", "jawStrength", "glow", "showTowers"]
+    },
+    {
+      "name": "Audio",
+      "fields": ["beatRange"]
+    },
+    {
+      "name": "Waveform A",
+      "fields": ["waveALow", "waveAHigh", "waveABoost", "waveABands", "waveAThickness"]
+    },
+    {
+      "name": "Waveform B",
+      "fields": ["waveBLow", "waveBHigh", "waveBBoost", "waveBBands", "waveBThickness"]
+    }
+  ],
+  "basic": ["eyeColor", "intensity", "jawStrength", "glow", "font", "showTowers"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "values": {
+        "eyeColor": "#3fd0ff",
+        "lightColor": "#1f5fff",
+        "waveColor": "#5fb4ff"
+      }
+    }
+  ]
+}
