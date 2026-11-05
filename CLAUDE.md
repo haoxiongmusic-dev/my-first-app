@@ -21,9 +21,12 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M3 Particle Horizon (Sunlight style) (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`):
       the first and only template until it's a success; owner approved the look (orbs removed)
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
-- [ ] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): built; awaiting the owner's
-      full-song export in their own Chrome. **The first complete app.**
-- [ ] M6 more templates (one at a time, spec §14) · M7 polish
+- [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
+      export confirmed. **The first complete app.**
+- [ ] M6 five more templates, one at a time: Iron Wraith (voxel robot skull, three.js; spec:
+      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`), then Scene Visualizer,
+      radial ring, Gridwave Reactor, glass crystal · M7 polish
+- Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
