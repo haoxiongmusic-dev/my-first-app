@@ -23,10 +23,13 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
 - [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
       export confirmed. **The first complete app.**
-- [ ] M6 five more templates, one at a time: Iron Wraith (voxel robot skull, three.js; spec:
-      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`, plan:
-      `docs/superpowers/plans/2026-11-05-m6-iron-wraith.md`), then Scene Visualizer,
-      radial ring, Gridwave Reactor, glass crystal · M7 polish
+- [ ] M6 five more templates, one at a time:
+  - [x] Iron Wraith (voxel robot skull, three.js; spec
+        `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`): merged (PR #7)
+  - [x] Nova Streak (Soundwave-style, plus the general `image` setting; spec
+        `docs/superpowers/specs/2026-11-06-m6-nova-streak-design.md`, plan
+        `docs/superpowers/plans/2026-11-06-m6-nova-streak.md`)
+  - [ ] radial ring, Gridwave Reactor, glass crystal · then M7 polish
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
@@ -65,6 +68,14 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   target (three.js defaults to half-float: blank on this PC). 8-bit bloom only catches
   near-white, so give coloured glows their own additive sprites. Build the renderer once and
   update materials on settings changes (don't recreate it: WebGL contexts pile up in preview).
+- **Image settings** (cover art, logos): declare `{"type":"image","fit":"square","default":""}`.
+  The editor shows an upload card on the Content tab; uploads are converted once
+  (`storage/images/<id>-square.jpg`, 1024×1024, centre-cropped). The template receives a
+  picture location or `""`, never the id (`assets/images/<settingId>.jpg` in an export,
+  `/api/images/<id>/square.jpg` in the preview). Set the `<img>` `src` at startup and redraw
+  on its `load` event (frame 0 is drawn before the picture arrives); a failed load must just
+  leave the picture out. A section's analysis carries `sectionStart` (toolkit
+  `audio.songStart`), so effects seeded by song time match the full render.
 - Template `assets/song.wav` and `assets/audio-data.js` are the generated sample song
   (`npm run template:assets`, git-ignored). Real songs go through a job folder, never into
   `templates/`.
@@ -92,6 +103,8 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - Iron Wraith (three.js) renders a little faster than Particle Horizon: a 30 s Final section
   took 5 min 8 s in total (frame capture 2 min 15 s ≈ 4.5×; setup and audio ≈ 1.5 min fixed)
   versus 6 min 11 s for Particle Horizon's.
+- Nova Streak is the quickest so far: a 30 s Final section of T-REX took 5 min 27 s with a cover
+  (frame capture 1 min 35 s ≈ 3.2×) and 4 min 33 s without.
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
   `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 
@@ -104,24 +117,24 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 
 ## Commands
 
-| Command                               | What it does                                                                                                                                                           |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`                         | Start the app at http://localhost:3000 (reloads as you edit)                                                                                                           |
-| `npm run build`                       | Make a production build; catches type and build errors                                                                                                                 |
-| `npm run check`                       | **Run before every commit**: lint, formatting, type check, all tests                                                                                                   |
-| `npm test`                            | TypeScript tests (Vitest), `src/**/*.test.ts`                                                                                                                          |
-| `npm run test:py`                     | Python analyzer tests (pytest), `analyzer/tests/`                                                                                                                      |
-| `npm run lint`                        | ESLint: catches likely mistakes                                                                                                                                        |
-| `npm run format`                      | Prettier: tidy all code formatting                                                                                                                                     |
-| `npm run doctor`                      | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10                                                                                          |
-| `npm run setup:py`                    | Create/update the analyzer's Python environment (`analyzer/.venv`)                                                                                                     |
-| `npm run analyze -- <song>`           | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work)                                                                                        |
-| `npm run render -- <template> <song>` | Render a template with a real song into `test-renders/` (`--preset`, `--set id=value`, `--start/--end`, `--phone`, `--preview`; run with no arguments for all options) |
-| `npm run check:templates`             | Check every template: settings rules, `hyperframes check`, reacts to the music                                                                                         |
-| `npm run sync:toolkit`                | Copy `templates/shared/viz-toolkit.js` into every template (and `three-kit.js` where used)                                                                             |
-| `npm run template:assets`             | Put the generated sample song into every template's `assets/`                                                                                                          |
-| `npm run thumbs -- <template>`        | Make the preset thumbnails (`--song <file> --at <s>` for a real track)                                                                                                 |
-| `npm run build:three`                 | Rebuild `templates/shared/three-kit.js` (three.js + add-ons) after changing three.js or `scripts/three-kit-entry.js`                                                   |
+| Command                               | What it does                                                                                                                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                         | Start the app at http://localhost:3000 (reloads as you edit)                                                                                                                              |
+| `npm run build`                       | Make a production build; catches type and build errors                                                                                                                                    |
+| `npm run check`                       | **Run before every commit**: lint, formatting, type check, all tests                                                                                                                      |
+| `npm test`                            | TypeScript tests (Vitest), `src/**/*.test.ts`                                                                                                                                             |
+| `npm run test:py`                     | Python analyzer tests (pytest), `analyzer/tests/`                                                                                                                                         |
+| `npm run lint`                        | ESLint: catches likely mistakes                                                                                                                                                           |
+| `npm run format`                      | Prettier: tidy all code formatting                                                                                                                                                        |
+| `npm run doctor`                      | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10                                                                                                             |
+| `npm run setup:py`                    | Create/update the analyzer's Python environment (`analyzer/.venv`)                                                                                                                        |
+| `npm run analyze -- <song>`           | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work)                                                                                                           |
+| `npm run render -- <template> <song>` | Render a template with a real song into `test-renders/` (`--preset`, `--set id=value`, `--image id=file`, `--start/--end`, `--phone`, `--preview`; run with no arguments for all options) |
+| `npm run check:templates`             | Check every template: settings rules, `hyperframes check`, reacts to the music                                                                                                            |
+| `npm run sync:toolkit`                | Copy `templates/shared/viz-toolkit.js` into every template (and `three-kit.js` where used)                                                                                                |
+| `npm run template:assets`             | Put the generated sample song into every template's `assets/`                                                                                                                             |
+| `npm run thumbs -- <template>`        | Make the preset thumbnails (`--song <file> --at <s>` for a real track)                                                                                                                    |
+| `npm run build:three`                 | Rebuild `templates/shared/three-kit.js` (three.js + add-ons) after changing three.js or `scripts/three-kit-entry.js`                                                                      |
 
 Notes: dev scripts in `scripts/` run with `tsx` and compile as CommonJS, so no top-level
 `await` (wrap in `main()`). Shared helpers live in `src/lib/` so the app can reuse them.

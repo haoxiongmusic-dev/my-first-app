@@ -279,6 +279,9 @@
       fps: fps,
       duration: data.duration,
       offset: offset,
+      // A section's time 0 is this far into the whole song, so effects seeded by song time
+      // (a beat's exact moment) look the same in a section as in the full render.
+      songStart: data.sectionStart || 0,
       sample: sample,
       spectrum: spectrum,
       recentHits: recentHits,

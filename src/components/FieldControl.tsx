@@ -162,11 +162,14 @@ function Control({ variable, value, onChange, id }: Props & { id: string }) {
           )}
         </div>
       );
+    case "image":
+      return null; // pictures are uploaded on the Content tab (ImageCard), not typed here
   }
 }
 
 export function FieldControl(props: Props) {
   const id = useId();
+  if (props.variable.type === "image") return null;
   const isDefault = props.value === props.variable.default;
   return (
     <div className="space-y-1.5">

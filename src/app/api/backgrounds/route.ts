@@ -2,23 +2,11 @@
 // converted once to a 1920×1080 JPEG and kept by fingerprint; the reply gives its id.
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import {
-  IMAGE_EXTENSIONS,
-  MAX_IMAGE_BYTES,
-  saveBackground,
-  TOO_BIG_IMAGE_MESSAGE,
-} from "@/lib/backgrounds";
+import { MAX_IMAGE_BYTES, saveBackground, TOO_BIG_IMAGE_MESSAGE } from "@/lib/backgrounds";
+import { IMAGE_UPLOAD, ImageTooBig } from "@/lib/images";
 import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import { runCommand } from "@/lib/run-command";
-import { saveUpload, type UploadKind } from "@/lib/uploads";
-
-class TooBig extends Error {}
-
-const IMAGE_UPLOAD: UploadKind = {
-  extensions: IMAGE_EXTENSIONS,
-  unreadable: () => new JobError(UNREADABLE_IMAGE_MESSAGE),
-  tooBig: () => new TooBig(TOO_BIG_IMAGE_MESSAGE),
-};
+import { saveUpload } from "@/lib/uploads";
 
 export async function PUT(request: Request): Promise<Response> {
   if (!request.body) return Response.json({ error: UNREADABLE_IMAGE_MESSAGE }, { status: 422 });
@@ -43,7 +31,8 @@ export async function PUT(request: Request): Promise<Response> {
     );
     return Response.json({ backgroundId: await saveBackground(upload, storageRoot, runCommand) });
   } catch (error) {
-    if (error instanceof TooBig) return Response.json({ error: error.message }, { status: 413 });
+    if (error instanceof ImageTooBig)
+      return Response.json({ error: error.message }, { status: 413 });
     if (error instanceof JobError) return Response.json({ error: error.message }, { status: 422 });
     console.error("Background upload failed:", error);
     const detail = error instanceof Error ? error.message : String(error);

@@ -9,6 +9,8 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   defaultValues,
+  IMAGE_FITS,
+  type ImageFit,
   type Template,
   TemplateError,
   type TemplateManifest,
@@ -21,7 +23,7 @@ import {
 export * from "@/lib/template-values";
 
 const REQUIRED_IDS = ["title", "artist", "intensity"];
-const TYPES = ["string", "number", "color", "boolean", "enum"];
+const TYPES = ["string", "number", "color", "boolean", "enum", "image"];
 
 function decodeEntities(text: string): string {
   return text
@@ -56,6 +58,12 @@ function checkDeclaration(raw: unknown, index: number): TemplateVariable {
           typeof (o as { label?: unknown }).label === "string",
       );
     if (!ok) throw fail("an enum needs options: [{value, label}, ...]");
+  }
+  if (v.type === "image") {
+    if (!IMAGE_FITS.includes(v.fit as ImageFit)) {
+      throw fail(`unknown image fit "${String(v.fit)}" (use ${IMAGE_FITS.join(", ")})`);
+    }
+    if (v.default !== "") throw fail(`an image's default must be ""`);
   }
   const variable = v as TemplateVariable;
   const problem = validateValue(variable, v.default);

@@ -2,6 +2,7 @@
  * Small pieces of editor logic, kept out of the React components so they can be tested on
  * their own. Safe to use in the browser.
  */
+import { imagePreviewUrl, type TemplateValues, type TemplateVariable } from "@/lib/template-values";
 
 /** The preview page for a template with a song (or the generated sample song) and background. */
 export function previewSrc(
@@ -11,6 +12,23 @@ export function previewSrc(
 ): string {
   const media = (songId ?? "sample") + (backgroundId ? `~${backgroundId}` : "");
   return `/preview/${templateId}/${media}/index.html`;
+}
+
+/**
+ * The settings as the live preview needs them: each image id becomes the address the preview
+ * loads the picture from ("" stays "": no picture). Templates never see image ids.
+ */
+export function previewValues(
+  variables: TemplateVariable[],
+  values: TemplateValues,
+): TemplateValues {
+  const out = { ...values };
+  for (const v of variables) {
+    if (v.type === "image" && typeof out[v.id] === "string") {
+      out[v.id] = imagePreviewUrl(out[v.id] as string, v.fit);
+    }
+  }
+  return out;
 }
 
 /**

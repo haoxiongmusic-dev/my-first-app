@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { IMAGE_MISSING_MESSAGE } from "@/lib/images";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createExportManager, ExportBusy, ExportInvalid } from "@/lib/exports/manager";
 import type { Spawner } from "@/lib/exports/processes";
@@ -23,6 +24,7 @@ beforeEach(async () => {
     { id: "title", type: "string", label: "Title", default: "SUNLIGHT" },
     { id: "artist", type: "string", label: "Artist", default: "AXIOM" },
     { id: "intensity", type: "number", label: "Intensity", default: 1, min: 0.2, max: 2 },
+    { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" },
   ];
   await writeFile(
     path.join(demo, "index.html"),
@@ -224,6 +226,15 @@ describe("export manager", () => {
     expect((await m.get(started.exportId))?.remainingSeconds).toBe(13500);
   });
 
+  it("rejects an export whose image file is gone", async () => {
+    const m = manager(controllableRun());
+    const start = m.start(request({ values: { cover: "b".repeat(64) } }));
+    await expect(start).rejects.toBeInstanceOf(ExportInvalid);
+    await expect(m.start(request({ values: { cover: "b".repeat(64) } }))).rejects.toThrow(
+      IMAGE_MISSING_MESSAGE,
+    );
+  });
+
   it("a failed run waits briefly before recording the failure", async () => {
     // If the app is shutting down, the render dies first; waiting lets the shutdown win, so
     // the export is reported as interrupted by the restart instead of as a broken render.
@@ -235,8 +246,12 @@ describe("export manager", () => {
     await settle();
     const file = path.join(root, "storage", "exports", `${started.exportId}.json`);
     expect(JSON.parse(await readFile(file, "utf8")).state).toBe("running");
-    await new Promise((r) => setTimeout(r, 100));
-    expect(JSON.parse(await readFile(file, "utf8")).state).toBe("failed");
+    // Then it is recorded (polled, so a busy machine running the whole suite can't fail this).
+    const state = async () => JSON.parse(await readFile(file, "utf8")).state as string;
+    for (let waited = 0; (await state()) !== "failed" && waited < 2000; waited += 20) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(await state()).toBe("failed");
   });
 
   it("latest shows an export interrupted by a restart", async () => {

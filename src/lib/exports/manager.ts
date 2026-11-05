@@ -20,6 +20,7 @@ import {
 } from "@/lib/exports/run-export";
 import { runCommand, type RunCommand } from "@/lib/run-command";
 import { songInfo } from "@/lib/songs";
+import { IMAGE_MISSING_MESSAGE, imagePath } from "@/lib/images";
 import { loadTemplate, validateValues } from "@/lib/templates";
 
 export type ExportState = "running" | "done" | "failed" | "cancelled";
@@ -151,6 +152,13 @@ export function createExportManager(o: ExportManagerOptions) {
     const template = await loadTemplate(templateDir);
     const problems = validateValues(template.variables, request.values ?? {});
     if (problems.length > 0) throw new ExportInvalid(`Invalid settings: ${problems.join("; ")}`);
+    for (const v of template.variables) {
+      const id = request.values?.[v.id];
+      if (v.type !== "image" || typeof id !== "string" || id === "") continue;
+      if (!existsSync(imagePath(storage, id, v.fit))) {
+        throw new ExportInvalid(IMAGE_MISSING_MESSAGE);
+      }
+    }
     if (request.quality !== "draft" && request.quality !== "final") {
       throw new ExportInvalid("Quality must be draft or final.");
     }

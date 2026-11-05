@@ -6,8 +6,10 @@ import {
   loadPreferences,
   PREVIEW_RESOLUTIONS,
   previewSrc,
+  previewValues,
   songRequestGate,
 } from "@/lib/editor-state";
+import type { TemplateVariable } from "@/lib/template-values";
 
 describe("editor state", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -84,5 +86,21 @@ describe("preferences", () => {
       ["540p", 0.5],
       ["720p", 2 / 3],
     ]);
+  });
+});
+
+describe("previewValues", () => {
+  const ID = "f".repeat(64);
+  const vars: TemplateVariable[] = [
+    { id: "title", type: "string", label: "Title", default: "" },
+    { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" },
+  ];
+
+  it("turns image ids into preview picture locations and leaves the rest alone", () => {
+    expect(previewValues(vars, { title: "T", cover: ID })).toEqual({
+      title: "T",
+      cover: `/api/images/${ID}/square.jpg`,
+    });
+    expect(previewValues(vars, { title: "T", cover: "" })).toEqual({ title: "T", cover: "" });
   });
 });
