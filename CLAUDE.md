@@ -18,7 +18,10 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] Catalog of 23 Videobolt visualizers to build later: `docs/research/2026-11-04-visualizer-catalog.md`
 - [x] M1 project skeleton (plan: `docs/superpowers/plans/2026-11-04-m1-project-skeleton.md`)
 - [x] M2 analyzer (plan: `docs/superpowers/plans/2026-11-04-m2-analyzer.md`): `npm run analyze`
-- [ ] M3 **Particle Horizon (Sunlight style), the first and only template until it's a success** · M4 editor + preview · M5 export · M6 more templates (one at a time, spec §14) · M7 polish
+- [ ] M3 **Particle Horizon (Sunlight style), the first and only template until it's a success**
+      (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`): built; awaiting the
+      owner's look check on real tracks (`npm run render`)
+- [ ] M4 editor + preview · M5 export · M6 more templates (one at a time, spec §14) · M7 polish
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
@@ -45,7 +48,15 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   PC's Intel UHD 620 (ANGLE/D3D11). Always check shader compile _and_ link status.
 - Keep grain subtle and slow (≤ 0.02, ≤ 6 updates/s); per-frame noise makes files huge.
 - Elements that span the song carry `data-song-length`; the job builder sets their duration.
-- Every template must pass `npx hyperframes check`.
+- Every template must pass `npx hyperframes check`. Run `npm run check:templates` before
+  committing any template change (settings rules, HyperFrames check, quiet vs loud reaction).
+- The toolkit lives in `templates/shared/viz-toolkit.js`: edit it there, then
+  `npm run sync:toolkit` (each template keeps an identical copy in `assets/`).
+- Template `assets/song.wav` and `assets/audio-data.js` are the generated sample song
+  (`npm run template:assets`, git-ignored). Real songs go through a job folder, never into
+  `templates/`.
+- Don't use HyperFrames' `render --start/--end`: it switches to slow software rendering.
+  Sections are cut by the job builder (`prepareJob({ section })`).
 
 ## Machine facts
 
@@ -64,18 +75,23 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 
 ## Commands
 
-| Command                     | What it does                                                                    |
-| --------------------------- | ------------------------------------------------------------------------------- |
-| `npm run dev`               | Start the app at http://localhost:3000 (reloads as you edit)                    |
-| `npm run build`             | Make a production build; catches type and build errors                          |
-| `npm run check`             | **Run before every commit**: lint, formatting, type check, all tests            |
-| `npm test`                  | TypeScript tests (Vitest), `src/**/*.test.ts`                                   |
-| `npm run test:py`           | Python analyzer tests (pytest), `analyzer/tests/`                               |
-| `npm run lint`              | ESLint: catches likely mistakes                                                 |
-| `npm run format`            | Prettier: tidy all code formatting                                              |
-| `npm run doctor`            | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10   |
-| `npm run setup:py`          | Create/update the analyzer's Python environment (`analyzer/.venv`)              |
-| `npm run analyze -- <song>` | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work) |
+| Command                               | What it does                                                                                                                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                         | Start the app at http://localhost:3000 (reloads as you edit)                                                                                                           |
+| `npm run build`                       | Make a production build; catches type and build errors                                                                                                                 |
+| `npm run check`                       | **Run before every commit**: lint, formatting, type check, all tests                                                                                                   |
+| `npm test`                            | TypeScript tests (Vitest), `src/**/*.test.ts`                                                                                                                          |
+| `npm run test:py`                     | Python analyzer tests (pytest), `analyzer/tests/`                                                                                                                      |
+| `npm run lint`                        | ESLint: catches likely mistakes                                                                                                                                        |
+| `npm run format`                      | Prettier: tidy all code formatting                                                                                                                                     |
+| `npm run doctor`                      | Check this PC has Node, FFmpeg, ffprobe, Python, NumPy and HyperFrames 0.9.10                                                                                          |
+| `npm run setup:py`                    | Create/update the analyzer's Python environment (`analyzer/.venv`)                                                                                                     |
+| `npm run analyze -- <song>`           | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work)                                                                                        |
+| `npm run render -- <template> <song>` | Render a template with a real song into `test-renders/` (`--preset`, `--set id=value`, `--start/--end`, `--phone`, `--preview`; run with no arguments for all options) |
+| `npm run check:templates`             | Check every template: settings rules, `hyperframes check`, reacts to the music                                                                                         |
+| `npm run sync:toolkit`                | Copy `templates/shared/viz-toolkit.js` into every template                                                                                                             |
+| `npm run template:assets`             | Put the generated sample song into every template's `assets/`                                                                                                          |
+| `npm run thumbs -- <template>`        | Make the preset thumbnails (`--song <file> --at <s>` for a real track)                                                                                                 |
 
 Notes: dev scripts in `scripts/` run with `tsx` and compile as CommonJS, so no top-level
 `await` (wrap in `main()`). Shared helpers live in `src/lib/` so the app can reuse them.

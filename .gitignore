@@ -69,3 +69,8 @@ storage/
 
 # Claude Code local settings (may hold personal paths or tokens)
 .claude/settings.local.json
+
+# Template dev data made from a song (npm run template:assets): never commit
+templates/*/assets/audio-data.js
+# HyperFrames' local check/preview history (paths on this PC)
+templates/**/.hyperframes/
