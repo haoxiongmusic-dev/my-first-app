@@ -4,6 +4,7 @@ import {
   advancedSections,
   basicFields,
   contentFields,
+  imageFields,
   mergeValues,
   parseFieldInput,
 } from "@/lib/form-model";
@@ -74,5 +75,39 @@ describe("form model", () => {
     expect(merged.intensity).toBe(1.5);
     expect(merged.mainColor).toBe(defaultValues(ph.variables).mainColor);
     expect("gone" in merged).toBe(false);
+  });
+});
+
+describe("image settings in the form", () => {
+  const vars: TemplateVariable[] = [
+    { id: "title", type: "string", label: "Title", default: "T" },
+    { id: "artist", type: "string", label: "Artist", default: "A" },
+    { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" },
+    { id: "mainColor", type: "color", label: "Main color", default: "#ff2fb3" },
+  ];
+  const t = {
+    variables: vars,
+    manifest: {
+      name: "N",
+      description: "",
+      groups: [
+        { name: "Text", fields: ["title", "artist"] },
+        { name: "Images", fields: ["cover"] },
+        { name: "Colors", fields: ["mainColor"] },
+      ],
+      basic: ["mainColor", "cover"],
+      content: ["title", "artist", "cover"],
+      presets: [],
+    },
+  };
+
+  it("imageFields lists image settings in declaration order", () => {
+    expect(imageFields(t).map((v) => v.id)).toEqual(["cover"]);
+  });
+
+  it("images are left out of the typed fields and of Customize", () => {
+    expect(ids(contentFields(t))).toEqual(["title", "artist"]);
+    expect(ids(basicFields(t))).toEqual(["mainColor"]);
+    expect(advancedSections(t).map((s) => s.title)).toEqual(["Text", "Colors"]);
   });
 });

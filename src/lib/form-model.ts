@@ -5,6 +5,7 @@
  */
 import {
   defaultValues,
+  type ImageVariable,
   type Template,
   type TemplateValues,
   type TemplateVariable,
@@ -17,11 +18,12 @@ export type FormTemplate = Pick<Template, "manifest" | "variables">;
 export type FieldModel = { variable: TemplateVariable };
 export type FormSection = { title: string; fields: FieldModel[] };
 
+/** The typed fields for these ids. Images are left out: they have their own upload cards. */
 function fieldsFor(t: FormTemplate, ids: string[]): FieldModel[] {
   const byId = new Map(t.variables.map((v) => [v.id, v]));
   return ids.flatMap((id) => {
     const variable = byId.get(id);
-    return variable ? [{ variable }] : [];
+    return variable && variable.type !== "image" ? [{ variable }] : [];
   });
 }
 
@@ -30,14 +32,21 @@ export function contentFields(t: FormTemplate): FieldModel[] {
   return fieldsFor(t, t.manifest.content);
 }
 
+/** Image settings, in declaration order: one upload card each on the Content tab. */
+export function imageFields(t: FormTemplate): ImageVariable[] {
+  return t.variables.filter((v): v is ImageVariable => v.type === "image");
+}
+
 /** Fields on Customize → Basic (template.json "basic" order). */
 export function basicFields(t: FormTemplate): FieldModel[] {
   return fieldsFor(t, t.manifest.basic);
 }
 
-/** Customize → Advanced: every field, one section per template.json group. */
+/** Customize → Advanced: every typed field, one section per template.json group. */
 export function advancedSections(t: FormTemplate): FormSection[] {
-  return t.manifest.groups.map((g) => ({ title: g.name, fields: fieldsFor(t, g.fields) }));
+  return t.manifest.groups
+    .map((g) => ({ title: g.name, fields: fieldsFor(t, g.fields) }))
+    .filter((section) => section.fields.length > 0);
 }
 
 /**

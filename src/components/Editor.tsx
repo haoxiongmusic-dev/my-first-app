@@ -3,8 +3,8 @@
 // The editor (spec §4): top bar, icon rail, a side panel, and the live preview.
 import { useCallback, useMemo, useRef, useState } from "react";
 import { APP_NAME } from "@/lib/app-info";
-import { previewScale, previewSrc } from "@/lib/editor-state";
-import { type FormTemplate, mergeValues } from "@/lib/form-model";
+import { previewScale, previewSrc, previewValues } from "@/lib/editor-state";
+import { type FormTemplate, imageFields, mergeValues } from "@/lib/form-model";
 import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -12,6 +12,7 @@ import { PreviewPlayer } from "./PreviewPlayer";
 import type { Section } from "@/lib/section";
 import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
 import { ExportPanel } from "./ExportPanel";
+import { ImageCard } from "./ImageCard";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
 import { usePreferences } from "./usePreferences";
@@ -26,6 +27,11 @@ export function Editor({ template }: { template: EditorTemplate }) {
     (id: string, value: string | number | boolean) =>
       setValues((current) => (current[id] === value ? current : { ...current, [id]: value })),
     [],
+  );
+  // The preview gets picture addresses instead of image ids (exports still send the ids).
+  const sentToPreview = useMemo(
+    () => previewValues(template.variables, values),
+    [template.variables, values],
   );
   const [song, setSong] = useState<ChosenSong | null>(null);
   const [section, setSection] = useState<Section | null>(null);
@@ -117,6 +123,15 @@ export function Editor({ template }: { template: EditorTemplate }) {
                 onStatus={setStatus}
               />
               <ContentFields template={template} values={values} setValue={setValue} />
+              {imageFields(template).map((variable) => (
+                <ImageCard
+                  key={variable.id}
+                  variable={variable}
+                  value={String(values[variable.id] ?? "")}
+                  onChange={(id) => setValue(variable.id, id)}
+                  onStatus={setStatus}
+                />
+              ))}
               {hasBackground && (
                 <BackgroundCard
                   background={background}
@@ -138,7 +153,7 @@ export function Editor({ template }: { template: EditorTemplate }) {
           <div ref={previewArea} className="preview-area w-full max-w-5xl">
             <PreviewPlayer
               src={src}
-              values={values}
+              values={sentToPreview}
               scale={previewScale(preferences.previewResolution)}
               onError={onPreviewError}
             />
