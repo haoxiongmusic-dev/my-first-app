@@ -5,8 +5,9 @@
  */
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, statfs, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, statfs } from "node:fs/promises";
 import path from "node:path";
+import { writeFileAtomic } from "@/lib/exports/atomic-write";
 import { spawnLines, type Spawner } from "@/lib/exports/processes";
 import { estimateExportSeconds, remainingSeconds } from "@/lib/exports/progress";
 import {
@@ -113,7 +114,7 @@ export function createExportManager(o: ExportManagerOptions) {
   /**
    * Write a status file. Writes happen one after another; a failed write (e.g. a full disk)
    * doesn't stop later ones. Each is written to a temporary file and renamed into place, so a
-   * crash never leaves half a file.
+   * crash never leaves half a file (retried briefly if Windows has the file open: writeFileAtomic).
    */
   function save(status: ExportStatus): Promise<void> {
     const copy = JSON.stringify(status, null, 2);
@@ -122,8 +123,7 @@ export function createExportManager(o: ExportManagerOptions) {
       .catch(() => {})
       .then(async () => {
         await mkdir(statusDir, { recursive: true });
-        await writeFile(`${file}.tmp`, copy);
-        await rename(`${file}.tmp`, file);
+        await writeFileAtomic(file, copy);
       });
     return saving;
   }

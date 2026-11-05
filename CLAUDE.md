@@ -21,9 +21,13 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M3 Particle Horizon (Sunlight style) (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`):
       the first and only template until it's a success; owner approved the look (orbs removed)
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
-- [ ] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): built; awaiting the owner's
-      full-song export in their own Chrome. **The first complete app.**
-- [ ] M6 more templates (one at a time, spec §14) · M7 polish
+- [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
+      export confirmed. **The first complete app.**
+- [ ] M6 five more templates, one at a time: Iron Wraith (voxel robot skull, three.js; spec:
+      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`, plan:
+      `docs/superpowers/plans/2026-11-05-m6-iron-wraith.md`), then Scene Visualizer,
+      radial ring, Gridwave Reactor, glass crystal · M7 polish
+- Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
@@ -54,6 +58,13 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   committing any template change (settings rules, HyperFrames check, quiet vs loud reaction).
 - The toolkit lives in `templates/shared/viz-toolkit.js`: edit it there, then
   `npm run sync:toolkit` (each template keeps an identical copy in `assets/`).
+- **three.js templates** load `assets/three-kit.js` (`npm run build:three`, then
+  `npm run sync:toolkit`, which copies it only into templates that reference it). The bundle
+  swaps three.js's own `Math.random`/frame loop for a seeded generator so `hyperframes check`
+  passes. Force `UnsignedByteType` on the `EffectComposer` target and every `UnrealBloomPass`
+  target (three.js defaults to half-float: blank on this PC). 8-bit bloom only catches
+  near-white, so give coloured glows their own additive sprites. Build the renderer once and
+  update materials on settings changes (don't recreate it: WebGL contexts pile up in preview).
 - Template `assets/song.wav` and `assets/audio-data.js` are the generated sample song
   (`npm run template:assets`, git-ignored). Real songs go through a job folder, never into
   `templates/`.
@@ -78,8 +89,11 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - Windows 11; Node 26; Python 3.14 + NumPy; FFmpeg 8; Git. GPU used for rendering: Intel
   UHD 620 (an NVIDIA Quadro P500 is present but not used by Chrome).
 - Final-quality render ≈ 4× song length (4:12 song → 17 min). Analysis (`npm run analyze`): T-REX 4:12 in 6–9 s, a 60-min song in ≈ 2 min (≈ 1.1 GB RAM).
-- Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` (e.g. `T-REX.wav`). **Never copy music into
-  the repo**: it is public.
+- Iron Wraith (three.js) renders a little faster than Particle Horizon: a 30 s Final section
+  took 5 min 8 s in total (frame capture 2 min 15 s ≈ 4.5×; setup and audio ≈ 1.5 min fixed)
+  versus 6 min 11 s for Particle Horizon's.
+- Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
+  `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 
 ## Working practices
 
@@ -104,9 +118,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 | `npm run analyze -- <song>`           | Analyze a song into `storage/songs/<id>/` (add `--js out.js` for template work)                                                                                        |
 | `npm run render -- <template> <song>` | Render a template with a real song into `test-renders/` (`--preset`, `--set id=value`, `--start/--end`, `--phone`, `--preview`; run with no arguments for all options) |
 | `npm run check:templates`             | Check every template: settings rules, `hyperframes check`, reacts to the music                                                                                         |
-| `npm run sync:toolkit`                | Copy `templates/shared/viz-toolkit.js` into every template                                                                                                             |
+| `npm run sync:toolkit`                | Copy `templates/shared/viz-toolkit.js` into every template (and `three-kit.js` where used)                                                                             |
 | `npm run template:assets`             | Put the generated sample song into every template's `assets/`                                                                                                          |
 | `npm run thumbs -- <template>`        | Make the preset thumbnails (`--song <file> --at <s>` for a real track)                                                                                                 |
+| `npm run build:three`                 | Rebuild `templates/shared/three-kit.js` (three.js + add-ons) after changing three.js or `scripts/three-kit-entry.js`                                                   |
 
 Notes: dev scripts in `scripts/` run with `tsx` and compile as CommonJS, so no top-level
 `await` (wrap in `main()`). Shared helpers live in `src/lib/` so the app can reuse them.

@@ -1,0 +1,700 @@
+<!doctype html>
+<!--
+  Iron Wraith: a chrome voxel robot skull drawn with three.js. Its jaw bites on the beat and
+  its eyes glow; voxel towers rise with the spectrum behind it, and two mirrored waveforms run
+  along the bottom under "ARTIST – SONG".
+  Spec: docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length.
+
+  three.js comes from assets/three-kit.js (npm run build:three, then npm run sync:toolkit).
+  Every render target is 8-bit (UnsignedByteType): three.js defaults to half-float, which
+  renders blank on the owner's Intel UHD 620.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Song name","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist name","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Orbitron","options":[
+      {"value":"Orbitron","label":"Orbitron"},
+      {"value":"Audiowide","label":"Audiowide"}]},
+    {"id":"eyeColor","type":"color","label":"Eye color","default":"#3fd0ff"},
+    {"id":"lightColor","type":"color","label":"Light color","default":"#1f5fff"},
+    {"id":"waveColor","type":"color","label":"Wave color","default":"#5fb4ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"jawStrength","type":"number","label":"Jaw strength","default":60,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"glow","type":"number","label":"Glow","default":50,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"showTowers","type":"boolean","label":"Show towers","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"waveALow","type":"number","label":"Low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"waveAHigh","type":"number","label":"High","default":2000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"waveABoost","type":"enum","label":"Boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"waveABands","type":"number","label":"Bands","default":10,"min":10,"max":100,"step":1,"unit":"%"},
+    {"id":"waveAThickness","type":"number","label":"Thickness","default":7,"min":2,"max":110,"step":1,"unit":"%"},
+    {"id":"waveBLow","type":"number","label":"Low","default":60,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"waveBHigh","type":"number","label":"High","default":12000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"waveBBoost","type":"enum","label":"Boost","default":"1","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"waveBBands","type":"number","label":"Bands","default":30,"min":10,"max":100,"step":1,"unit":"%"},
+    {"id":"waveBThickness","type":"number","label":"Thickness","default":110,"min":2,"max":110,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/skull-voxels.js"></script>
+    <script src="assets/wraith-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Orbitron";
+        font-weight: 400;
+        src: url("assets/fonts/orbitron-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Orbitron";
+        font-weight: 700;
+        src: url("assets/fonts/orbitron-700.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Audiowide";
+        font-weight: 400;
+        src: url("assets/fonts/audiowide-400.woff2") format("woff2");
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz,
+      #waves {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The neck, cables and towers fade into the dark bottom band, where the waves sit. */
+      #shade {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0) 62%,
+          rgba(0, 0, 0, 0.92) 84%,
+          #000 100%
+        );
+      }
+      #titles {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 800px;
+        text-align: center;
+        font-family: "Orbitron", sans-serif;
+        font-weight: 700;
+        color: #e8f4ff;
+        opacity: 0;
+      }
+      #titleLine {
+        display: table; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        font-size: 34px;
+        letter-spacing: 0.35em;
+        padding-left: 0.35em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      .f-orbitron {
+        font-family: "Orbitron";
+        font-weight: 700;
+      }
+      .f-audiowide {
+        font-family: "Audiowide";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div id="shade"></div>
+      <canvas id="waves" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="titleLine">
+          <span id="artist" data-var-text="artist">ARTIST NAME</span><span id="dash"> – </span
+          ><span id="title" data-var-text="title">SONG NAME</span>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-orbitron">Aa</span><span class="f-audiowide">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var SKULL = window.IronWraithSkull;
+        var M = window.WraithMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        function applyPage() {
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          titles.style.fontWeight = setting("font") === "Orbitron" ? "700" : "400";
+          titles.style.textShadow = "0 0 18px " + setting("lightColor");
+        }
+        applyPage();
+
+        // Shrink the title line until it fits the 80 % title-safe width. Measured on seeks,
+        // settings and font loads only, never in the timeline callback.
+        var TITLE_SAFE = 1536;
+        var TITLE_SIZE = 34;
+        var fitted = "";
+        function fitTitles() {
+          var line = document.getElementById("titleLine");
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [line.textContent, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var size = TITLE_SIZE;
+          line.style.fontSize = size + "px";
+          while (line.offsetWidth > TITLE_SAFE && size > 12) {
+            size = Math.floor(size * 0.95);
+            line.style.fontSize = size + "px";
+          }
+        }
+        fitTitles();
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+
+        // ---------- scene constants (from the approved 2026-11-05 sketch) ----------
+        var REFLECTION = 0.22; // strength of the reflected room on the chrome
+        var REFLECTION_TILT = -1.4; // tilts the room's ceiling lights behind the skull
+        var VOXEL = 0.92; // cube size; the gaps read as voxel seams
+        var TOWERS_PER_SIDE = 12;
+        var TOWER_BLOCKS = 18;
+        var TOWER_STEP = 10.5;
+        var TOWER_WIDTH = 7.5;
+        var TOWER_BLOCK = 3.6;
+        var TOWER_RISE = 4.2;
+        var TOWER_BASE = -70;
+        var TOWER_DEPTH = -150;
+        var WAVE_BASELINE = 985; // px; the waves rise to about 83 % of the height, reflections reach 95 %
+        var EYES = [
+          [7.5, -0.5, 9],
+          [-7.5, -0.5, 9],
+        ];
+
+        /** A setting's colour (sRGB hex, as picked) in three.js's linear working space. */
+        function color(hex) {
+          var rgb = V.hexToRGB(hex);
+          return new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
+        }
+
+        /** A soft round glow texture (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 128;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.25, "rgba(255,255,255,0.55)");
+          grad.addColorStop(0.6, "rgba(255,255,255,0.12)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 128, 128);
+          var tex = new THREE.CanvasTexture(c);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          return tex;
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials and
+         * audio (apply), and a new preview size only resizes (resize), so the live preview never
+         * piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+
+          var scene = new THREE.Scene();
+          scene.background = new THREE.Color(0x000000);
+          var pmrem = keep(new THREE.PMREMGenerator(renderer));
+          scene.environment = keep(pmrem.fromScene(new K.RoomEnvironment(), 0.04)).texture;
+          scene.environmentIntensity = REFLECTION;
+          scene.environmentRotation.x = REFLECTION_TILT;
+
+          var camera = new THREE.PerspectiveCamera(30, 1920 / 1080, 1, 1000);
+          camera.position.set(0, 0, 165);
+          camera.lookAt(0, -6, 0);
+
+          // ----- the skull -----
+          var parts = SKULL.buildSkull();
+          var cube = keep(new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL));
+          var chrome = keep(
+            new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.2 }),
+          );
+          var rubber = keep(
+            new THREE.MeshStandardMaterial({ color: 0x14181d, metalness: 0.4, roughness: 0.45 }),
+          );
+          var rng = V.mulberry32(7);
+          function voxels(list, material, offset) {
+            var mesh = new THREE.InstancedMesh(cube, material, list.length);
+            var m = new THREE.Matrix4();
+            var c = new THREE.Color();
+            for (var i = 0; i < list.length; i++) {
+              var v = list[i];
+              m.makeTranslation(v[0] - offset[0], v[1] - offset[1], v[2] - offset[2]);
+              mesh.setMatrixAt(i, m);
+              var s = SKULL.SHADES[v[3]] * (0.86 + 0.14 * rng());
+              mesh.setColorAt(i, c.setRGB(s, s, s));
+            }
+            keep(mesh);
+            return mesh;
+          }
+          var skull = new THREE.Group();
+          scene.add(skull);
+          skull.add(voxels(parts.head, chrome, [0, 0, 0]));
+          skull.add(voxels(parts.cables, rubber, [0, 0, 0]));
+          var jaw = new THREE.Group();
+          jaw.position.set(parts.jawPivot[0], parts.jawPivot[1], parts.jawPivot[2]);
+          jaw.add(voxels(parts.jaw, chrome, parts.jawPivot));
+          skull.add(jaw);
+
+          // ----- the eyes: glowing blocks, a soft glow sprite each, and a light each -----
+          var eyeMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          var eyes = new THREE.InstancedMesh(cube, eyeMat, parts.eyes.length);
+          keep(eyes);
+          for (var e = 0; e < parts.eyes.length; e++) {
+            var ev = parts.eyes[e];
+            eyes.setMatrixAt(e, new THREE.Matrix4().makeTranslation(ev[0], ev[1], ev[2]));
+          }
+          skull.add(eyes);
+          var glowMap = keep(glowTexture());
+          var glowMat = keep(
+            new THREE.SpriteMaterial({
+              map: glowMap,
+              color: 0xffffff,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          var glows = [];
+          var eyeLights = [];
+          for (var g = 0; g < EYES.length; g++) {
+            var sprite = new THREE.Sprite(glowMat);
+            sprite.position.set(EYES[g][0], EYES[g][1], EYES[g][2] + 2);
+            skull.add(sprite);
+            glows.push(sprite);
+            var light = new THREE.PointLight(0xffffff, 100, 0, 2);
+            light.position.set(EYES[g][0], EYES[g][1], EYES[g][2] + 1);
+            skull.add(light);
+            eyeLights.push(light);
+          }
+
+          // ----- rim lights from behind -----
+          var rims = [
+            new THREE.DirectionalLight(0xffffff, 4),
+            new THREE.DirectionalLight(0xffffff, 4),
+          ];
+          rims[0].position.set(-70, 30, -60);
+          rims[1].position.set(70, 30, -60);
+          scene.add(rims[0], rims[1]);
+
+          // ----- voxel towers: bass in the middle, treble at the edges, mirrored -----
+          var towerGeo = keep(new THREE.BoxGeometry(TOWER_WIDTH, TOWER_BLOCK, TOWER_BLOCK));
+          var towerMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+          var towerMax = 2 * TOWERS_PER_SIDE * (TOWER_BLOCKS + 1);
+          var towers = new THREE.InstancedMesh(towerGeo, towerMat, towerMax);
+          keep(towers);
+          towers.frustumCulled = false; // the visible blocks change every frame
+          scene.add(towers);
+          var tm = new THREE.Matrix4();
+
+          // ----- glow; every target 8-bit (three.js defaults to half-float: blank here) -----
+          var target = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, { type: THREE.UnsignedByteType, samples: 4 }),
+          );
+          var composer = new K.EffectComposer(renderer, target);
+          keep(composer);
+          composer.setPixelRatio(1);
+          composer.addPass(new K.RenderPass(scene, camera));
+          var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.6, 0.35, 0.93);
+          [bloom.renderTargetBright]
+            .concat(bloom.renderTargetsHorizontal, bloom.renderTargetsVertical)
+            .forEach(function (rt) {
+              rt.texture.type = THREE.UnsignedByteType;
+            });
+          keep(bloom);
+          composer.addPass(bloom);
+          composer.addPass(new K.OutputPass());
+
+          // ----- the two mirrored waveforms, on a 2D canvas over the 3D picture -----
+          var wavesCanvas = document.getElementById("waves");
+          var waves = wavesCanvas.getContext("2d");
+          var scaleNow = 1;
+
+          function resize(scale) {
+            var W = Math.round(1920 * scale),
+              H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            composer.setSize(W, H);
+            bloom.setSize(Math.round(W / 2), Math.round(H / 2));
+            wavesCanvas.width = W;
+            wavesCanvas.height = H;
+            scaleNow = scale;
+          }
+          resize(PREVIEW_SCALE);
+
+          /** One waveform layer: a smooth mirrored line, its glow, and a faint reflection. */
+          function drawWave(layer, t) {
+            var s = scaleNow;
+            var values = layer.audio.spectrum(t);
+            var base = WAVE_BASELINE * s;
+            var pts = M.waveformPoints(values, 1920 * s, base, layer.amplitude * s);
+            waves.strokeStyle = layer.color;
+            waves.shadowColor = layer.color;
+            waves.shadowBlur = 12 * s;
+            waves.lineWidth = M.thicknessToPx(layer.thickness) * s;
+            waves.lineJoin = "round";
+            waves.lineCap = "round";
+            for (var pass = 0; pass < 2; pass++) {
+              // pass 0: the wave; pass 1: its reflection below the baseline, half height
+              var flip = pass === 0 ? 1 : -0.5;
+              waves.globalAlpha = pass === 0 ? 1 : 0.35;
+              var n = pts.length / 2;
+              var y = function (i) {
+                return base + (pts[2 * i + 1] - base) * flip;
+              };
+              waves.beginPath();
+              waves.moveTo(0, y(0));
+              waves.lineTo(pts[0], y(0));
+              for (var i = 1; i < n - 1; i++) {
+                var mx = (pts[2 * i] + pts[2 * i + 2]) / 2;
+                var my = (y(i) + y(i + 1)) / 2;
+                waves.quadraticCurveTo(pts[2 * i], y(i), mx, my);
+              }
+              waves.lineTo(pts[2 * (n - 1)], y(n - 1));
+              waves.lineTo(1920 * s, y(n - 1));
+              waves.stroke();
+            }
+            waves.globalAlpha = 1;
+          }
+
+          // ----- settings: colours, audio, towers, waves (no new WebGL objects) -----
+          var audio, towerAudio, eyeColor, lightColor, waveLayers;
+          function waveAudio(prefix) {
+            return V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: setting(prefix + "Low"),
+              spectrumHigh: setting(prefix + "High"),
+              spectrumBoost: Number(setting(prefix + "Boost")),
+              spectrumCount: M.bandsToCount(setting(prefix + "Bands")),
+            });
+          }
+          /** The wave colour mixed toward white by `amount` (0..1), as a CSS colour. */
+          function lighter(hex, amount) {
+            var rgb = V.hexToRGB(hex);
+            return (
+              "rgb(" +
+              rgb
+                .map(function (v) {
+                  return Math.round((v + (1 - v) * amount) * 255);
+                })
+                .join(",") +
+              ")"
+            );
+          }
+          function apply() {
+            waveLayers = [
+              {
+                audio: waveAudio("waveA"),
+                amplitude: 90,
+                thickness: setting("waveAThickness"),
+                color: lighter(setting("waveColor"), 0),
+              },
+              {
+                audio: waveAudio("waveB"),
+                amplitude: 60,
+                thickness: setting("waveBThickness"),
+                color: lighter(setting("waveColor"), 0.4),
+              },
+            ];
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            towerAudio = V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: 30,
+              spectrumHigh: 16000,
+              spectrumCount: TOWERS_PER_SIDE,
+            });
+            eyeColor = color(setting("eyeColor"));
+            lightColor = color(setting("lightColor"));
+            glowMat.color.copy(eyeColor);
+            towerMat.color.copy(lightColor).multiplyScalar(1.2);
+            towers.visible = setting("showTowers") !== false;
+            bloom.strength = 0.6 * (0.5 + setting("glow") / 100);
+          }
+          apply();
+
+          var white = new THREE.Color(1, 1, 1);
+          function render(t) {
+            var intensity = setting("intensity");
+            var env = M.jawEnvelope(audio, t);
+            jaw.rotation.x = M.jawAngle(env, setting("jawStrength"), intensity);
+            skull.rotation.x = M.nodAngle(env, intensity);
+            var level = M.eyeLevel(audio, t, setting("glow"), intensity);
+            eyeMat.color.copy(eyeColor).lerp(white, 0.35).multiplyScalar(Math.min(1, level));
+            var glowSize = 22 * (0.7 + 0.45 * level) * (0.5 + setting("glow") / 100);
+            for (var i = 0; i < glows.length; i++) {
+              glows[i].scale.set(glowSize, glowSize, 1);
+              eyeLights[i].color.copy(eyeColor);
+              eyeLights[i].intensity = 120 * level;
+            }
+            glowMat.opacity = Math.min(1, 0.25 + 0.35 * level);
+            var loud = audio.sample(t).loud;
+            // The chrome's reflections breathe with loudness, like the rim light.
+            scene.environmentIntensity = REFLECTION * (0.85 + 0.45 * loud * intensity);
+            for (var r = 0; r < rims.length; r++) {
+              rims[r].color.copy(lightColor);
+              rims[r].intensity = 3.5 + 2.5 * loud * intensity;
+            }
+            if (towers.visible) {
+              var cols = M.towerColumns(towerAudio, t, TOWER_BLOCKS);
+              var n = 0;
+              for (var c = 0; c < cols.heights.length; c++) {
+                var x = (1.5 + c) * TOWER_STEP;
+                var h = Math.min(
+                  TOWER_BLOCKS,
+                  Math.round(cols.heights[c] * Math.min(1.5, intensity)),
+                );
+                var p = Math.min(
+                  TOWER_BLOCKS,
+                  Math.round(cols.peaks[c] * Math.min(1.5, intensity)),
+                );
+                for (var side = -1; side <= 1; side += 2) {
+                  for (var j = 0; j < h; j++) {
+                    tm.makeTranslation(side * x, TOWER_BASE + j * TOWER_RISE, TOWER_DEPTH);
+                    towers.setMatrixAt(n++, tm);
+                  }
+                  if (p > h) {
+                    tm.makeTranslation(side * x, TOWER_BASE + (p - 1) * TOWER_RISE, TOWER_DEPTH);
+                    towers.setMatrixAt(n++, tm);
+                  }
+                }
+              }
+              towers.count = n;
+              towers.instanceMatrix.needsUpdate = true;
+            }
+            composer.render();
+            waves.clearRect(0, 0, wavesCanvas.width, wavesCanvas.height);
+            for (var w = 0; w < waveLayers.length; w++) drawWave(waveLayers[w], t);
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return { render: render, dispose: dispose, apply: apply, resize: resize };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale) } from setup()
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("title").textContent = setting("title");
+            document.getElementById("artist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

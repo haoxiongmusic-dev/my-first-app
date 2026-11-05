@@ -1,5 +1,5 @@
 // `npm run check:templates`: run before committing any template change. For every template:
-//   1. its toolkit copy matches templates/shared/viz-toolkit.js
+//   1. its copies of the shared scripts match templates/shared/ (viz-toolkit.js, three-kit.js)
 //   2. its settings and template.json follow the rules (spec §6)
 //   3. `hyperframes check` finds no errors
 //   4. it reacts to the music: a quiet and a loud moment of the sample song differ clearly,
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
 
   const stale = (await toolkitCopies(templatesRoot)).filter((c) => !c.upToDate);
   if (stale.length > 0) {
-    for (const c of stale) console.error(`${c.template}: toolkit copy is out of date`);
+    for (const c of stale) console.error(`${c.template}: assets/${c.file} is out of date`);
     console.error("Run: npm run sync:toolkit");
     process.exit(1);
   }

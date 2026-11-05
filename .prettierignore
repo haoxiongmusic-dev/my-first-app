@@ -7,3 +7,5 @@ docs
 package-lock.json
 .superpowers
 .pytest_cache
+templates/shared/three-kit.js
+templates/*/assets/three-kit.js
