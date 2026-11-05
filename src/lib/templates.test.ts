@@ -10,6 +10,7 @@ import {
   TemplateError,
   validateTemplate,
   validateValue,
+  imagePreviewUrl,
   type Template,
   type TemplateManifest,
   type TemplateVariable,
@@ -259,5 +260,52 @@ describe("Particle Horizon live preview", () => {
       "utf8",
     );
     expect(html).not.toMatch(/setting\("[^"]+",/);
+  });
+});
+
+describe("image settings", () => {
+  const ID = "a".repeat(64);
+  const image = { id: "cover", type: "image", label: "Cover art", default: "", fit: "square" };
+
+  it("parseVariables accepts a square image setting", () => {
+    expect(parseVariables(htmlWith([image]))).toEqual([image]);
+  });
+
+  it("an image's default must be empty", () => {
+    expect(() => parseVariables(htmlWith([{ ...image, default: ID }]))).toThrow(
+      /default must be ""/,
+    );
+  });
+
+  it("an image needs a known fit", () => {
+    expect(() => parseVariables(htmlWith([{ ...image, fit: "round" }]))).toThrow(
+      /unknown image fit "round"/,
+    );
+    expect(() => parseVariables(htmlWith([{ ...image, fit: undefined }]))).toThrow(
+      /unknown image fit/,
+    );
+  });
+
+  it("validateValue takes empty or a 64-hex id, nothing else", () => {
+    const v = parseVariables(htmlWith([image]))[0];
+    expect(validateValue(v, "")).toBeNull();
+    expect(validateValue(v, ID)).toBeNull();
+    for (const bad of [
+      ID.toUpperCase(),
+      "a".repeat(63),
+      `../${ID}`,
+      "/api/images/x/square.jpg",
+      "https://x.test/a.jpg",
+      "C:\a.jpg",
+      5,
+      null,
+    ]) {
+      expect(validateValue(v, bad)).toBe("must be an uploaded image");
+    }
+  });
+
+  it("imagePreviewUrl maps an id to the image route and empty to empty", () => {
+    expect(imagePreviewUrl(ID, "square")).toBe(`/api/images/${ID}/square.jpg`);
+    expect(imagePreviewUrl("", "square")).toBe("");
   });
 });

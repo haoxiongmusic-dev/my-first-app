@@ -71,6 +71,8 @@ export function parseFieldInput(
       return typeof raw === "string" && validateValue(v, raw) === null ? raw : null;
     case "string":
       return typeof raw === "string" ? raw.slice(0, v.maxLength ?? raw.length) : null;
+    case "image":
+      return typeof raw === "string" && validateValue(v, raw) === null ? raw : null;
   }
 }
 

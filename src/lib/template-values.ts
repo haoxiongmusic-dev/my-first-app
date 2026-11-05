@@ -5,6 +5,12 @@
 
 const COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
+/** How an uploaded picture is shaped for a template. "square": 1024×1024, cropped from the centre. */
+export type ImageFit = "square";
+export const IMAGE_FITS: readonly ImageFit[] = ["square"];
+/** An uploaded picture's id: the 64-character hex fingerprint of the file. */
+export const IMAGE_ID = /^[0-9a-f]{64}$/;
+
 type VariableBase = { id: string; label: string };
 
 export type TemplateVariable =
@@ -23,7 +29,11 @@ export type TemplateVariable =
       type: "enum";
       default: string;
       options: { value: string; label: string }[];
-    });
+    })
+  /** A picture the user uploads. Its value is an image id, or "" for none. */
+  | (VariableBase & { type: "image"; default: ""; fit: ImageFit });
+
+export type ImageVariable = Extract<TemplateVariable, { type: "image" }>;
 
 export type TemplateValues = Record<string, string | number | boolean>;
 export type TemplatePreset = { name: string; thumbnail?: string; values: TemplateValues };
@@ -75,7 +85,16 @@ export function validateValue(v: TemplateVariable, value: unknown): string | nul
       return v.options.some((o) => o.value === value)
         ? null
         : `must be one of ${v.options.map((o) => o.value).join(", ")}`;
+    case "image":
+      return value === "" || (typeof value === "string" && IMAGE_ID.test(value))
+        ? null
+        : "must be an uploaded image";
   }
+}
+
+/** Where the live preview finds an uploaded picture ("" stays "": no picture). */
+export function imagePreviewUrl(id: string, fit: ImageFit): string {
+  return id === "" ? "" : `/api/images/${id}/${fit}.jpg`;
 }
 
 /** Problems with a set of values: unknown ids and values that don't suit their variable. */
