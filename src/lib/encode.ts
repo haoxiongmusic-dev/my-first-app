@@ -37,3 +37,29 @@ export function phoneCopyArgs(input: string, output: string, seconds: number): s
     output,
   ];
 }
+
+/**
+ * The export's final encode (spec §9), with progress lines for the progress bar.
+ * Final: CRF 20, upscaled with Lanczos for 1440p (HyperFrames renders 1080p).
+ * Draft: a quick 720p check.
+ */
+export function exportEncodeArgs(
+  input: string,
+  output: string,
+  o: { quality: "draft" | "final"; resolution: "1080p" | "1440p" },
+): string[] {
+  const scale =
+    o.quality === "draft"
+      ? ["-vf", "scale=-2:720"]
+      : o.resolution === "1440p"
+        ? ["-vf", "scale=2560:1440:flags=lanczos"]
+        : [];
+  const preset = o.quality === "draft" ? "veryfast" : "medium";
+  return [
+    ...["-y", "-v", "error", "-i", input, ...scale],
+    ...["-c:v", "libx264", "-preset", preset, "-crf", "20", "-pix_fmt", "yuv420p"],
+    ...["-c:a", "aac", "-b:a", "320k", "-movflags", "+faststart"],
+    ...["-progress", "pipe:1", "-nostats"],
+    output,
+  ];
+}
