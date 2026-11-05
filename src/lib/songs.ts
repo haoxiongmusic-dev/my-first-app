@@ -9,13 +9,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
-import { isCurrentAnalysis } from "@/lib/analysis";
+import { type Analysis, isCurrentAnalysis } from "@/lib/analysis";
 import { venvPythonPath } from "@/lib/python";
 import type { RunCommand } from "@/lib/run-command";
 
 export const UNREADABLE_MESSAGE = "Couldn't read this audio file. Try WAV or MP3.";
+export const TOO_LONG_MESSAGE = "Songs can be up to 60 minutes long.";
+export const TOO_BIG_MESSAGE = "Songs can be up to 1 GB.";
 
-export type SongErrorKind = "unreadable" | "too-short" | "analyzer-failed";
+/** Album-length videos are a real use case (spec §4): up to an hour, up to 1 GB. */
+export const MAX_SONG_SECONDS = 3600;
+export const MAX_SONG_BYTES = 1024 ** 3;
+
+export type SongErrorKind = "unreadable" | "too-short" | "too-long" | "too-big" | "analyzer-failed";
 
 export class SongError extends Error {
   constructor(
@@ -44,6 +50,8 @@ export type PrepareSongOptions = {
   projectRoot: string;
   platform: NodeJS.Platform;
   run: RunCommand;
+  /** reject longer songs before converting or analyzing them */
+  maxSeconds?: number;
 };
 
 /** The song's fingerprint: lowercase hex SHA-256 of the file, read in pieces. */
@@ -80,6 +88,13 @@ function lastLine(text: string): string {
 export async function prepareSong(opts: PrepareSongOptions): Promise<PreparedSong> {
   if (!existsSync(opts.sourcePath)) {
     throw new SongError("unreadable", `Couldn't find this file: ${opts.sourcePath}`);
+  }
+
+  if (opts.maxSeconds !== undefined) {
+    const seconds = await probeDuration(opts.sourcePath, opts.run);
+    if (seconds !== null && seconds > opts.maxSeconds) {
+      throw new SongError("too-long", TOO_LONG_MESSAGE);
+    }
   }
 
   const songId = await songIdFor(opts.sourcePath);
@@ -127,4 +142,46 @@ export async function prepareSong(opts: PrepareSongOptions): Promise<PreparedSon
     throw new SongError("analyzer-failed", "Analysis failed: the analyzer wrote an unusable file");
   }
   return { ...song, duration, cached: false };
+}
+
+/** A file's length in seconds as FFprobe reads it, or null if it can't be read. */
+export async function probeDuration(filePath: string, run: RunCommand): Promise<number | null> {
+  const probe = await run("ffprobe", [
+    ...["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", filePath],
+  ]);
+  const seconds = Number(probe.stdout.trim());
+  return probe.code === 0 && Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/** The loudest moment of each of `count` equal slices of the song: a waveform to draw. */
+export function peaksFromAnalysis(analysis: Analysis, count = 400): number[] {
+  const frames = analysis.frames;
+  const slices = Math.min(count, frames.length);
+  const peaks: number[] = [];
+  for (let i = 0; i < slices; i++) {
+    const from = Math.floor((i * frames.length) / slices);
+    const to = Math.floor(((i + 1) * frames.length) / slices);
+    let peak = 0;
+    for (let j = from; j < to; j++) peak = Math.max(peak, frames[j].l);
+    peaks.push(Math.round(peak * 1000) / 1000);
+  }
+  return peaks;
+}
+
+export type SongInfo = { songId: string; duration: number; peaks: number[] };
+
+const SONG_ID = /^[0-9a-f]{64}$/;
+
+/** A cached song's length and waveform, or null if there is no such (analyzed) song. */
+export async function songInfo(storageRoot: string, songId: string): Promise<SongInfo | null> {
+  if (!SONG_ID.test(songId)) return null;
+  const dir = path.join(storageRoot, "songs", songId);
+  if (!existsSync(path.join(dir, "song.wav"))) return null;
+  try {
+    const analysis: unknown = JSON.parse(await readFile(path.join(dir, "analysis.json"), "utf8"));
+    if (!isCurrentAnalysis(analysis)) return null;
+    return { songId, duration: analysis.duration, peaks: peaksFromAnalysis(analysis) };
+  } catch {
+    return null;
+  }
 }
