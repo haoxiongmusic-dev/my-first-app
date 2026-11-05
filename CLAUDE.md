@@ -23,10 +23,12 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
 - [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
       export confirmed. **The first complete app.**
-- [ ] M6 five more templates, one at a time: Iron Wraith (voxel robot skull, three.js; spec:
-      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`, plan:
-      `docs/superpowers/plans/2026-11-05-m6-iron-wraith.md`), then Scene Visualizer,
-      radial ring, Gridwave Reactor, glass crystal · M7 polish
+- [ ] M6 five more templates, one at a time:
+  - [x] Iron Wraith (voxel robot skull, three.js; spec
+        `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`): merged (PR #7)
+  - [ ] Nova Streak (Soundwave-style, plus the general `image` setting; spec
+        `docs/superpowers/specs/2026-11-06-m6-nova-streak-design.md`)
+  - [ ] radial ring, Gridwave Reactor, glass crystal · then M7 polish
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
