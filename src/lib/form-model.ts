@@ -11,10 +11,13 @@ import {
   validateValue,
 } from "@/lib/template-values";
 
+/** What the form needs from a template (not its folder on disk, which stays on the server). */
+export type FormTemplate = Pick<Template, "manifest" | "variables">;
+
 export type FieldModel = { variable: TemplateVariable };
 export type FormSection = { title: string; fields: FieldModel[] };
 
-function fieldsFor(t: Template, ids: string[]): FieldModel[] {
+function fieldsFor(t: FormTemplate, ids: string[]): FieldModel[] {
   const byId = new Map(t.variables.map((v) => [v.id, v]));
   return ids.flatMap((id) => {
     const variable = byId.get(id);
@@ -23,17 +26,17 @@ function fieldsFor(t: Template, ids: string[]): FieldModel[] {
 }
 
 /** Fields on the Content tab (text, in template.json "content" order). */
-export function contentFields(t: Template): FieldModel[] {
+export function contentFields(t: FormTemplate): FieldModel[] {
   return fieldsFor(t, t.manifest.content);
 }
 
 /** Fields on Customize → Basic (template.json "basic" order). */
-export function basicFields(t: Template): FieldModel[] {
+export function basicFields(t: FormTemplate): FieldModel[] {
   return fieldsFor(t, t.manifest.basic);
 }
 
 /** Customize → Advanced: every field, one section per template.json group. */
-export function advancedSections(t: Template): FormSection[] {
+export function advancedSections(t: FormTemplate): FormSection[] {
   return t.manifest.groups.map((g) => ({ title: g.name, fields: fieldsFor(t, g.fields) }));
 }
 
@@ -66,7 +69,7 @@ export function parseFieldInput(
 }
 
 /** Defaults, with any valid saved values on top; unknown or invalid saved values are dropped. */
-export function mergeValues(t: Template, saved: Record<string, unknown>): TemplateValues {
+export function mergeValues(t: FormTemplate, saved: Record<string, unknown>): TemplateValues {
   const values = defaultValues(t.variables);
   for (const v of t.variables) {
     if (v.id in saved && validateValue(v, saved[v.id]) === null) {
