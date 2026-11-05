@@ -72,6 +72,13 @@ describe("Nova Streak template", () => {
     ]);
   });
 
+  it("every preset has its thumbnail", async () => {
+    const t = await loadTemplate(dir);
+    for (const p of t.manifest.presets) {
+      await expect(readFile(path.join(dir, p.thumbnail!)), p.name).resolves.toBeTruthy();
+    }
+  });
+
   it("follows the template rules: seeded, no timers, 8-bit targets only", async () => {
     const html = await readFile(path.join(dir, "index.html"), "utf8");
     expect(html).toContain('src="assets/streak-motion.js"');
