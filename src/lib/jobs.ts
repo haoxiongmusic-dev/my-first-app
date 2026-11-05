@@ -84,7 +84,7 @@ export function sliceAnalysis(
   start: number,
   end: number,
   preroll: number = SECTION_PREROLL,
-): Analysis & { offset: number } {
+): Analysis & { offset: number; sectionStart: number } {
   const fps = analysis.fps;
   const first = Math.max(0, Math.round((start - preroll) * fps));
   const last = Math.min(analysis.frames.length - 1, Math.round(end * fps));
@@ -94,6 +94,7 @@ export function sliceAnalysis(
     ...analysis,
     duration: round(end - start),
     offset: round(start - from),
+    sectionStart: round(start),
     frames: analysis.frames.slice(first, last + 1),
     hits: analysis.hits
       .filter(([t]) => t >= from && t <= end)

@@ -235,6 +235,11 @@ describe("sliceAnalysis", () => {
     ]);
   });
 
+  it("records where the section starts in the whole song", () => {
+    expect(sliceAnalysis(full, 7, 9).sectionStart).toBe(7);
+    expect(sliceAnalysis(full, 2.5, 5).sectionStart).toBe(2.5);
+  });
+
   it("uses less pre-roll near the start of the song", () => {
     const part = sliceAnalysis(full, 2, 5);
     expect(part.offset).toBeCloseTo(2, 6);

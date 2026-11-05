@@ -9,6 +9,8 @@ export type ToolkitAnalysis = {
   hits: [number, number][];
   /** seconds of analysis kept before a section's start (0 for a whole song) */
   offset?: number;
+  /** for a section: where it starts in the whole song, seconds (0 for a whole song) */
+  sectionStart?: number;
   /** for a section: each Hz beat range's scale over the whole song (see beatScales) */
   beatScales?: Record<string, number>;
 };
@@ -36,6 +38,8 @@ export type ToolkitAudio = {
   fps: number;
   duration: number;
   offset: number;
+  /** where time 0 is in the whole song, seconds: song time = t + songStart */
+  songStart: number;
   sample(t: number): AudioSample;
   spectrum(t: number, out?: Float32Array): Float32Array;
   /** [age in seconds, strength] of up to n hits at or before t, newest first */

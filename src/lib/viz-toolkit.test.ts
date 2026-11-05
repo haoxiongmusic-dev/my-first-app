@@ -46,6 +46,12 @@ describe("bandEdges", () => {
 });
 
 describe("createAudio", () => {
+  it("songStart is where a section starts in the whole song (0 for a whole song)", () => {
+    const data = fakeAnalysis([frame(), frame()]);
+    expect(viz.createAudio({ ...data, sectionStart: 12 }).songStart).toBe(12);
+    expect(viz.createAudio(data).songStart).toBe(0);
+  });
+
   it("sample interpolates between frames and clamps time", () => {
     const audio = viz.createAudio(fakeAnalysis([frame({ l: 0 }), frame({ l: 1 })]));
     expect(audio.sample(0.5 / 30).loud).toBeCloseTo(0.5, 6);
