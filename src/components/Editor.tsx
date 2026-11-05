@@ -3,13 +3,15 @@
 // The editor (spec §4): top bar, icon rail, a side panel, and the live preview.
 import { useCallback, useMemo, useRef, useState } from "react";
 import { APP_NAME } from "@/lib/app-info";
-import { previewSrc } from "@/lib/editor-state";
+import { previewScale, previewSrc } from "@/lib/editor-state";
 import { type FormTemplate, mergeValues } from "@/lib/form-model";
 import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
+import { PreferencesPanel } from "./PreferencesPanel";
 import { PreviewPlayer } from "./PreviewPlayer";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
+import { usePreferences } from "./usePreferences";
 
 export type EditorTemplate = FormTemplate & { id: string };
 
@@ -27,6 +29,7 @@ export function Editor({ template }: { template: EditorTemplate }) {
   const [projectName, setProjectName] = useState(`${template.manifest.name} project`);
   const [status, setStatusState] = useState<Status>({ text: "Ready", isError: false });
   const previewArea = useRef<HTMLDivElement>(null);
+  const [preferences, setPreferences] = usePreferences();
 
   const setStatus = useCallback(
     (text: string, isError = false) => setStatusState({ text, isError }),
@@ -65,9 +68,15 @@ export function Editor({ template }: { template: EditorTemplate }) {
         <IconRail
           active={panel}
           onSelect={setPanel}
-          onFullscreen={() => previewArea.current?.requestFullscreen()}
+          onFullscreen={() =>
+            previewArea.current
+              ?.requestFullscreen()
+              .catch(() => setStatus("Fullscreen isn't available in this browser.", true))
+          }
         />
-        <aside className="w-80 shrink-0 space-y-4 overflow-y-auto border-r border-zinc-800 bg-zinc-950 p-4">
+        <aside
+          className={`${preferences.expandedSidebar ? "w-[28rem]" : "w-80"} shrink-0 space-y-4 overflow-y-auto border-r border-zinc-800 bg-zinc-950 p-4`}
+        >
           {panel === "content" && (
             <>
               <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
@@ -78,12 +87,17 @@ export function Editor({ template }: { template: EditorTemplate }) {
             <CustomizePanel template={template} values={values} setValue={setValue} />
           )}
           {panel === "preferences" && (
-            <p className="text-sm text-zinc-400">Preferences come next.</p>
+            <PreferencesPanel preferences={preferences} onChange={setPreferences} />
           )}
         </aside>
         <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-          <div ref={previewArea} className="w-full max-w-5xl">
-            <PreviewPlayer src={src} values={values} scale={0.5} onError={onPreviewError} />
+          <div ref={previewArea} className="preview-area w-full max-w-5xl">
+            <PreviewPlayer
+              src={src}
+              values={values}
+              scale={previewScale(preferences.previewResolution)}
+              onError={onPreviewError}
+            />
           </div>
         </main>
       </div>

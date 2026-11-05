@@ -62,3 +62,46 @@ export function formatClock(seconds: number): string {
   const s = String(total % 60).padStart(2, "0");
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
+
+/** Preview resolutions (Preferences): the preview draws at this fraction of 1080p. */
+export const PREVIEW_RESOLUTIONS = [
+  { label: "360p", scale: 1 / 3 },
+  { label: "540p", scale: 0.5 },
+  { label: "720p", scale: 2 / 3 },
+] as const;
+
+export type PreviewResolution = (typeof PREVIEW_RESOLUTIONS)[number]["label"];
+
+export type Preferences = { previewResolution: PreviewResolution; expandedSidebar: boolean };
+
+export const DEFAULT_PREFERENCES: Preferences = {
+  previewResolution: "540p",
+  expandedSidebar: false,
+};
+
+/** Where the browser keeps the editor preferences (a convenience; nothing breaks without it). */
+export const PREFERENCES_KEY = "mvz.preferences";
+
+/** Saved preferences, or the defaults for anything missing or unreadable. */
+export function loadPreferences(raw: string | null): Preferences {
+  try {
+    const saved: unknown = raw ? JSON.parse(raw) : null;
+    if (typeof saved !== "object" || saved === null) return { ...DEFAULT_PREFERENCES };
+    const s = saved as Partial<Record<keyof Preferences, unknown>>;
+    const resolution = PREVIEW_RESOLUTIONS.find((r) => r.label === s.previewResolution);
+    return {
+      previewResolution: resolution ? resolution.label : DEFAULT_PREFERENCES.previewResolution,
+      expandedSidebar:
+        typeof s.expandedSidebar === "boolean"
+          ? s.expandedSidebar
+          : DEFAULT_PREFERENCES.expandedSidebar,
+    };
+  } catch {
+    return { ...DEFAULT_PREFERENCES };
+  }
+}
+
+/** The drawing scale for a preview resolution. */
+export function previewScale(resolution: PreviewResolution): number {
+  return PREVIEW_RESOLUTIONS.find((r) => r.label === resolution)?.scale ?? 0.5;
+}

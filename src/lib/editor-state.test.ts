@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatClock, latestThrottle, previewSrc, songRequestGate } from "@/lib/editor-state";
+import {
+  DEFAULT_PREFERENCES,
+  formatClock,
+  latestThrottle,
+  loadPreferences,
+  PREVIEW_RESOLUTIONS,
+  previewSrc,
+  songRequestGate,
+} from "@/lib/editor-state";
 
 describe("editor state", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -54,5 +62,24 @@ describe("editor state", () => {
     expect(formatClock(75)).toBe("1:15");
     expect(formatClock(3725)).toBe("1:02:05");
     expect(formatClock(0)).toBe("0:00");
+  });
+});
+
+describe("preferences", () => {
+  it("loadPreferences falls back to defaults", () => {
+    expect(DEFAULT_PREFERENCES).toEqual({ previewResolution: "540p", expandedSidebar: false });
+    expect(loadPreferences(null)).toEqual(DEFAULT_PREFERENCES);
+    expect(loadPreferences("{bad")).toEqual(DEFAULT_PREFERENCES);
+    expect(loadPreferences('{"previewResolution":"4k"}')).toEqual(DEFAULT_PREFERENCES);
+    const saved = { previewResolution: "360p", expandedSidebar: true };
+    expect(loadPreferences(JSON.stringify(saved))).toEqual(saved);
+  });
+
+  it("offers 360p, 540p and 720p", () => {
+    expect(PREVIEW_RESOLUTIONS.map((r) => [r.label, r.scale])).toEqual([
+      ["360p", 1 / 3],
+      ["540p", 0.5],
+      ["720p", 2 / 3],
+    ]);
   });
 });
