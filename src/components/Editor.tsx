@@ -8,6 +8,7 @@ import { type FormTemplate, mergeValues } from "@/lib/form-model";
 import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { PreviewPlayer } from "./PreviewPlayer";
+import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
 
 export type EditorTemplate = FormTemplate & { id: string };
@@ -15,7 +16,12 @@ export type EditorTemplate = FormTemplate & { id: string };
 type Status = { text: string; isError: boolean };
 
 export function Editor({ template }: { template: EditorTemplate }) {
-  const [values] = useState<TemplateValues>(() => mergeValues(template, {}));
+  const [values, setValues] = useState<TemplateValues>(() => mergeValues(template, {}));
+  const setValue = useCallback(
+    (id: string, value: string | number | boolean) =>
+      setValues((current) => (current[id] === value ? current : { ...current, [id]: value })),
+    [],
+  );
   const [song, setSong] = useState<ChosenSong | null>(null);
   const [panel, setPanel] = useState<PanelId>("content");
   const [projectName, setProjectName] = useState(`${template.manifest.name} project`);
@@ -63,9 +69,14 @@ export function Editor({ template }: { template: EditorTemplate }) {
         />
         <aside className="w-80 shrink-0 space-y-4 overflow-y-auto border-r border-zinc-800 bg-zinc-950 p-4">
           {panel === "content" && (
-            <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
+            <>
+              <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
+              <ContentFields template={template} values={values} setValue={setValue} />
+            </>
           )}
-          {panel === "customize" && <p className="text-sm text-zinc-400">Settings come next.</p>}
+          {panel === "customize" && (
+            <CustomizePanel template={template} values={values} setValue={setValue} />
+          )}
           {panel === "preferences" && (
             <p className="text-sm text-zinc-400">Preferences come next.</p>
           )}
