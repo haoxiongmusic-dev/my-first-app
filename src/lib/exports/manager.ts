@@ -5,7 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, statfs, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnLines, type Spawner } from "@/lib/exports/processes";
 import { estimateExportSeconds, remainingSeconds } from "@/lib/exports/progress";
@@ -64,6 +64,8 @@ type Running = {
   status: ExportStatus;
   startedMs: number;
   framesCaptured: number;
+  /** elapsed seconds and percent when the first frame was captured (for time remaining) */
+  captureStart?: { elapsed: number; percent: number };
   controller: AbortController;
   finished: Promise<void>;
 };
@@ -75,6 +77,12 @@ export type ExportManagerOptions = {
   now?: () => number;
   freeBytes?: (dir: string) => Promise<number>;
   runExport?: (o: RunExportOptions) => Promise<{ file: string }>;
+  /**
+   * How long to wait before recording a failed render (default 2 s). When the app is shutting
+   * down, the render dies first; waiting lets the shutdown finish, so the export stays marked
+   * "running" and is reported as interrupted by the restart, not as a broken render.
+   */
+  failureGraceMs?: number;
 };
 
 function stamp(ms: number): string {
@@ -102,12 +110,21 @@ export function createExportManager(o: ExportManagerOptions) {
 
   const statusFile = (id: string) => path.join(statusDir, `${id}.json`);
 
+  /**
+   * Write a status file. Writes happen one after another; a failed write (e.g. a full disk)
+   * doesn't stop later ones. Each is written to a temporary file and renamed into place, so a
+   * crash never leaves half a file.
+   */
   function save(status: ExportStatus): Promise<void> {
     const copy = JSON.stringify(status, null, 2);
-    saving = saving.then(async () => {
-      await mkdir(statusDir, { recursive: true });
-      await writeFile(statusFile(status.exportId), copy);
-    });
+    const file = statusFile(status.exportId);
+    saving = saving
+      .catch(() => {})
+      .then(async () => {
+        await mkdir(statusDir, { recursive: true });
+        await writeFile(`${file}.tmp`, copy);
+        await rename(`${file}.tmp`, file);
+      });
     return saving;
   }
 
@@ -121,6 +138,7 @@ export function createExportManager(o: ExportManagerOptions) {
         percent: r.status.percent,
         estimate: r.status.estimateSeconds,
         framesCaptured: r.framesCaptured,
+        captureStart: r.captureStart,
       }),
     };
   }
@@ -190,7 +208,12 @@ export function createExportManager(o: ExportManagerOptions) {
         finished: Promise.resolve(),
       };
       current = r;
-      await save(status);
+      try {
+        await save(status);
+      } catch (error) {
+        current = null; // nothing started: don't leave the slot taken
+        throw error;
+      }
       lastSaved = now();
 
       r.finished = runExport({
@@ -203,9 +226,14 @@ export function createExportManager(o: ExportManagerOptions) {
         onUpdate: (u) => {
           r.status = { ...r.status, stage: u.stage, percent: u.percent };
           r.framesCaptured = u.framesCaptured;
+          if (!r.captureStart && u.framesCaptured > 0) {
+            r.captureStart = { elapsed: (now() - r.startedMs) / 1000, percent: u.percent };
+          }
           if (now() - lastSaved >= 1000) {
             lastSaved = now();
-            void save(live(r));
+            save(live(r)).catch((error: unknown) =>
+              console.error("Couldn't save export status:", error),
+            );
           }
         },
       }).then(
@@ -216,12 +244,13 @@ export function createExportManager(o: ExportManagerOptions) {
             remainingSeconds: 0,
             fileName: path.basename(file),
           }),
-        (error: unknown) => {
+        async (error: unknown) => {
           if (error instanceof ExportCancelled) {
             return finish(r, { state: "cancelled", remainingSeconds: null, error: null });
           }
           const failed = error instanceof ExportFailed;
           const message = error instanceof Error ? error.message : String(error);
+          await new Promise((resolve) => setTimeout(resolve, o.failureGraceMs ?? 2000));
           return finish(r, {
             state: "failed",
             remainingSeconds: null,
@@ -236,7 +265,7 @@ export function createExportManager(o: ExportManagerOptions) {
     async get(exportId: string): Promise<ExportStatus | null> {
       if (!EXPORT_ID.test(exportId)) return null;
       if (current?.status.exportId === exportId) return live(current);
-      await saving;
+      await saving.catch(() => {});
       let status: ExportStatus;
       try {
         status = JSON.parse(await readFile(statusFile(exportId), "utf8")) as ExportStatus;
@@ -253,6 +282,24 @@ export function createExportManager(o: ExportManagerOptions) {
 
     current(): ExportStatus | null {
       return current ? live(current) : null;
+    },
+
+    /** The running export, or else the most recent one (an interrupted one shows as failed). */
+    async latest(): Promise<ExportStatus | null> {
+      if (current) return live(current);
+      let names: string[];
+      try {
+        names = await readdir(statusDir);
+      } catch {
+        return null;
+      }
+      const ids = names
+        .filter((n) => n.endsWith(".json"))
+        .map((n) => n.slice(0, -5))
+        .filter((id) => EXPORT_ID.test(id))
+        .sort();
+      const newest = ids.at(-1);
+      return newest ? this.get(newest) : null;
     },
 
     async cancel(exportId: string): Promise<ExportStatus | null> {

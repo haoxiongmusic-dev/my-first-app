@@ -78,6 +78,12 @@ export type RunExportOptions = {
 
 const LOG_TAIL = 20;
 
+/** Progress output (HyperFrames' JSON and bars, FFmpeg's key=value lines): kept out of the log,
+ * so a failure's log shows what went wrong. */
+function isProgressNoise(line: string): boolean {
+  return parseHfProgress(line) !== null || /^\s*\w+=\S*\s*$/.test(line) || /[█░]/.test(line);
+}
+
 export async function runExport(o: RunExportOptions): Promise<{ file: string }> {
   const { request } = o;
   const storage = path.join(o.projectRoot, "storage");
@@ -100,8 +106,10 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
   const step = async (cmd: string, args: string[], onLine: (line: string) => void) => {
     const child = o.spawn(cmd, args);
     child.onLine((line) => {
-      log.push(line);
-      if (log.length > 200) log.shift();
+      if (!isProgressNoise(line)) {
+        log.push(line);
+        if (log.length > 200) log.shift();
+      }
       onLine(line);
     });
     const stop = () => {

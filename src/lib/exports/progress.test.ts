@@ -40,14 +40,32 @@ describe("export progress", () => {
     expect(overallPercent("encoding", 150)).toBe(100);
   });
 
-  it("estimate for 4:12 Final is about 18 minutes", () => {
-    expect(estimateExportSeconds(252, "final", "1080p")).toBe(1068);
+  it("estimate includes the fixed start-up time measured on this PC", () => {
+    // Measured: a 30 s Final section took 371 s; a 3 s Draft took 70 s.
+    expect(estimateExportSeconds(30, "final", "1080p")).toBe(360);
+    expect(estimateExportSeconds(3, "draft", "1080p")).toBe(99);
+    expect(estimateExportSeconds(252, "final", "1080p")).toBe(1248);
   });
 
   it("estimate for 60 minutes Final is about 4 hours", () => {
-    expect(estimateExportSeconds(3600, "final", "1080p")).toBe(14460);
-    expect(estimateExportSeconds(252, "draft", "1080p")).toBe(816);
-    expect(estimateExportSeconds(252, "final", "1440p")).toBe(1169);
+    expect(estimateExportSeconds(3600, "final", "1080p")).toBe(14640);
+    expect(estimateExportSeconds(252, "draft", "1080p")).toBe(846);
+    expect(estimateExportSeconds(252, "final", "1440p")).toBe(1349);
+  });
+
+  it("remainingSeconds measures the rate from when capture began, not from the start", () => {
+    // A 60-minute Final: about 90 s of setup brings HyperFrames to 24 % before any frame.
+    const captureStart = { elapsed: 90, percent: 24 };
+    // An hour into capture it is at 40 %: 16 % took 3600 s, so 60 % more takes 13 500 s.
+    expect(
+      remainingSeconds({
+        elapsed: 3690,
+        percent: 40,
+        estimate: 14640,
+        framesCaptured: 20000,
+        captureStart,
+      }),
+    ).toBe(13500);
   });
 
   it("remainingSeconds uses the estimate until 20 frames are captured, then the measured rate", () => {

@@ -22,7 +22,7 @@ function status(overrides: Partial<ExportStatus> = {}): ExportStatus {
 describe("export panel text", () => {
   it("exportSummary describes the export", () => {
     expect(exportSummary({ seconds: 252, resolution: "1080p", quality: "final" })).toBe(
-      "1080p · 30 fps · 4:12 · about 18 min",
+      "1080p · 30 fps · 4:12 · about 21 min",
     );
     expect(exportSummary({ seconds: 252, resolution: "1080p", quality: "draft" })).toMatch(
       /^720p draft · 30 fps · 4:12 · about 14 min$/,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -86,7 +86,11 @@ function request(overrides: Partial<ExportRequest> = {}): ExportRequest {
   };
 }
 
-function manager(run: ReturnType<typeof controllableRun>, clock = { now: 1_000_000 }) {
+function manager(
+  run: ReturnType<typeof controllableRun>,
+  clock = { now: 1_000_000 },
+  failureGraceMs = 0,
+) {
   return createExportManager({
     projectRoot: root,
     spawn: unusedSpawn,
@@ -94,6 +98,7 @@ function manager(run: ReturnType<typeof controllableRun>, clock = { now: 1_000_0
     runExport: run.runExport,
     now: () => clock.now,
     freeBytes: async () => 84e9,
+    failureGraceMs,
   });
 }
 
@@ -105,7 +110,7 @@ describe("export manager", () => {
     const m = manager(run);
     const started = await m.start(request());
     expect(started.state).toBe("running");
-    expect(started.estimateSeconds).toBe(1068);
+    expect(started.estimateSeconds).toBe(1248);
     expect(started.exportId).toMatch(/^\d{8}-\d{6}-[0-9a-f]{4}$/);
     await settle();
     run.finish(path.join(root, "storage", "exports", "AXIOM - SUNLIGHT (Demo).mp4"));
@@ -138,13 +143,14 @@ describe("export manager", () => {
     const m = manager(run, clock);
     const started = await m.start(request());
     await settle();
-    run.options?.onUpdate({ stage: "rendering", percent: 60, framesCaptured: 500 });
+    run.options?.onUpdate({ stage: "rendering", percent: 24, framesCaptured: 1 }); // capture starts
     clock.now += 1_200_000; // 20 minutes later
+    run.options?.onUpdate({ stage: "rendering", percent: 60, framesCaptured: 500 });
     const status = await m.get(started.exportId);
     expect(status?.stage).toBe("rendering");
     expect(status?.percent).toBe(60);
     expect(status?.elapsedSeconds).toBe(1200);
-    expect(status?.remainingSeconds).toBe(800);
+    expect(status?.remainingSeconds).toBe(1333); // 36 % took 1200 s, so 40 % more ≈ 1333 s
   });
 
   it("cancel marks the export cancelled and frees the slot", async () => {
@@ -203,5 +209,59 @@ describe("export manager", () => {
 
   it("freeBytes comes from the disk holding storage", async () => {
     expect(await manager(controllableRun()).freeBytes()).toBe(84e9);
+  });
+
+  it("time remaining counts from when frame capture began", async () => {
+    const run = controllableRun();
+    const clock = { now: 1_000_000 };
+    const m = manager(run, clock);
+    const started = await m.start(request());
+    await settle();
+    clock.now += 90_000;
+    run.options?.onUpdate({ stage: "rendering", percent: 24, framesCaptured: 1 });
+    clock.now += 3_600_000;
+    run.options?.onUpdate({ stage: "rendering", percent: 40, framesCaptured: 20000 });
+    expect((await m.get(started.exportId))?.remainingSeconds).toBe(13500);
+  });
+
+  it("a failed run waits briefly before recording the failure", async () => {
+    // If the app is shutting down, the render dies first; waiting lets the shutdown win, so
+    // the export is reported as interrupted by the restart instead of as a broken render.
+    const run = controllableRun();
+    const m = manager(run, { now: 1_000_000 }, 60);
+    const started = await m.start(request());
+    await settle();
+    run.fail(new ExportFailed("The render failed.", []));
+    await settle();
+    const file = path.join(root, "storage", "exports", `${started.exportId}.json`);
+    expect(JSON.parse(await readFile(file, "utf8")).state).toBe("running");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(JSON.parse(await readFile(file, "utf8")).state).toBe("failed");
+  });
+
+  it("latest shows an export interrupted by a restart", async () => {
+    const dir = path.join(root, "storage", "exports");
+    await mkdir(dir, { recursive: true });
+    for (const id of ["20261105-090000-aaaa", "20261105-101010-beef"]) {
+      await writeFile(
+        path.join(dir, `${id}.json`),
+        JSON.stringify({ exportId: id, state: "running" }),
+      );
+    }
+    const latest = await manager(controllableRun()).latest();
+    expect(latest?.exportId).toBe("20261105-101010-beef");
+    expect(latest?.state).toBe("failed");
+    expect(latest?.error).toBe("The app was restarted during this export.");
+  });
+
+  it("a status file that can't be written doesn't block later exports", async () => {
+    const statusDir = path.join(root, "storage", "exports");
+    await mkdir(path.join(root, "storage"), { recursive: true });
+    await writeFile(statusDir, "a file where the folder should be"); // writes will fail
+    const m = manager(controllableRun());
+    await expect(m.start(request())).rejects.toThrow();
+    expect(m.current()).toBeNull();
+    await rm(statusDir);
+    expect((await m.start(request())).state).toBe("running");
   });
 });

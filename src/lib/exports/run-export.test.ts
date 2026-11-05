@@ -142,6 +142,30 @@ describe("runExport", () => {
     expect(existsSync(path.join(root, "storage", "jobs", "20261105-120000-bbbb"))).toBe(true);
   });
 
+  it("the failure log leaves out progress lines", async () => {
+    const lines = [
+      '@hf-progress {"code":"capture","done":5,"total":600,"pct":26}',
+      "  ██████░░░░░░░░░░░░░░░░░░░  26%  Capturing frame 5/600",
+      "frame=12",
+      "out_time_us=1000000",
+      "progress=continue",
+      "Error: Chrome crashed while capturing frame 6",
+    ];
+    const { spawn } = fakeSpawner({ render: { code: 1, lines }, encode: { code: 0, lines: [] } });
+    const error = await runExport({
+      exportId: "20261105-120000-eeee",
+      request: request(),
+      projectRoot: root,
+      spawn,
+      run: okRun,
+      onUpdate: () => {},
+      signal: new AbortController().signal,
+    }).catch((e: unknown) => e);
+    expect((error as ExportFailed).logTail).toEqual([
+      "Error: Chrome crashed while capturing frame 6",
+    ]);
+  });
+
   it("cancel kills the running step's process tree and removes the job folder", async () => {
     const { spawn, started } = fakeSpawner({
       render: {

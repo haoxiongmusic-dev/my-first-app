@@ -48,9 +48,8 @@ export async function POST(request: Request): Promise<Response> {
 export async function GET(): Promise<Response> {
   const manager = getExportManager();
   const freeBytes = await manager.freeBytes();
-  return Response.json({
-    current: manager.current(),
-    freeBytes,
-    lowDisk: freeBytes < LOW_DISK_BYTES,
-  });
+  const current = manager.current();
+  // The most recent export too, so the panel can show one that failed or was cut off by a restart.
+  const latest = current ?? (await manager.latest());
+  return Response.json({ current, latest, freeBytes, lowDisk: freeBytes < LOW_DISK_BYTES });
 }

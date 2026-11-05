@@ -40,30 +40,43 @@ export function overallPercent(
   return Math.round(value * 10) / 10;
 }
 
-/** Seconds an export will take on this PC (measured: a 4:12 song took 17 min at Final). */
+/**
+ * Seconds an export will take on this PC: a fixed start-up (browsers, calibration, audio, final
+ * encode) plus a rate per second of video. Measured: a 4:12 song took 17 min to render at
+ * Final; a 30 s Final section took 371 s and a 3 s Draft 70 s in total.
+ */
 export function estimateExportSeconds(
   seconds: number,
   quality: Quality,
   resolution: Resolution,
 ): number {
+  const startUp = quality === "final" ? 240 : 90;
   const perSecond = quality === "final" ? 4.0 : 3.0;
   const scale = resolution === "1440p" ? 1.1 : 1;
-  return Math.round(60 + seconds * perSecond * scale);
+  return Math.round(startUp + seconds * perSecond * scale);
 }
 
 /**
  * Seconds left. Until the render has captured 20 frames, its speed isn't known yet, so this
- * counts down the estimate; after that it uses the measured rate.
+ * counts down the estimate. After that it uses the rate measured since frame capture began:
+ * the start-up before capture moves the percentage a lot in little time, and counting it
+ * would make a 4-hour export look nearly done.
  */
 export function remainingSeconds(o: {
   elapsed: number;
   percent: number;
   estimate: number;
   framesCaptured: number;
+  /** elapsed seconds and percent when the first frame was captured */
+  captureStart?: { elapsed: number; percent: number };
 }): number {
-  if (o.framesCaptured < 20 || o.percent <= 0)
+  const from = o.captureStart ?? { elapsed: 0, percent: 0 };
+  const progressed = o.percent - from.percent;
+  if (o.framesCaptured < 20 || progressed <= 0) {
     return Math.max(0, Math.round(o.estimate - o.elapsed));
-  return Math.max(0, Math.round((o.elapsed / o.percent) * (100 - o.percent)));
+  }
+  const secondsPerPercent = (o.elapsed - from.elapsed) / progressed;
+  return Math.max(0, Math.round(secondsPerPercent * (100 - o.percent)));
 }
 
 /** 1068 → "about 18 min"; 14460 → "about 4 h 1 min" */

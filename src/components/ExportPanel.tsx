@@ -23,6 +23,11 @@ type Props = {
   onProgress: (text: string) => void;
 };
 
+/** A failed export from the last day (e.g. cut off by a restart) is shown when the panel opens. */
+function isRecentFailure(s: ExportStatus): boolean {
+  return s.state === "failed" && Date.now() - Date.parse(s.startedAt) < 24 * 3600 * 1000;
+}
+
 const LOW_DISK_TEXT = "Less than 5 GB of disk space is free. A long export may not fit.";
 
 function choiceClass(active: boolean) {
@@ -65,11 +70,14 @@ export function ExportPanel(props: Props) {
     let cancelled = false;
     fetch("/api/exports")
       .then((r) => r.json())
-      .then((body: { current: ExportStatus | null; lowDisk: boolean }) => {
-        if (cancelled) return;
-        setLowDisk(body.lowDisk);
-        if (body.current) show(body.current);
-      })
+      .then(
+        (body: { current: ExportStatus | null; latest: ExportStatus | null; lowDisk: boolean }) => {
+          if (cancelled) return;
+          setLowDisk(body.lowDisk);
+          if (body.current) show(body.current);
+          else if (body.latest && isRecentFailure(body.latest)) show(body.latest);
+        },
+      )
       .catch(() => {});
     return () => {
       cancelled = true;
