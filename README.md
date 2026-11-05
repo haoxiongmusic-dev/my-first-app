@@ -33,6 +33,12 @@ To make a video: run `npm run dev`, open http://localhost:3000, pick a template,
 on the Content tab, and change the look on the Customize tab while the preview plays. If the
 preview stutters, lower the preview resolution under Preferences (exports are unaffected).
 
+To export: drag the handles on the song's waveform to choose a part (or leave the whole song),
+click **Export**, pick Draft (a quick 720p check) or Final, 1080p or 1440p, and **Start**. The
+panel shows progress and time remaining; you can close it, reload the page or cancel. Finished
+videos are saved in `storage/exports/` (never committed) and can be downloaded from the panel.
+A full song takes about 4× its length at Final quality on this PC.
+
 To render a template with your own song from the command line (a test video):
 
 ```bash

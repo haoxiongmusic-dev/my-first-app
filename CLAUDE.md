@@ -20,9 +20,10 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M2 analyzer (plan: `docs/superpowers/plans/2026-11-04-m2-analyzer.md`): `npm run analyze`
 - [x] M3 Particle Horizon (Sunlight style) (plan: `docs/superpowers/plans/2026-11-05-m3-particle-horizon.md`):
       the first and only template until it's a success; owner approved the look (orbs removed)
-- [ ] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`): built;
-      awaiting the owner's check in their own Chrome
-- [ ] M5 export · M6 more templates (one at a time, spec §14) · M7 polish
+- [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
+- [ ] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): built; awaiting the owner's
+      full-song export in their own Chrome. **The first complete app.**
+- [ ] M6 more templates (one at a time, spec §14) · M7 polish
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
@@ -64,6 +65,11 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   template must look identical without them (renders never send any). Templates redraw on
   their timeline's `onUpdate` while the preview plays (`hf-seek` only comes on jumps), and must
   not measure the DOM inside that callback.
+- Exports (`src/lib/exports/`): one at a time; status files `storage/exports/<exportId>.json`
+  (an export still marked running when the app starts is reported as failed); the job folder
+  `storage/jobs/<exportId>/` is kept only on failure. HyperFrames renders 1080p only: 1440p is
+  upscaled in our FFmpeg encode, Draft is encoded at 720p. Progress comes from HyperFrames'
+  `@hf-progress {json}` lines and FFmpeg's `-progress pipe:1`. Cancel kills the process tree.
 - Code the browser uses must not import `node:` modules: pure template types and checks live in
   `src/lib/template-values.ts`; `src/lib/templates.ts` (file access) re-exports them.
 
