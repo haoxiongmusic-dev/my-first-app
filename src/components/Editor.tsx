@@ -9,6 +9,7 @@ import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { PreferencesPanel } from "./PreferencesPanel";
 import { PreviewPlayer } from "./PreviewPlayer";
+import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
 import { usePreferences } from "./usePreferences";
@@ -25,6 +26,8 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [],
   );
   const [song, setSong] = useState<ChosenSong | null>(null);
+  const [background, setBackground] = useState<ChosenBackground | null>(null);
+  const hasBackground = template.variables.some((v) => v.id === "showBackground");
   const [panel, setPanel] = useState<PanelId>("content");
   const [projectName, setProjectName] = useState(`${template.manifest.name} project`);
   const [status, setStatusState] = useState<Status>({ text: "Ready", isError: false });
@@ -36,7 +39,17 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [],
   );
   const onPreviewError = useCallback((message: string) => setStatus(message, true), [setStatus]);
-  const src = useMemo(() => previewSrc(template.id, song?.songId ?? null), [template.id, song]);
+  const src = useMemo(
+    () => previewSrc(template.id, song?.songId ?? null, background?.backgroundId ?? null),
+    [template.id, song, background],
+  );
+  const chooseBackground = useCallback(
+    (chosen: ChosenBackground | null) => {
+      setBackground(chosen);
+      setValue("showBackground", chosen !== null);
+    },
+    [setValue],
+  );
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
@@ -81,6 +94,14 @@ export function Editor({ template }: { template: EditorTemplate }) {
             <>
               <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
               <ContentFields template={template} values={values} setValue={setValue} />
+              {hasBackground && (
+                <BackgroundCard
+                  background={background}
+                  thumbnailSrc={src.replace(/index\.html$/, "assets/background.jpg")}
+                  onBackground={chooseBackground}
+                  onStatus={setStatus}
+                />
+              )}
             </>
           )}
           {panel === "customize" && (

@@ -121,8 +121,12 @@ export async function resolvePreviewFile(opts: ResolvePreviewOptions): Promise<P
   const templateDir = path.join(opts.templatesRoot, opts.templateId);
   if (!existsSync(path.join(templateDir, "template.json"))) return null;
 
+  // The media segment is "<song>" or "<song>~<background image>".
+  const [songPart, backgroundId, ...extra] = opts.songId.split("~");
+  if (extra.length > 0) return null;
+  if (backgroundId !== undefined && !SONG_ID.test(backgroundId)) return null;
   const songId =
-    opts.songId === "sample" && opts.resolveSample ? await opts.resolveSample() : opts.songId;
+    songPart === "sample" && opts.resolveSample ? await opts.resolveSample() : songPart;
   if (!songId || !SONG_ID.test(songId)) return null;
   const songDir = path.join(opts.storageRoot, "songs", songId);
   const wavPath = path.join(songDir, "song.wav");
@@ -134,6 +138,11 @@ export async function resolvePreviewFile(opts: ResolvePreviewOptions): Promise<P
 
   if (relative === "assets/song.wav")
     return { kind: "file", path: wavPath, contentType: "audio/wav" };
+
+  if (relative === "assets/background.jpg" && backgroundId !== undefined) {
+    const image = path.join(opts.storageRoot, "backgrounds", `${backgroundId}.jpg`);
+    return existsSync(image) ? { kind: "file", path: image, contentType: "image/jpeg" } : null;
+  }
 
   if (relative === "index.html" || relative === "assets/audio-data.js") {
     let analysis: unknown;
