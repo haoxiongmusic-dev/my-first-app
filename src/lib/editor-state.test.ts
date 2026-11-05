@@ -20,6 +20,9 @@ describe("editor state", () => {
     expect(previewSrc("particle-horizon", "ab12")).toBe(
       "/preview/particle-horizon/ab12/index.html",
     );
+    expect(previewSrc("particle-horizon", null, "ff")).toBe(
+      "/preview/particle-horizon/sample~ff/index.html",
+    );
   });
 
   it("latestThrottle sends at once, then at most every 100 ms, ending on the newest value", () => {

@@ -148,3 +148,23 @@ describe("preview fonts", () => {
     if (file?.kind === "html") expect(file.body).not.toContain("fonts.googleapis.com");
   });
 });
+
+describe("preview background", () => {
+  it("resolvePreviewFile serves the chosen background", async () => {
+    const bg = "f".repeat(64);
+    await mkdir(path.join(storageRoot, "backgrounds"), { recursive: true });
+    await writeFile(path.join(storageRoot, "backgrounds", `${bg}.jpg`), "JPG");
+    const file = await resolve(["assets", "background.jpg"], "demo", `${SONG}~${bg}`);
+    expect(file).toEqual({
+      kind: "file",
+      path: path.join(storageRoot, "backgrounds", `${bg}.jpg`),
+      contentType: "image/jpeg",
+    });
+    // the song part still works with a background attached
+    expect((await resolve(["assets", "song.wav"], "demo", `${SONG}~${bg}`))?.kind).toBe("file");
+    expect(await resolve(["assets", "background.jpg"], "demo", `${SONG}~nope`)).toBeNull();
+    expect(
+      await resolve(["assets", "background.jpg"], "demo", `${SONG}~${"0".repeat(64)}`),
+    ).toBeNull();
+  });
+});

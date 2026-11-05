@@ -1,23 +1,36 @@
 "use client";
 
 // Content tab → Song: pick a song file, upload it with progress, then show its length and a
-// waveform. Analysis happens once per song on the server; the same file again is instant.
-import { useEffect, useRef } from "react";
+// waveform with the section to export. Analysis happens once per song on the server; the same
+// file again is instant.
 import { formatClock, songRequestGate } from "@/lib/editor-state";
+import { MAX_SONG_BYTES, TOO_BIG_MESSAGE } from "@/lib/limits";
+import type { Section } from "@/lib/section";
+import { SectionStrip } from "./SectionStrip";
 
 export type ChosenSong = { songId: string; duration: number; peaks: number[]; name: string };
 
 type Props = {
   song: ChosenSong | null;
+  section: Section | null;
+  onSection: (section: Section) => void;
   onSong: (song: ChosenSong) => void;
   onStatus: (text: string, isError?: boolean) => void;
 };
 
 const gate = songRequestGate();
+let uploading: XMLHttpRequest | null = null;
 
 function upload(file: File, props: Props) {
+  // Check the size here, so a file that is too big never starts uploading.
+  if (file.size > MAX_SONG_BYTES) {
+    props.onStatus(TOO_BIG_MESSAGE, true);
+    return;
+  }
+  uploading?.abort(); // a newer choice replaces an upload still in progress
   const token = gate.begin();
   const request = new XMLHttpRequest();
+  uploading = request;
   request.open("PUT", "/api/songs");
   request.setRequestHeader("x-file-name", encodeURIComponent(file.name));
   request.upload.onprogress = (event) => {
@@ -54,26 +67,6 @@ function upload(file: File, props: Props) {
   request.send(file);
 }
 
-function Waveform({ peaks }: { peaks: number[] }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = canvas.current;
-    const ctx = c?.getContext("2d");
-    if (!c || !ctx) return;
-    const { width, height } = c;
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "#f59e0b";
-    const bar = width / Math.max(1, peaks.length);
-    peaks.forEach((peak, i) => {
-      const h = Math.max(1, peak * height * 0.9);
-      ctx.fillRect(i * bar, (height - h) / 2, Math.max(1, bar - 0.5), h);
-    });
-  }, [peaks]);
-  return (
-    <canvas ref={canvas} width={800} height={80} className="h-14 w-full rounded bg-zinc-950" />
-  );
-}
-
 export function SongCard(props: Props) {
   const { song } = props;
   return (
@@ -84,7 +77,14 @@ export function SongCard(props: Props) {
           <p className="truncate text-sm text-zinc-300" title={song.name}>
             {song.name} <span className="text-zinc-500">· {formatClock(song.duration)}</span>
           </p>
-          <Waveform peaks={song.peaks} />
+          {props.section && (
+            <SectionStrip
+              peaks={song.peaks}
+              duration={song.duration}
+              section={props.section}
+              onChange={props.onSection}
+            />
+          )}
         </>
       ) : (
         <p className="text-sm text-zinc-400">Using the sample song. Upload yours to hear it.</p>

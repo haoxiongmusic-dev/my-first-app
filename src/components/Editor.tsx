@@ -9,6 +9,9 @@ import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { PreferencesPanel } from "./PreferencesPanel";
 import { PreviewPlayer } from "./PreviewPlayer";
+import type { Section } from "@/lib/section";
+import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
+import { ExportPanel } from "./ExportPanel";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
 import { usePreferences } from "./usePreferences";
@@ -25,6 +28,11 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [],
   );
   const [song, setSong] = useState<ChosenSong | null>(null);
+  const [section, setSection] = useState<Section | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+  const [background, setBackground] = useState<ChosenBackground | null>(null);
+  const hasBackground = template.variables.some((v) => v.id === "showBackground");
   const [panel, setPanel] = useState<PanelId>("content");
   const [projectName, setProjectName] = useState(`${template.manifest.name} project`);
   const [status, setStatusState] = useState<Status>({ text: "Ready", isError: false });
@@ -36,7 +44,17 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [],
   );
   const onPreviewError = useCallback((message: string) => setStatus(message, true), [setStatus]);
-  const src = useMemo(() => previewSrc(template.id, song?.songId ?? null), [template.id, song]);
+  const src = useMemo(
+    () => previewSrc(template.id, song?.songId ?? null, background?.backgroundId ?? null),
+    [template.id, song, background],
+  );
+  const chooseBackground = useCallback(
+    (chosen: ChosenBackground | null) => {
+      setBackground(chosen);
+      setValue("showBackground", chosen !== null);
+    },
+    [setValue],
+  );
 
   return (
     <div className="flex h-screen flex-col bg-zinc-950 text-zinc-100">
@@ -52,17 +70,26 @@ export function Editor({ template }: { template: EditorTemplate }) {
           role="status"
           className={`flex-1 truncate text-center text-sm ${status.isError ? "text-red-400" : "text-zinc-400"}`}
         >
-          {status.text}
+          {exportProgress || status.text}
         </p>
         <button
           type="button"
-          disabled
-          title="Export arrives in the next milestone"
-          className="cursor-not-allowed rounded-md bg-zinc-800 px-4 py-1.5 text-sm text-zinc-500"
+          onClick={() => setExportOpen(true)}
+          className="rounded-md bg-amber-500 px-4 py-1.5 text-sm font-medium text-black hover:bg-amber-400"
         >
           Export
         </button>
       </header>
+      <ExportPanel
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        templateId={template.id}
+        song={song}
+        section={section}
+        values={values}
+        backgroundId={background?.backgroundId ?? null}
+        onProgress={setExportProgress}
+      />
 
       <div className="flex min-h-0 flex-1">
         <IconRail
@@ -79,8 +106,25 @@ export function Editor({ template }: { template: EditorTemplate }) {
         >
           {panel === "content" && (
             <>
-              <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
+              <SongCard
+                song={song}
+                section={section}
+                onSection={setSection}
+                onSong={(chosen) => {
+                  setSong(chosen);
+                  setSection({ start: 0, end: chosen.duration }); // a new song exports whole
+                }}
+                onStatus={setStatus}
+              />
               <ContentFields template={template} values={values} setValue={setValue} />
+              {hasBackground && (
+                <BackgroundCard
+                  background={background}
+                  thumbnailSrc={src.replace(/index\.html$/, "assets/background.jpg")}
+                  onBackground={chooseBackground}
+                  onStatus={setStatus}
+                />
+              )}
             </>
           )}
           {panel === "customize" && (

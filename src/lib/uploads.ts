@@ -12,7 +12,14 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { SongError, TOO_BIG_MESSAGE, UNREADABLE_MESSAGE } from "@/lib/songs";
 
-const SONG_EXTENSIONS = [".wav", ".mp3", ".flac", ".m4a"];
+/** What kind of file an upload must be, and the errors to give otherwise. */
+export type UploadKind = { extensions: string[]; unreadable: () => Error; tooBig: () => Error };
+
+export const SONG_UPLOAD: UploadKind = {
+  extensions: [".wav", ".mp3", ".flac", ".m4a"],
+  unreadable: () => new SongError("unreadable", UNREADABLE_MESSAGE),
+  tooBig: () => new SongError("too-big", TOO_BIG_MESSAGE),
+};
 
 /** Stream an upload into `dir` as `<random id><extension>`; returns the file's path. */
 export async function saveUpload(
@@ -20,9 +27,10 @@ export async function saveUpload(
   dir: string,
   fileName: string,
   maxBytes: number,
+  kind: UploadKind = SONG_UPLOAD,
 ): Promise<string> {
   const ext = path.extname(fileName).toLowerCase();
-  if (!SONG_EXTENSIONS.includes(ext)) throw new SongError("unreadable", UNREADABLE_MESSAGE);
+  if (!kind.extensions.includes(ext)) throw kind.unreadable();
 
   await mkdir(dir, { recursive: true });
   const target = path.join(dir, `${randomUUID()}${ext}`);
@@ -30,7 +38,7 @@ export async function saveUpload(
   const limit = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       received += chunk.length;
-      if (received > maxBytes) done(new SongError("too-big", TOO_BIG_MESSAGE));
+      if (received > maxBytes) done(kind.tooBig());
       else done(null, chunk);
     },
   });

@@ -3,9 +3,14 @@
  * their own. Safe to use in the browser.
  */
 
-/** The preview page for a template with a song (or the generated sample song). */
-export function previewSrc(templateId: string, songId: string | null): string {
-  return `/preview/${templateId}/${songId ?? "sample"}/index.html`;
+/** The preview page for a template with a song (or the generated sample song) and background. */
+export function previewSrc(
+  templateId: string,
+  songId: string | null,
+  backgroundId: string | null = null,
+): string {
+  const media = (songId ?? "sample") + (backgroundId ? `~${backgroundId}` : "");
+  return `/preview/${templateId}/${media}/index.html`;
 }
 
 /**
