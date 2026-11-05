@@ -24,7 +24,8 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
       export confirmed. **The first complete app.**
 - [ ] M6 five more templates, one at a time: Iron Wraith (voxel robot skull, three.js; spec:
-      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`), then Scene Visualizer,
+      `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`, plan:
+      `docs/superpowers/plans/2026-11-05-m6-iron-wraith.md`), then Scene Visualizer,
       radial ring, Gridwave Reactor, glass crystal · M7 polish
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
