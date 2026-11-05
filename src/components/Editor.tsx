@@ -9,6 +9,7 @@ import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { PreferencesPanel } from "./PreferencesPanel";
 import { PreviewPlayer } from "./PreviewPlayer";
+import type { Section } from "@/lib/section";
 import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
@@ -26,6 +27,7 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [],
   );
   const [song, setSong] = useState<ChosenSong | null>(null);
+  const [section, setSection] = useState<Section | null>(null);
   const [background, setBackground] = useState<ChosenBackground | null>(null);
   const hasBackground = template.variables.some((v) => v.id === "showBackground");
   const [panel, setPanel] = useState<PanelId>("content");
@@ -92,7 +94,16 @@ export function Editor({ template }: { template: EditorTemplate }) {
         >
           {panel === "content" && (
             <>
-              <SongCard song={song} onSong={(chosen) => setSong(chosen)} onStatus={setStatus} />
+              <SongCard
+                song={song}
+                section={section}
+                onSection={setSection}
+                onSong={(chosen) => {
+                  setSong(chosen);
+                  setSection({ start: 0, end: chosen.duration }); // a new song exports whole
+                }}
+                onStatus={setStatus}
+              />
               <ContentFields template={template} values={values} setValue={setValue} />
               {hasBackground && (
                 <BackgroundCard

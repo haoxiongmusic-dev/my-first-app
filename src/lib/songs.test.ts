@@ -243,3 +243,13 @@ describe("song limits and info", () => {
     expect(info).toEqual({ songId: HELLO_SHA256, duration: 12.5, peaks: [] });
   });
 });
+
+describe("preparing the same song twice at once", () => {
+  it("prepareSong shares one run for the same song at the same time", async () => {
+    const { run, calls } = fakeRun();
+    const [a, b] = await Promise.all([prepareSong(options(run)), prepareSong(options(run))]);
+    expect(a.songId).toBe(b.songId);
+    expect(calls.filter((c) => c.cmd === "ffmpeg")).toHaveLength(1);
+    expect(calls.filter((c) => c.cmd !== "ffmpeg")).toHaveLength(1);
+  });
+});

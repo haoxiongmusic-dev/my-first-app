@@ -12,14 +12,15 @@ import path from "node:path";
 import { type Analysis, isCurrentAnalysis } from "@/lib/analysis";
 import { venvPythonPath } from "@/lib/python";
 import type { RunCommand } from "@/lib/run-command";
+import {
+  MAX_SONG_BYTES,
+  MAX_SONG_SECONDS,
+  TOO_BIG_MESSAGE,
+  TOO_LONG_MESSAGE,
+  UNREADABLE_MESSAGE,
+} from "@/lib/limits";
 
-export const UNREADABLE_MESSAGE = "Couldn't read this audio file. Try WAV or MP3.";
-export const TOO_LONG_MESSAGE = "Songs can be up to 60 minutes long.";
-export const TOO_BIG_MESSAGE = "Songs can be up to 1 GB.";
-
-/** Album-length videos are a real use case (spec §4): up to an hour, up to 1 GB. */
-export const MAX_SONG_SECONDS = 3600;
-export const MAX_SONG_BYTES = 1024 ** 3;
+export { MAX_SONG_BYTES, MAX_SONG_SECONDS, TOO_BIG_MESSAGE, TOO_LONG_MESSAGE, UNREADABLE_MESSAGE };
 
 export type SongErrorKind = "unreadable" | "too-short" | "too-long" | "too-big" | "analyzer-failed";
 
@@ -98,6 +99,23 @@ export async function prepareSong(opts: PrepareSongOptions): Promise<PreparedSon
   }
 
   const songId = await songIdFor(opts.sourcePath);
+  // The same song picked twice while the first is still converting shares that work, so two
+  // runs never write the same folder at once.
+  const key = path.join(opts.storageRoot, "songs", songId);
+  const running = inFlight.get(key);
+  if (running) return running;
+  const work = convertAndAnalyze(opts, songId);
+  inFlight.set(key, work);
+  try {
+    return await work;
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+const inFlight = new Map<string, Promise<PreparedSong>>();
+
+async function convertAndAnalyze(opts: PrepareSongOptions, songId: string): Promise<PreparedSong> {
   const dir = path.join(opts.storageRoot, "songs", songId);
   const wavPath = path.join(dir, "song.wav");
   const analysisPath = path.join(dir, "analysis.json");
