@@ -315,29 +315,6 @@
           "  gl_FragColor = vec4(col * a * vBright * 0.85, 1.0);",
           "}",
         ].join("\n");
-        var BOKEH_VS = [
-          "precision highp float;",
-          "attribute vec4 b;",
-          "uniform float t, loud;",
-          "varying float vA;",
-          "void main(){",
-          "  float x = fract(b.x + t * (0.004 + b.w * 0.006)) * 2.2 - 1.1;",
-          "  float y = (b.y - 0.5) * 1.3 + sin(t * 0.3 + b.w * 6.0) * 0.03;",
-          "  gl_Position = vec4(x, y, 0.0, 1.0);",
-          "  gl_PointSize = b.z;",
-          "  vA = (0.012 + 0.03 * b.w) * (0.6 + 0.8 * loud);",
-          "}",
-        ].join("\n");
-        var BOKEH_FS = [
-          "precision highp float;",
-          "uniform vec3 mainCol;",
-          "varying float vA;",
-          "void main(){",
-          "  float r = length(gl_PointCoord - 0.5) * 2.0;",
-          "  float a = smoothstep(1.0, 0.85, r) * (0.75 + 0.25 * smoothstep(0.6, 0.95, r));",
-          "  gl_FragColor = vec4(mainCol * a * vA, 1.0);",
-          "}",
-        ].join("\n");
         var QUAD_VS =
           "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
         var COPY_FS =
@@ -480,22 +457,7 @@
           gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
           gl.bufferData(gl.ARRAY_BUFFER, grid, gl.STATIC_DRAW);
 
-          // Soft out-of-focus orbs drifting across the sky (seeded, so every render is identical).
-          var rnd = V.mulberry32(777),
-            BOKEH = 38,
-            bok = new Float32Array(BOKEH * 4);
-          for (var i = 0; i < BOKEH; i++) {
-            bok[i * 4] = rnd();
-            bok[i * 4 + 1] = 0.25 + rnd() * 0.6;
-            bok[i * 4 + 2] = 14 + rnd() * 56;
-            bok[i * 4 + 3] = rnd();
-          }
-          var bokBuf = gl.createBuffer();
-          gl.bindBuffer(gl.ARRAY_BUFFER, bokBuf);
-          gl.bufferData(gl.ARRAY_BUFFER, bok, gl.STATIC_DRAW);
-
           var pProg = V.createProgram(gl, PARTICLE_VS, PARTICLE_FS);
-          var bProg = V.createProgram(gl, BOKEH_VS, BOKEH_FS);
           var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
           var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
           var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
@@ -550,17 +512,12 @@
               strengths[j] = recent[j][1];
             }
 
-            // 1. scene: bokeh + particles, added together (additive light)
+            // 1. scene: the particles, added together (additive light)
             bindTarget(scene);
             gl.clearColor(0, 0, 0, 1);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.ONE, gl.ONE);
-            gl.useProgram(bProg);
-            gl.uniform1f(bProg.u.t, t);
-            gl.uniform1f(bProg.u.loud, a.loud);
-            gl.uniform3fv(bProg.u.mainCol, MAIN);
-            drawPoints(bProg, bokBuf, "b", 4, BOKEH);
             gl.useProgram(pProg);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, specTex);
