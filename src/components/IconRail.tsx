@@ -5,10 +5,11 @@
 // sits at the bottom.
 import { logOut, useLoginEnabled } from "./LogoutButton";
 
-export type PanelId = "content" | "customize" | "preferences";
+export type PanelId = "content" | "presets" | "customize" | "preferences";
 
 const PANELS: { id: PanelId; icon: string; label: string }[] = [
   { id: "content", icon: "▤", label: "Content" },
+  { id: "presets", icon: "◧", label: "Presets" },
   { id: "customize", icon: "☰", label: "Customize" },
   { id: "preferences", icon: "⚙", label: "Preferences" },
 ];

@@ -7,7 +7,9 @@ import { previewScale, previewSrc, previewValues } from "@/lib/editor-state";
 import { type FormTemplate, imageFields, mergeValues } from "@/lib/form-model";
 import type { TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
+import { applyPreset, presetMatches } from "@/lib/presets";
 import { PreferencesPanel } from "./PreferencesPanel";
+import { PresetsPanel } from "./PresetsPanel";
 import { PreviewPlayer } from "./PreviewPlayer";
 import type { Section } from "@/lib/section";
 import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
@@ -143,6 +145,14 @@ export function Editor({ template }: { template: EditorTemplate }) {
                 />
               )}
             </>
+          )}
+          {panel === "presets" && (
+            <PresetsPanel
+              templateId={template.id}
+              presets={template.manifest.presets}
+              isActive={(preset) => presetMatches(template, values, preset)}
+              onApply={(preset) => setValues((current) => applyPreset(template, current, preset))}
+            />
           )}
           {panel === "customize" && (
             <CustomizePanel template={template} values={values} setValue={setValue} />
