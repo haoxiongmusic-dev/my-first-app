@@ -35,9 +35,18 @@ function elapsedText(seconds: number): string {
 }
 
 /** "Exporting 42 % · 3 min elapsed · about 14 min left", "Done", "Export failed: …", "Cancelled" */
+export const WAITING_TEXT = "Waiting for the start-up check…";
+
+/** The editor's top-bar line while an export runs: "Exporting 42 %", or "" when none runs. */
+export function shortProgressText(s: ExportStatus | null): string {
+  if (s?.state !== "running") return "";
+  return s.stage === "waiting" ? WAITING_TEXT : `Exporting ${Math.floor(s.percent)} %`;
+}
+
 export function progressText(s: ExportStatus): string {
   switch (s.state) {
     case "running": {
+      if (s.stage === "waiting") return WAITING_TEXT;
       const left =
         s.remainingSeconds === null ? "" : ` · ${formatEstimate(s.remainingSeconds)} left`;
       return `Exporting ${Math.floor(s.percent)} % · ${elapsedText(s.elapsedSeconds)} elapsed${left}`;

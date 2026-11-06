@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { exportSummary, progressText, shouldNotify } from "@/lib/export-client";
+import {
+  exportSummary,
+  progressText,
+  shortProgressText,
+  shouldNotify,
+  WAITING_TEXT,
+} from "@/lib/export-client";
 import type { ExportStatus } from "@/lib/exports/manager";
 
 function status(overrides: Partial<ExportStatus> = {}): ExportStatus {
@@ -53,5 +59,14 @@ describe("export panel text", () => {
       "Export failed: The render failed.",
     );
     expect(progressText(status({ state: "cancelled" }))).toBe("Cancelled");
+  });
+
+  it("an export waiting for the start-up check says so", () => {
+    expect(WAITING_TEXT).toBe("Waiting for the start-up check…");
+    expect(progressText(status({ stage: "waiting", percent: 0 }))).toBe(WAITING_TEXT);
+    expect(shortProgressText(status({ stage: "waiting", percent: 0 }))).toBe(WAITING_TEXT);
+    expect(shortProgressText(status())).toBe("Exporting 42 %");
+    expect(shortProgressText(status({ state: "done" }))).toBe("");
+    expect(shortProgressText(null)).toBe("");
   });
 });

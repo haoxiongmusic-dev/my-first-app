@@ -18,6 +18,7 @@ import {
   runExport as realRunExport,
   type RunExportOptions,
 } from "@/lib/exports/run-export";
+import { getGpuStatus, gpuCheckDone } from "@/lib/gpu-check";
 import { runCommand, type RunCommand } from "@/lib/run-command";
 import { songInfo } from "@/lib/songs";
 import { IMAGE_MISSING_MESSAGE, imagePath } from "@/lib/images";
@@ -29,7 +30,8 @@ export type ExportState = "running" | "done" | "failed" | "cancelled";
 export type ExportStatus = {
   exportId: string;
   state: ExportState;
-  stage: ExportStage | null;
+  /** "waiting": started while the start-up GPU check runs; it renders once the check ends */
+  stage: ExportStage | "waiting" | null;
   percent: number;
   elapsedSeconds: number;
   remainingSeconds: number | null;
@@ -86,6 +88,11 @@ export type ExportManagerOptions = {
    * "running" and is reported as interrupted by the restart, not as a broken render.
    */
   failureGraceMs?: number;
+  /**
+   * The start-up GPU check (src/lib/gpu-check.ts). An export started while it runs waits for it,
+   * so the two renders don't share the machine.
+   */
+  gpuCheck?: { running(): boolean; done(): Promise<void> };
 };
 
 function stamp(ms: number): string {
@@ -105,6 +112,10 @@ async function diskFree(dir: string): Promise<number> {
 export function createExportManager(o: ExportManagerOptions) {
   const now = o.now ?? Date.now;
   const runExport = o.runExport ?? realRunExport;
+  const gpuCheck = o.gpuCheck ?? {
+    running: () => getGpuStatus().gpu === "checking",
+    done: gpuCheckDone,
+  };
   const storage = storageRoot(o.projectRoot);
   const statusDir = path.join(storage, "exports");
   let current: Running | null = null;
@@ -198,7 +209,7 @@ export function createExportManager(o: ExportManagerOptions) {
       const status: ExportStatus = {
         exportId,
         state: "running",
-        stage: "preparing",
+        stage: gpuCheck.running() ? "waiting" : "preparing",
         percent: 0,
         elapsedSeconds: 0,
         remainingSeconds: null,
@@ -225,49 +236,68 @@ export function createExportManager(o: ExportManagerOptions) {
       }
       lastSaved = now();
 
-      r.finished = runExport({
-        exportId,
-        request,
-        projectRoot: o.projectRoot,
-        spawn: o.spawn,
-        run: o.run,
-        signal: controller.signal,
-        onUpdate: (u) => {
-          r.status = { ...r.status, stage: u.stage, percent: u.percent };
-          r.framesCaptured = u.framesCaptured;
-          if (!r.captureStart && u.framesCaptured > 0) {
-            r.captureStart = { elapsed: (now() - r.startedMs) / 1000, percent: u.percent };
-          }
-          if (now() - lastSaved >= 1000) {
-            lastSaved = now();
-            save(live(r)).catch((error: unknown) =>
-              console.error("Couldn't save export status:", error),
-            );
-          }
-        },
-      }).then(
-        ({ file }) =>
-          finish(r, {
-            state: "done",
-            percent: 100,
-            remainingSeconds: 0,
-            fileName: path.basename(file),
-          }),
-        async (error: unknown) => {
-          if (error instanceof ExportCancelled) {
-            return finish(r, { state: "cancelled", remainingSeconds: null, error: null });
-          }
-          const failed = error instanceof ExportFailed;
-          const message = error instanceof Error ? error.message : String(error);
-          await new Promise((resolve) => setTimeout(resolve, o.failureGraceMs ?? 2000));
-          return finish(r, {
-            state: "failed",
-            remainingSeconds: null,
-            error: message,
-            logTail: failed ? (error as ExportFailed).logTail : [],
+      // Wait for the start-up GPU check first (Cancel still works while waiting).
+      const waitForCheck = (): Promise<void> => {
+        if (status.stage !== "waiting") return Promise.resolve();
+        return new Promise<void>((resolve, reject) => {
+          const onAbort = () => reject(new ExportCancelled());
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+          void gpuCheck.done().then(() => {
+            controller.signal.removeEventListener("abort", onAbort);
+            if (controller.signal.aborted) return reject(new ExportCancelled());
+            r.status = { ...r.status, stage: "preparing" };
+            resolve();
           });
-        },
-      );
+        });
+      };
+
+      r.finished = waitForCheck()
+        .then(() =>
+          runExport({
+            exportId,
+            request,
+            projectRoot: o.projectRoot,
+            spawn: o.spawn,
+            run: o.run,
+            signal: controller.signal,
+            onUpdate: (u) => {
+              r.status = { ...r.status, stage: u.stage, percent: u.percent };
+              r.framesCaptured = u.framesCaptured;
+              if (!r.captureStart && u.framesCaptured > 0) {
+                r.captureStart = { elapsed: (now() - r.startedMs) / 1000, percent: u.percent };
+              }
+              if (now() - lastSaved >= 1000) {
+                lastSaved = now();
+                save(live(r)).catch((error: unknown) =>
+                  console.error("Couldn't save export status:", error),
+                );
+              }
+            },
+          }),
+        )
+        .then(
+          ({ file }) =>
+            finish(r, {
+              state: "done",
+              percent: 100,
+              remainingSeconds: 0,
+              fileName: path.basename(file),
+            }),
+          async (error: unknown) => {
+            if (error instanceof ExportCancelled) {
+              return finish(r, { state: "cancelled", remainingSeconds: null, error: null });
+            }
+            const failed = error instanceof ExportFailed;
+            const message = error instanceof Error ? error.message : String(error);
+            await new Promise((resolve) => setTimeout(resolve, o.failureGraceMs ?? 2000));
+            return finish(r, {
+              state: "failed",
+              remainingSeconds: null,
+              error: message,
+              logTail: failed ? (error as ExportFailed).logTail : [],
+            });
+          },
+        );
       return live(r);
     },
 

@@ -280,3 +280,63 @@ describe("export manager", () => {
     expect((await m.start(request())).state).toBe("running");
   });
 });
+
+describe("export manager and the start-up GPU check", () => {
+  function gpuCheck(running: boolean) {
+    let release: () => void = () => {};
+    const done = new Promise<void>((r) => (release = r));
+    return { check: { running: () => running, done: () => done }, release: () => release() };
+  }
+
+  function waitingManager(
+    run: ReturnType<typeof controllableRun>,
+    check: ReturnType<typeof gpuCheck>["check"],
+  ) {
+    return createExportManager({
+      projectRoot: root,
+      spawn: unusedSpawn,
+      run: okRun,
+      runExport: run.runExport,
+      now: () => 1_000_000,
+      freeBytes: async () => 84e9,
+      failureGraceMs: 0,
+      gpuCheck: check,
+    });
+  }
+
+  it("an export started during the check waits for it, then renders", async () => {
+    const run = controllableRun();
+    const g = gpuCheck(true);
+    const m = waitingManager(run, g.check);
+    const started = await m.start(request());
+    expect(started.state).toBe("running");
+    expect(started.stage).toBe("waiting");
+    await settle();
+    expect(run.options).toBeNull();
+    g.release();
+    await settle();
+    expect(run.options).not.toBeNull();
+    expect(m.current()?.stage).not.toBe("waiting");
+  });
+
+  it("cancel works while waiting, and the render never starts", async () => {
+    const run = controllableRun();
+    const g = gpuCheck(true);
+    const m = waitingManager(run, g.check);
+    const started = await m.start(request());
+    const cancelled = await m.cancel(started.exportId);
+    expect(cancelled?.state).toBe("cancelled");
+    g.release();
+    await settle();
+    expect(run.options).toBeNull();
+  });
+
+  it("with no check running, exports start as before", async () => {
+    const run = controllableRun();
+    const m = waitingManager(run, gpuCheck(false).check);
+    const started = await m.start(request());
+    expect(started.stage).toBe("preparing");
+    await settle();
+    expect(run.options).not.toBeNull();
+  });
+});
