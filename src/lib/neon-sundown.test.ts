@@ -99,5 +99,10 @@ describe("Neon Sundown template", () => {
     expect(html).toContain("V.createTarget(");
     expect(html).toContain("var TITLE_SAFE = 1536");
     expect(html).toContain('coverImg.addEventListener("error"');
+    // grid lines: widths and soft edges follow the preview size; columns are measured across
+    // the line (they lean toward the horizon), so outer columns don't break into dots
+    expect(html).toContain("M.gridLineParams(PREVIEW_SCALE)");
+    expect(html).toContain("uniform float soft, crowdLo, crowdHi;");
+    expect(html).toContain("dy / length(vec2(px.x - 960.0, dy))");
   });
 });
