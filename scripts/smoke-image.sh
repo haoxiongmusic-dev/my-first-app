@@ -39,7 +39,7 @@ done
 code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 [ "$(code "http://localhost:$PORT/login")" = 200 ] || fail "/login is not 200"
 [ "$(code "http://localhost:$PORT/")" = 307 ] || fail "/ does not redirect to the login page"
-[ "$(code "http://localhost:$PORT/api/songs")" = 401 ] || fail "/api/songs is not locked"
+[ "$(code "http://localhost:$PORT/api/exports")" = 401 ] || fail "/api/exports is not locked"
 
 JAR="$(mktemp)"
 [ "$(code -c "$JAR" -H 'content-type: application/json' \
