@@ -405,7 +405,7 @@
           "void main(){",
           "  float y = (1.0 - uv.y) * 1080.0;",
           "  vec3 base = texture2D(bg, uv).rgb * bgGain;",
-          "  base += accCol * 0.12 * (0.3 + 1.4 * loud) * exp(-pow((y - 720.0) / 200.0, 2.0));",
+          "  base += accCol * 0.12 * (0.3 + 1.4 * loud) * exp(-pow(abs((y - 720.0) / 200.0), 2.0));",
           "  vec3 light = texture2D(scene, uv).rgb + (texture2D(bloomA, uv).rgb * 0.8 + texture2D(bloomB, uv).rgb * 1.1) * glow;",
           "  light = vec3(1.0) - exp(-light * 1.4);",
           "  vec3 c = vec3(1.0) - (vec3(1.0) - base) * (vec3(1.0) - light);",
