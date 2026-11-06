@@ -40,8 +40,13 @@ export async function verifyPassword(password: string, stored: string): Promise<
 
 /** Why a new password isn't good enough for `npm run add-user`, or null if it is. */
 export function passwordProblem(password: string): string | null {
-  return password.length < 12 ? "Use at least 12 characters." : null;
+  if (password.length < 12) return "Use at least 12 characters.";
+  if (password.length > MAX_PASSWORD) return `Use at most ${MAX_PASSWORD} characters.`;
+  return null;
 }
+
+/** The longest password a login accepts (longer ones are refused without a scrypt check). */
+export const MAX_PASSWORD = 256;
 
 /**
  * A valid fingerprint of a random password nobody knows. Unknown usernames are checked

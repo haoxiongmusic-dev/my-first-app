@@ -32,6 +32,9 @@ describe("passwords", () => {
   it("add-user asks for passwords of 12+ characters", () => {
     expect(passwordProblem("short-pass1")).toBe("Use at least 12 characters.");
     expect(passwordProblem("twelve-chars")).toBeNull();
+    // the login refuses anything longer, so add-user must too
+    expect(passwordProblem("p".repeat(256))).toBeNull();
+    expect(passwordProblem("p".repeat(257))).toBe("Use at most 256 characters.");
   });
 
   it("parses ACCOUNTS typed by hand: spaces, empty entries, case", () => {
