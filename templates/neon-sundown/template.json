@@ -1,0 +1,67 @@
+{
+  "name": "Neon Sundown",
+  "description": "A synthwave sunset: your cover in a striped sun, bars fanning around it, a neon grid rushing toward you.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["cover"] },
+    { "name": "Colors", "fields": ["skyColor", "sunTopColor", "sunBottomColor", "gridColor"] },
+    { "name": "Effects", "fields": ["intensity", "spectrumSide", "gridSpeed", "vhsLook"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": [
+    "skyColor",
+    "sunTopColor",
+    "sunBottomColor",
+    "gridColor",
+    "intensity",
+    "spectrumSide",
+    "vhsLook",
+    "font"
+  ],
+  "content": ["title", "artist", "cover"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": {
+        "skyColor": "#1a0533",
+        "sunTopColor": "#ffd23f",
+        "sunBottomColor": "#ff2e88",
+        "gridColor": "#00e5ff"
+      }
+    },
+    {
+      "name": "Flamingo",
+      "thumbnail": "presets/flamingo.jpg",
+      "values": {
+        "skyColor": "#2a0638",
+        "sunTopColor": "#ffb3e6",
+        "sunBottomColor": "#ff3fa4",
+        "gridColor": "#ff7ad9"
+      }
+    },
+    {
+      "name": "Red Desert",
+      "thumbnail": "presets/red-desert.jpg",
+      "values": {
+        "skyColor": "#2b0a0a",
+        "sunTopColor": "#ffcf5a",
+        "sunBottomColor": "#ff3b1f",
+        "gridColor": "#ff6a3d"
+      }
+    },
+    {
+      "name": "Midnight",
+      "thumbnail": "presets/midnight.jpg",
+      "values": {
+        "skyColor": "#02040f",
+        "sunTopColor": "#9fd8ff",
+        "sunBottomColor": "#3f5bff",
+        "gridColor": "#5ef0ff"
+      }
+    }
+  ]
+}
