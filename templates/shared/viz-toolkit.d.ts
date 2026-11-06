@@ -77,4 +77,16 @@ export interface VizToolkit {
   ): { hits: [number, number][]; pulse: Float32Array };
   beatScales(frames: ToolkitAnalysis["frames"]): Record<string, number>;
   createAudio(data: ToolkitAnalysis, opts?: AudioOptions): ToolkitAudio;
+  /** angles (radians, clockwise from the top) spread over an arc centred on the top */
+  ringAngles(count: number, arcDeg: number): Float32Array;
+  /** [x, y, nx, ny] on a ring of radius 1 (y down) and its outward unit normal */
+  ringPoint(angle: number, shape: RingShape): [number, number, number, number];
+  /** one value per angle: the bass at the top, mirrored, the last band at the arc ends */
+  ringValues(spectrum: ArrayLike<number>, angles: ArrayLike<number>, arcDeg: number): Float32Array;
+  /** 0..1: the strongest recent beat, fading with time constant `release` seconds */
+  beatEnvelope(audio: ToolkitAudio, t: number, release: number): number;
+  /** the Bands setting (10..100 %) as a point count, from a fifth of `full` to all of it */
+  bandsToRingCount(pct: number, full: number): number;
 }
+
+export type RingShape = "circle" | "rounded";

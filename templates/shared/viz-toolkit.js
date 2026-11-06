@@ -288,6 +288,75 @@
     };
   }
 
+  // ---------- the ring kit: spectrum bars around a centre ----------
+
+  /**
+   * `count` angles (radians, clockwise from the top) spread evenly over an arc of `arcDeg`
+   * degrees centred on the top. Each sits in the middle of its slot, so a full ring never
+   * doubles up its top point.
+   */
+  function ringAngles(count, arcDeg) {
+    var arc = (arcDeg * Math.PI) / 180;
+    var out = new Float32Array(count);
+    for (var k = 0; k < count; k++) out[k] = -arc / 2 + (arc * (k + 0.5)) / count;
+    return out;
+  }
+
+  /**
+   * A point on a ring of radius 1 and its outward direction: [x, y, nx, ny], y down.
+   * shape "circle", or "rounded": the superellipse x⁴ + y⁴ = 1, a square with soft corners.
+   */
+  function ringPoint(angle, shape) {
+    var dx = Math.sin(angle),
+      dy = -Math.cos(angle);
+    if (shape !== "rounded") return [dx, dy, dx, dy];
+    var r = Math.pow(Math.pow(dx, 4) + Math.pow(dy, 4), 0.25);
+    var x = dx / r,
+      y = dy / r;
+    var nx = x * x * x,
+      ny = y * y * y;
+    var len = Math.sqrt(nx * nx + ny * ny);
+    return [x, y, nx / len, ny / len];
+  }
+
+  /**
+   * One value per angle, read from the spectrum: the bass at the top, the last band at both
+   * ends of the arc, so the ring is mirrored left and right.
+   */
+  function ringValues(spectrum, angles, arcDeg) {
+    var half = (arcDeg * Math.PI) / 360;
+    var n = spectrum.length;
+    var out = new Float32Array(angles.length);
+    for (var k = 0; k < angles.length; k++) {
+      var x = Math.min(1, Math.abs(angles[k]) / half) * (n - 1);
+      var i0 = Math.floor(x),
+        i1 = Math.min(n - 1, i0 + 1);
+      out[k] = spectrum[i0] + (spectrum[i1] - spectrum[i0]) * (x - i0);
+    }
+    return out;
+  }
+
+  /**
+   * 0..1: the strongest recent beat, fading with time constant `release` (seconds). Looks back
+   * 0.2 s in 1/60 s steps and never reads before the analysis starts.
+   */
+  function beatEnvelope(audio, t, release) {
+    var first = -(audio.offset || 0);
+    var env = 0;
+    for (var k = 0; k < 12; k++) {
+      var age = k / 60;
+      var at = t - age;
+      if (at < first) break;
+      env = Math.max(env, audio.sample(at).beat * Math.exp(-age / release));
+    }
+    return Math.max(0, Math.min(1, env));
+  }
+
+  /** The Bands setting (10..100 %) as a point count: a fifth of `full` up to all of it. */
+  function bandsToRingCount(pct, full) {
+    return Math.round(full * (0.2 + (0.8 * (pct - 10)) / 90));
+  }
+
   // ---------- WebGL helpers ----------
 
   /** Browser shader logs can end in invisible null characters; drop them. */
@@ -482,5 +551,10 @@
     beatTrack: beatTrack,
     beatScales: beatScales,
     createAudio: createAudio,
+    ringAngles: ringAngles,
+    ringPoint: ringPoint,
+    ringValues: ringValues,
+    beatEnvelope: beatEnvelope,
+    bandsToRingCount: bandsToRingCount,
   };
 });
