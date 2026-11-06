@@ -29,3 +29,5 @@ jobs:
       - run: npm ci
       - run: npm run setup:py
       - run: npm run check
+      # Only a production build catches some page errors (e.g. prerendering rules).
+      - run: npm run build

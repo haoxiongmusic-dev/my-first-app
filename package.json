@@ -25,7 +25,8 @@
     "check:templates": "tsx scripts/check-templates.ts",
     "render": "tsx scripts/render.ts",
     "thumbs": "tsx scripts/thumbs.ts",
-    "build:three": "tsx scripts/build-three-kit.ts"
+    "build:three": "tsx scripts/build-three-kit.ts",
+    "add-user": "tsx scripts/add-user.ts"
   },
   "dependencies": {
     "next": "16.4.5",
