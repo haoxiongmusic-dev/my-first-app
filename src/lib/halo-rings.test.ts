@@ -101,6 +101,12 @@ describe("Halo Rings template", () => {
     expect(html).not.toMatch(/Math\.random|Date\.now|setTimeout|setInterval/);
     expect(html).not.toMatch(/HALF_FLOAT|OES_texture/);
     expect(html).toContain("V.createTarget(");
-    expect(html).toContain("var TITLE_SAFE = 380");
+    // long titles wrap onto two lines, the artist shrinks with the title, and nothing can be
+    // wider than the space inside the inner ring (scaled down past the smallest size)
+    expect(html).toContain("var TITLE_SAFE = 440");
+    expect(html).toContain("var TITLE_LINES = 2");
+    expect(html).toContain("var ARTIST_RATIO = 0.6");
+    expect(html).toContain("var TITLE_FLOOR = 12");
+    expect(html).toContain('"scale(" + (TITLE_SAFE / ');
   });
 });
