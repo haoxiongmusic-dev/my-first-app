@@ -1,11 +1,13 @@
 "use client";
 
 // The editor (spec §4): top bar, icon rail, a side panel, and the live preview.
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { APP_NAME } from "@/lib/app-info";
+import { canRedo, canUndo, type History, historyReducer, startHistory } from "@/lib/edit-history";
 import { previewScale, previewSrc, previewValues } from "@/lib/editor-state";
 import { type FormTemplate, imageFields, mergeValues } from "@/lib/form-model";
-import type { TemplateValues } from "@/lib/template-values";
+import { historyShortcut, isEditableTarget } from "@/lib/shortcuts";
+import type { TemplatePreset, TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { applyPreset, presetMatches } from "@/lib/presets";
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -24,13 +26,46 @@ export type EditorTemplate = FormTemplate & { id: string };
 
 type Status = { text: string; isError: boolean };
 
+/** What undo/redo steps through: the settings and the chosen background picture. */
+type Snapshot = { values: TemplateValues; background: ChosenBackground | null };
+
 export function Editor({ template }: { template: EditorTemplate }) {
-  const [values, setValues] = useState<TemplateValues>(() => mergeValues(template, {}));
+  const [history, dispatch] = useReducer(historyReducer<Snapshot>, null, (): History<Snapshot> =>
+    startHistory({ values: mergeValues(template, {}), background: null }),
+  );
+  const { values, background } = history.present;
   const setValue = useCallback(
     (id: string, value: string | number | boolean) =>
-      setValues((current) => (current[id] === value ? current : { ...current, [id]: value })),
+      dispatch({
+        type: "change",
+        field: id,
+        now: Date.now(),
+        update: (s) =>
+          s.values[id] === value ? s : { ...s, values: { ...s.values, [id]: value } },
+      }),
     [],
   );
+  const pickPreset = useCallback(
+    (preset: TemplatePreset) =>
+      dispatch({
+        type: "change",
+        field: null,
+        now: Date.now(),
+        update: (s) => ({ ...s, values: applyPreset(template, s.values, preset) }),
+      }),
+    [template],
+  );
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (Cmd on a Mac), except while typing in a box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = historyShortcut(e);
+      if (!action || isEditableTarget(e.target as HTMLElement | null)) return;
+      e.preventDefault();
+      dispatch({ type: action });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // The preview gets picture addresses instead of image ids (exports still send the ids).
   const sentToPreview = useMemo(
     () => previewValues(template.variables, values),
@@ -40,7 +75,6 @@ export function Editor({ template }: { template: EditorTemplate }) {
   const [section, setSection] = useState<Section | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportProgress, setExportProgress] = useState("");
-  const [background, setBackground] = useState<ChosenBackground | null>(null);
   const hasBackground = template.variables.some((v) => v.id === "showBackground");
   const [panel, setPanel] = useState<PanelId>("content");
   const [projectName, setProjectName] = useState(`${template.manifest.name} project`);
@@ -58,11 +92,18 @@ export function Editor({ template }: { template: EditorTemplate }) {
     [template.id, song, background],
   );
   const chooseBackground = useCallback(
-    (chosen: ChosenBackground | null) => {
-      setBackground(chosen);
-      setValue("showBackground", chosen !== null);
-    },
-    [setValue],
+    // One step: the picture and Show background change together.
+    (chosen: ChosenBackground | null) =>
+      dispatch({
+        type: "change",
+        field: null,
+        now: Date.now(),
+        update: (s) => ({
+          background: chosen,
+          values: { ...s.values, showBackground: chosen !== null },
+        }),
+      }),
+    [],
   );
 
   return (
@@ -81,6 +122,28 @@ export function Editor({ template }: { template: EditorTemplate }) {
         >
           {exportProgress || status.text}
         </p>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            aria-label="Undo"
+            title="Undo (Ctrl+Z)"
+            disabled={!canUndo(history)}
+            onClick={() => dispatch({ type: "undo" })}
+            className="rounded px-2 py-1 text-lg text-zinc-300 hover:bg-zinc-800 disabled:text-zinc-700 disabled:hover:bg-transparent"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            aria-label="Redo"
+            title="Redo (Ctrl+Shift+Z)"
+            disabled={!canRedo(history)}
+            onClick={() => dispatch({ type: "redo" })}
+            className="rounded px-2 py-1 text-lg text-zinc-300 hover:bg-zinc-800 disabled:text-zinc-700 disabled:hover:bg-transparent"
+          >
+            ↷
+          </button>
+        </div>
         <RenderStatus />
         <button
           type="button"
@@ -151,7 +214,7 @@ export function Editor({ template }: { template: EditorTemplate }) {
               templateId={template.id}
               presets={template.manifest.presets}
               isActive={(preset) => presetMatches(template, values, preset)}
-              onApply={(preset) => setValues((current) => applyPreset(template, current, preset))}
+              onApply={pickPreset}
             />
           )}
           {panel === "customize" && (
