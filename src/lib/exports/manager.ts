@@ -22,6 +22,7 @@ import { runCommand, type RunCommand } from "@/lib/run-command";
 import { songInfo } from "@/lib/songs";
 import { IMAGE_MISSING_MESSAGE, imagePath } from "@/lib/images";
 import { loadTemplate, validateValues } from "@/lib/templates";
+import { storageRoot } from "@/lib/storage-root";
 
 export type ExportState = "running" | "done" | "failed" | "cancelled";
 
@@ -104,7 +105,7 @@ async function diskFree(dir: string): Promise<number> {
 export function createExportManager(o: ExportManagerOptions) {
   const now = o.now ?? Date.now;
   const runExport = o.runExport ?? realRunExport;
-  const storage = path.join(o.projectRoot, "storage");
+  const storage = storageRoot(o.projectRoot);
   const statusDir = path.join(storage, "exports");
   let current: Running | null = null;
   let lastSaved = 0;

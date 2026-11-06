@@ -7,6 +7,7 @@ import { IMAGE_UPLOAD, ImageTooBig } from "@/lib/images";
 import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import { runCommand } from "@/lib/run-command";
 import { saveUpload } from "@/lib/uploads";
+import { storageRoot as storageRootOf } from "@/lib/storage-root";
 
 export async function PUT(request: Request): Promise<Response> {
   if (!request.body) return Response.json({ error: UNREADABLE_IMAGE_MESSAGE }, { status: 422 });
@@ -19,7 +20,7 @@ export async function PUT(request: Request): Promise<Response> {
   } catch {
     // an unreadable name is treated like an unknown file type below
   }
-  const storageRoot = path.join(process.cwd(), "storage");
+  const storageRoot = storageRootOf(process.cwd());
   let upload: string | undefined;
   try {
     upload = await saveUpload(

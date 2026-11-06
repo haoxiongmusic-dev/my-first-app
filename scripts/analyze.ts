@@ -7,6 +7,7 @@ import { isCurrentAnalysis, toAudioDataJs } from "../src/lib/analysis";
 import { formatDuration } from "../src/lib/format";
 import { runCommand } from "../src/lib/run-command";
 import { prepareSong, SongError } from "../src/lib/songs";
+import { storageRoot } from "../src/lib/storage-root";
 
 const USAGE = "Usage: npm run analyze -- <audio file> [--js <out.js>]";
 
@@ -29,7 +30,7 @@ async function main(): Promise<void> {
   try {
     const song = await prepareSong({
       sourcePath: path.resolve(args.source),
-      storageRoot: path.join(process.cwd(), "storage"),
+      storageRoot: storageRoot(process.cwd()),
       projectRoot: process.cwd(),
       platform: process.platform,
       run: runCommand,

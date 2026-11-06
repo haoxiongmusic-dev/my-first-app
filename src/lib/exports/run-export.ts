@@ -22,6 +22,7 @@ import { prepareJob } from "@/lib/jobs";
 import { outputName } from "@/lib/render-args";
 import type { RunCommand } from "@/lib/run-command";
 import { defaultValues, loadTemplate, type TemplateValues } from "@/lib/templates";
+import { storageRoot } from "@/lib/storage-root";
 
 export type ExportRequest = {
   templateId: string;
@@ -86,7 +87,7 @@ function isProgressNoise(line: string): boolean {
 
 export async function runExport(o: RunExportOptions): Promise<{ file: string }> {
   const { request } = o;
-  const storage = path.join(o.projectRoot, "storage");
+  const storage = storageRoot(o.projectRoot);
   const jobDir = path.join(storage, "jobs", o.exportId);
   const log: string[] = [];
   let partFile: string | null = null;

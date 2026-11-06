@@ -14,6 +14,7 @@ import {
   UNREADABLE_MESSAGE,
 } from "@/lib/songs";
 import { saveUpload } from "@/lib/uploads";
+import { storageRoot as storageRootOf } from "@/lib/storage-root";
 
 const STATUS: Record<SongErrorKind, number> = {
   unreadable: 422,
@@ -38,7 +39,7 @@ export async function PUT(request: Request): Promise<Response> {
   }
 
   const root = process.cwd();
-  const storageRoot = path.join(root, "storage");
+  const storageRoot = storageRootOf(root);
   let upload: string | undefined;
   try {
     upload = await saveUpload(

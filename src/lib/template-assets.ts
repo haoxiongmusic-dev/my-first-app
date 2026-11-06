@@ -12,6 +12,7 @@ import type { RunCommand } from "@/lib/run-command";
 import { prepareSong } from "@/lib/songs";
 import { listTemplates } from "@/lib/templates";
 import { syncToolkit } from "@/lib/toolkit-sync";
+import { storageRoot } from "@/lib/storage-root";
 
 async function sameContent(file: string, content: Buffer | string): Promise<boolean> {
   if (!existsSync(file)) return false;
@@ -27,7 +28,7 @@ export async function ensureTemplateAssets(
   projectRoot: string,
   run: RunCommand,
 ): Promise<string[]> {
-  const sampleDir = path.join(projectRoot, "storage", "sample");
+  const sampleDir = path.join(storageRoot(projectRoot), "sample");
   const samplePath = path.join(sampleDir, "sample-song.wav");
   await mkdir(sampleDir, { recursive: true });
   const python = venvPythonPath(projectRoot, process.platform);
@@ -40,7 +41,7 @@ export async function ensureTemplateAssets(
 
   const song = await prepareSong({
     sourcePath: samplePath,
-    storageRoot: path.join(projectRoot, "storage"),
+    storageRoot: storageRoot(projectRoot),
     projectRoot,
     platform: process.platform,
     run,
