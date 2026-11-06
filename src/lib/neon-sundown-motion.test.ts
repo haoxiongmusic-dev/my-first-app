@@ -35,6 +35,13 @@ type Motion = {
     near: Float32Array;
   };
   buildStars: (mulberry32: (seed: number) => () => number) => Float32Array;
+  gridLineParams: (previewScale: number) => {
+    half: number;
+    gain: number;
+    soft: number;
+    crowdLo: number;
+    crowdHi: number;
+  };
 };
 const m = require("../../templates/neon-sundown/assets/sundown-motion.js") as Motion;
 
@@ -86,6 +93,44 @@ describe("Neon Sundown motion", () => {
     expect(m.gridBrightness(0)).toBeCloseTo(0.55, 9);
     expect(m.gridBrightness(1)).toBeCloseTo(1, 9);
     expect(m.mountainLevel(0)).toBeCloseTo(0.6, 9);
+  });
+
+  it("grid lines keep about one screen pixel wide and soft at every preview size", () => {
+    expect(m.gridLineParams(1)).toEqual({ half: 1, gain: 1, soft: 0.5, crowdLo: 4, crowdHi: 10 });
+    const p = m.gridLineParams(1 / 3);
+    expect(p.half).toBeCloseTo(1.8, 9); // 1.2 screen px wide at 360p …
+    expect(p.gain).toBeCloseTo(2 / 3.6, 9); // … and dimmer to match
+    expect(p.soft).toBeCloseTo(1.5, 9); // a half-pixel soft edge on screen
+    expect(p.crowdLo).toBeCloseTo(12, 9);
+    expect(p.crowdHi).toBeCloseTo(30, 9);
+  });
+
+  it("a scrolling grid row keeps a steady brightness in the preview (no crawl)", () => {
+    // The grid shader's row lines, one row near dy = 300, summed down one pixel column as the
+    // grid scrolls: the total must not pulse as the line crosses screen pixels.
+    const ss = (a: number, b: number, x: number) => {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    for (const scale of [1, 2 / 3, 1 / 3]) {
+      const g = m.gridLineParams(scale);
+      let min = Infinity,
+        max = -Infinity;
+      for (let k = 0; k < 200; k++) {
+        const offset = (k / 200) * 0.1;
+        let sum = 0;
+        for (let r = 0; r < Math.round(1080 * scale); r++) {
+          const dy = (r + 0.5) / scale - 640;
+          if (dy < 280 || dy > 340) continue;
+          const v = 1600 / dy + offset;
+          const dv = (Math.abs(v - Math.floor(v + 0.5)) * dy * dy) / 1600;
+          sum += (1 - ss(g.half - g.soft, g.half + g.soft, dv)) * g.gain;
+        }
+        min = Math.min(min, sum);
+        max = Math.max(max, sum);
+      }
+      expect((max - min) / max, `scale ${scale}`).toBeLessThanOrEqual(0.25);
+    }
   });
 
   it("the sun's gaps drift down, getting thicker toward the bottom", () => {

@@ -405,21 +405,25 @@
         var GRID_FS = [
           "precision highp float;",
           "uniform vec3 gridCol; uniform float bright, offset, lineHalf, lineGain;",
+          "uniform float soft, crowdLo, crowdHi;",
           "varying vec2 uv;",
           "const float K = 1.375;", // 6 cells across the near edge
           "const float D = 1600.0;", // row spacing: about 120 px at the near edge
           "void main(){",
           "  vec2 px = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
           "  float dy = px.y - 640.0;",
-          "  float horizon = exp(-pow(dy / 1.6, 2.0)) * 1.2 + exp(-abs(dy) / 18.0) * 0.25;",
+          "  float hq = dy / 1.6;",
+          "  float horizon = exp(-hq * hq) * 1.2 + exp(-abs(dy) / 18.0) * 0.25;",
           "  vec3 c = gridCol * horizon;",
           "  if (dy > 0.5) {",
           "    float u = (px.x - 960.0) / dy * K;",
           "    float v = D / dy + offset;",
-          "    float du = abs(fract(u + 0.5) - 0.5) * dy / K;",
+          // columns lean toward the horizon: measure the distance across the line, not sideways
+          "    float across = dy / length(vec2(px.x - 960.0, dy));",
+          "    float du = abs(fract(u + 0.5) - 0.5) * dy / K * across;",
           "    float dv = abs(fract(v + 0.5) - 0.5) * dy * dy / D;",
-          "    float colLine = (1.0 - smoothstep(lineHalf - 0.5, lineHalf + 0.5, du)) * smoothstep(3.0, 8.0, dy / K);",
-          "    float rowLine = (1.0 - smoothstep(lineHalf - 0.5, lineHalf + 0.5, dv)) * smoothstep(3.0, 8.0, dy * dy / D);",
+          "    float colLine = (1.0 - smoothstep(lineHalf - soft, lineHalf + soft, du)) * smoothstep(crowdLo, crowdHi, dy / K * across);",
+          "    float rowLine = (1.0 - smoothstep(lineHalf - soft, lineHalf + soft, dv)) * smoothstep(crowdLo, crowdHi, dy * dy / D);",
           "    float fade = smoothstep(0.0, 160.0, dy) * 0.85 + 0.15;",
           "    c += gridCol * max(colLine, rowLine) * lineGain * bright * fade;",
           "  }",
@@ -768,7 +772,7 @@
             }
           }
           var gapData = new Float32Array(14);
-          var LINE = thin(2);
+          var GRID_LINE = M.gridLineParams(PREVIEW_SCALE);
 
           function renderAt(t) {
             var a = audio.sample(t);
@@ -832,8 +836,11 @@
             gl.uniform3fv(gridProg.u.gridCol, GRID);
             gl.uniform1f(gridProg.u.bright, M.gridBrightness(env));
             gl.uniform1f(gridProg.u.offset, M.gridOffset(songTime, SPEED));
-            gl.uniform1f(gridProg.u.lineHalf, LINE[0] / 2);
-            gl.uniform1f(gridProg.u.lineGain, LINE[1]);
+            gl.uniform1f(gridProg.u.lineHalf, GRID_LINE.half);
+            gl.uniform1f(gridProg.u.lineGain, GRID_LINE.gain);
+            gl.uniform1f(gridProg.u.soft, GRID_LINE.soft);
+            gl.uniform1f(gridProg.u.crowdLo, GRID_LINE.crowdLo);
+            gl.uniform1f(gridProg.u.crowdHi, GRID_LINE.crowdHi);
             V.drawQuad(gl, gridProg);
             gl.disable(gl.BLEND);
 

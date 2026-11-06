@@ -133,7 +133,25 @@
     return out;
   }
 
+  /**
+   * How the grid's lines are drawn at a preview size (1 = the full-size render): a 2 px line,
+   * never thinner than 1.2 screen pixels (drawn wider and dimmer instead); a soft edge of half
+   * a screen pixel; and lines fade out where they crowd closer than 4..10 screen pixels, so
+   * the far grid doesn't shimmer.
+   */
+  function gridLineParams(previewScale) {
+    var w = Math.max(2, 1.2 / previewScale);
+    return {
+      half: w / 2,
+      gain: 2 / w,
+      soft: 0.5 / previewScale,
+      crowdLo: 4 / previewScale,
+      crowdHi: 10 / previewScale,
+    };
+  }
+
   var api = {
+    gridLineParams: gridLineParams,
     ARC: ARC,
     SUN: SUN,
     COVER_R: COVER_R,
