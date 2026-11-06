@@ -570,11 +570,16 @@
               kB * t[1],
             );
           }
-          /** A square dot of this size, kept at least about one screen pixel (dimmer if so). */
+          /**
+           * A square dot of this size. In the small preview it covers at least one whole screen
+           * pixel, centred on it (dimmer if widened), so it doesn't flicker (M.previewDot).
+           */
           function dot(x, y, size, c, k) {
-            var t = thin(size);
-            var h = t[0] / 2;
-            var kk = k * t[1] * t[1];
+            var d = M.previewDot(x, y, size, PREVIEW_SCALE);
+            var h = d[2] / 2;
+            var kk = k * d[3];
+            x = d[0];
+            y = d[1];
             quad(x - h, y - h, x + h, y - h, x + h, y + h, x - h, y + h, c, kk, c, kk);
           }
           function mixRGB(a, b, f) {
@@ -598,7 +603,8 @@
             for (var r = 0; r < 3; r++) {
               var angles = ANGLES[r];
               var n = angles.length;
-              // Values come from the un-turned angles (bass always at the top); positions turn.
+              // Values come from the un-turned angles and travel with their points, so each
+              // ring's pattern turns with it.
               var lens = M.barLengths(V.ringValues(M.ringThird(spec, r), angles, 360), INT);
               var turn = M.spinAngle(r, songTime, SPIN);
               var radius = M.RINGS[r].radius * pulse;
