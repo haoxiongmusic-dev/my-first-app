@@ -15,6 +15,7 @@
   var FLASH_LIFE = 0.4; // seconds a hit's edge flash lasts
   var FLASH_GAIN = 0.8;
   var RING = { x: 1180, y: 540, r: 330, max: 110 }; // centre, radius, longest bar (px)
+  var RING_SCALE = 160; // px of bar for a full-scale band at intensity 1 (the value is squared)
 
   /**
    * The crystal: a six-sided prism with pyramid tips, its corners nudged so the facets look
@@ -98,11 +99,12 @@
     return [nx / len, ny / len, nz / len];
   }
 
-  /** How far the crystal has turned (y) and how it tilts (x), in radians. */
+  /** How far the crystal has turned (y) and how it tilts (x), in radians; both follow Spin. */
   function turnAngles(songTime, spinPct) {
     return {
       y: 12 * DEG * songTime * (spinPct / 100),
-      x: 6 * DEG * Math.sin((2 * Math.PI * songTime) / 9),
+      // the tilt wobble follows Spin too (full from 100 %), so 0 % stands perfectly still
+      x: 6 * DEG * Math.min(1, spinPct / 100) * Math.sin((2 * Math.PI * songTime) / 9),
     };
   }
 
@@ -137,7 +139,7 @@
   function ringLengths(values, intensity) {
     var out = new Float32Array(values.length);
     for (var i = 0; i < values.length; i++) {
-      out[i] = Math.min(RING.max, values[i] * values[i] * RING.max * intensity);
+      out[i] = Math.min(RING.max, values[i] * values[i] * RING_SCALE * intensity);
     }
     return out;
   }
@@ -175,9 +177,9 @@
     ];
   }
 
-  /** The bokeh brightens a little with loudness. */
+  /** The bokeh breathes with the loudness. */
   function bokehLevel(loud) {
-    return 1 + 0.1 * loud;
+    return 0.85 + 0.35 * loud;
   }
 
   /** The grain pattern's number: changes 6 times a second (grain rule). */

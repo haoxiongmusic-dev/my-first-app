@@ -1,0 +1,858 @@
+<!doctype html>
+<!--
+  Prism Heart: a slowly turning iridescent glass crystal, right of centre, inside a dotted ring
+  of spectrum bars that bursts from the top with the bass. Soft out-of-focus bokeh (or your own
+  background) sits behind it; the artist and song name are on the left. The crystal pulses on
+  the beat, its facet edges flash on hits, and its rainbow sheen shifts with the loudness.
+
+  The glass is our own shader, not three.js's real glass (that needs high-precision render
+  targets, which draw a blank picture on this PC): a thin-film rainbow that changes with the
+  viewing angle, a bright rim, the backdrop seen slightly bent through each facet, and thin
+  bright facet edges. The backdrop is drawn every frame into an 8-bit render target, which is
+  both the picture behind the crystal and the texture the glass bends.
+
+  Colours are handled as plain display values (colour management off, no tone mapping), like
+  the other WebGL templates, so the presets come out exactly as picked.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The geometry and motion maths live
+  in assets/prism-motion.js (unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#c38bff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff7ac8"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"spin","type":"number","label":"Spin","default":100,"min":0,"max":200,"step":1,"unit":"%"},
+    {"id":"bandThickness","type":"number","label":"Band thickness","default":50,"min":10,"max":100,"step":1,"unit":"%"},
+    {"id":"noiseAmount","type":"number","label":"Noise","default":0,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"showBackground","type":"boolean","label":"Show background","default":false},
+    {"id":"backgroundBlur","type":"number","label":"Background blur","default":60,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"1","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":50,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/prism-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The text block: left side, centred vertically. */
+      #titles {
+        position: absolute;
+        left: 140px;
+        top: 0;
+        height: 1080px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-start;
+        font-family: "Montserrat", sans-serif;
+        color: #fbf6ff;
+        opacity: 0;
+      }
+      #songArtist {
+        white-space: nowrap;
+      }
+      #songTitle {
+        max-width: 560px; /* TITLE_SAFE: a long title wraps onto a second line */
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.12;
+      }
+      #songArtist {
+        font-size: 26px;
+        font-weight: 500;
+        letter-spacing: 0.35em;
+        text-transform: uppercase;
+        opacity: 0.8;
+      }
+      #songTitle {
+        margin-top: 8px;
+        font-size: 60px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      #loudLine {
+        margin-top: 22px;
+        width: 320px;
+        height: 2px;
+        background: #fff;
+      }
+      #bgImage,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+        <div id="songTitle" data-var-text="title">SONG NAME</div>
+        <div id="loudLine"></div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="bgImage" src="assets/background.jpg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.PrismMotion;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        function rgba(hex, alpha) {
+          var c = V.hexToRGB(hex);
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function applyPage() {
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          titles.style.textShadow = "0 0 18px " + rgba(setting("mainColor"), 0.6);
+        }
+        applyPage();
+
+        // Fit the text block, clear of the ring. The song title may wrap onto two lines before
+        // it shrinks; the artist line is never bigger than 0.6 × the title, so the title always
+        // reads first; and past the smallest size a line is scaled down so nothing can ever
+        // reach the ring. Measured on seeks, settings and font loads only, never in the
+        // timeline callback.
+        var TITLE_SAFE = 560;
+        var TITLE_LINES = 2;
+        var ARTIST_RATIO = 0.6;
+        var TITLE_FLOOR = 12;
+        var TITLE_SIZE = 60,
+          ARTIST_SIZE = 26,
+          LINE_HEIGHT = 1.12;
+        var fitted = "";
+        /** How wide the line's text really is, including a word too long to wrap. */
+        function textWidth(line) {
+          return Math.max(line.scrollWidth, line.offsetWidth);
+        }
+        /** Scale a line down if, even at its smallest size, it is wider than the space. */
+        function clampWidth(line) {
+          var w = textWidth(line);
+          line.style.transformOrigin = "0 50%";
+          line.style.transform = w > TITLE_SAFE ? "scale(" + (TITLE_SAFE / w).toFixed(4) + ")" : "";
+        }
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            document.getElementById("songTitle").textContent,
+            document.getElementById("songArtist").textContent,
+            setting("font"),
+            loaded,
+          ].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var title = document.getElementById("songTitle");
+          var artist = document.getElementById("songArtist");
+          title.style.transform = "";
+          artist.style.transform = "";
+          var size = TITLE_SIZE;
+          function titleTooBig() {
+            var maxHeight = TITLE_LINES * size * LINE_HEIGHT + 2;
+            return textWidth(title) > TITLE_SAFE + 1 || title.offsetHeight > maxHeight;
+          }
+          title.style.fontSize = size + "px";
+          while (titleTooBig() && size > TITLE_FLOOR) {
+            size = Math.max(TITLE_FLOOR, Math.floor(size * 0.95));
+            title.style.fontSize = size + "px";
+          }
+          clampWidth(title);
+          var small = Math.min(ARTIST_SIZE, Math.max(8, Math.round(size * ARTIST_RATIO)));
+          artist.style.fontSize = small + "px";
+          while (textWidth(artist) > TITLE_SAFE && small > 8) {
+            small -= 1;
+            artist.style.fontSize = small + "px";
+          }
+          clampWidth(artist);
+        }
+        fitTitles();
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+
+        /** A setting's colour as a three.js colour (plain display values). */
+        function color(hex) {
+          var rgb = V.hexToRGB(hex);
+          return new THREE.Color(rgb[0], rgb[1], rgb[2]);
+        }
+
+        /** A soft round glow texture (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 128;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.3, "rgba(255,255,255,0.45)");
+          grad.addColorStop(0.65, "rgba(255,255,255,0.1)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 128, 128);
+          return new THREE.CanvasTexture(c);
+        }
+
+        // ---------- shaders ----------
+        var SCREEN_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+        // The backdrop: a violet-to-black gradient with 40 soft out-of-focus discs, or the
+        // blurred background picture. px is in 1080p pixels, y down.
+        var BOKEH_FS = [
+          "uniform vec4 discs[40]; uniform vec3 discCol[40];",
+          "uniform vec3 topCol; uniform float usePicture; uniform sampler2D picture;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  vec2 px = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  vec3 c = topCol * pow(vUv.y, 1.3);",
+          "  for (int i = 0; i < 40; i++) {",
+          "    float r = discs[i].z;",
+          "    float d = length(px - discs[i].xy);",
+          "    float soft = 1.0 - smoothstep(r * 0.25, r, d);",
+          "    c += discCol[i] * soft * soft;",
+          "  }",
+          "  if (usePicture > 0.5) c = texture2D(picture, vUv).rgb * 0.6;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        var GLASS_VS = [
+          "attribute vec3 edge;",
+          "varying vec3 vEdge; varying vec3 vN; varying vec3 vV;",
+          "void main(){",
+          "  vec4 mv = modelViewMatrix * vec4(position, 1.0);",
+          "  vN = normalize(normalMatrix * normal);",
+          "  vV = normalize(-mv.xyz);",
+          "  vEdge = edge;",
+          "  gl_Position = projectionMatrix * mv;",
+          "}",
+        ].join("\n");
+        // The glass: a thin-film rainbow that changes with the viewing angle, a bright rim, the
+        // backdrop bent through the facet, and thin bright facet edges that flash on hits.
+        var GLASS_FS = [
+          "uniform sampler2D backdrop; uniform vec2 res;",
+          "uniform vec3 mainCol, accCol; uniform float sheen, flash, faceGain, opacity;",
+          "varying vec3 vEdge; varying vec3 vN; varying vec3 vV;",
+          "void main(){",
+          "  vec3 N = normalize(vN);",
+          "  if (!gl_FrontFacing) N = -N;",
+          "  vec3 Vd = normalize(vV);",
+          "  float ndv = abs(dot(N, Vd));",
+          "  float fres = pow(1.0 - ndv, 3.0);",
+          "  float phase = (1.0 - ndv) * 5.0 + sheen;",
+          "  vec3 film = 0.5 + 0.5 * cos(6.28318 * (phase + vec3(0.0, 0.33, 0.67)));",
+          "  vec3 tint = mix(film, mix(mainCol, accCol, 0.5 + 0.5 * sin(6.28318 * phase)), 0.45);",
+          "  vec3 bg = texture2D(backdrop, gl_FragCoord.xy / res + N.xy * 0.12).rgb;",
+          "  vec3 R = reflect(-Vd, N);",
+          "  float glint = pow(max(dot(R, normalize(vec3(-0.4, 0.8, 0.6))), 0.0), 24.0);",
+          "  glint += 0.6 * pow(max(dot(R, normalize(vec3(0.7, 0.2, 0.7))), 0.0), 12.0);",
+          "  float e = min(min(vEdge.x, vEdge.y), vEdge.z);",
+          "  float line = 1.0 - smoothstep(0.0, fwidth(e) * 1.5, e);",
+          "  vec3 col = (bg * 0.9 * mix(vec3(1.0), tint, 0.3) + tint * (0.12 + 1.2 * fres)) * faceGain;",
+          "  col += vec3(glint) * 1.1 * faceGain;",
+          "  col += line * (0.8 + flash) * mix(vec3(1.0), mainCol, 0.3);",
+          "  gl_FragColor = vec4(col, opacity);",
+          "}",
+        ].join("\n");
+        // Ring dots: points in 1080p pixels, at least about one screen pixel wide.
+        var DOT_VS = [
+          "attribute float size; attribute vec3 dotColor; uniform float pxScale;",
+          "varying vec3 vC;",
+          "void main(){",
+          "  float s = size * pxScale;",
+          "  float w = max(s, 1.2);",
+          "  vC = dotColor * (s / w) * (s / w);",
+          "  gl_PointSize = w;",
+          "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+          "}",
+        ].join("\n");
+        var DOT_FS = [
+          "varying vec3 vC;",
+          "void main(){",
+          "  float d = length(gl_PointCoord - 0.5);",
+          "  gl_FragColor = vec4(vC * (1.0 - smoothstep(0.35, 0.5, d)), 1.0);",
+          "}",
+        ].join("\n");
+        // Fine grain toward white or black, changing at most 6 times a second.
+        var GRAIN_FS = [
+          "uniform float amount, seed;",
+          "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }",
+          "void main(){",
+          "  float n = (hash(floor(gl_FragCoord.xy) + seed * 17.0) - 0.5) * 2.0;",
+          "  gl_FragColor = vec4(vec3(step(0.0, n)), abs(n) * amount);",
+          "}",
+        ].join("\n");
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials and
+         * audio (apply), and a new preview size only resizes (resize), so the live preview never
+         * piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+
+          // ----- the backdrop, drawn every frame into an 8-bit target -----
+          var backdrop = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, { type: THREE.UnsignedByteType }),
+          );
+          var discData = [],
+            discColors = [];
+          for (var d = 0; d < 40; d++) {
+            discData.push(new THREE.Vector4());
+            discColors.push(new THREE.Color());
+          }
+          var bokehMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: BOKEH_FS,
+              uniforms: {
+                discs: { value: discData },
+                discCol: { value: discColors },
+                topCol: { value: new THREE.Color(0x14061f) },
+                usePicture: { value: 0 },
+                picture: { value: null },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var backdropScene = new THREE.Scene();
+          backdropScene.add(new THREE.Mesh(quad, bokehMat));
+          var flatCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+          var BOKEH = M.buildBokeh(V.mulberry32);
+
+          // ----- the crystal: back faces first (dimmer), then the front faces over them -----
+          var scene = new THREE.Scene();
+          scene.background = backdrop.texture;
+          var camera = new THREE.PerspectiveCamera(30, 1920 / 1080, 0.1, 100);
+          camera.position.set(0, 0, 12);
+          camera.lookAt(0, 0, 0);
+          var mesh = M.buildCrystal(V.mulberry32);
+          var geometry = keep(new THREE.BufferGeometry());
+          geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+          geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
+          geometry.setAttribute("edge", new THREE.BufferAttribute(mesh.edges, 3));
+          var glassUniforms = {
+            backdrop: { value: backdrop.texture },
+            res: { value: new THREE.Vector2(1920, 1080) },
+            mainCol: { value: new THREE.Color() },
+            accCol: { value: new THREE.Color() },
+            sheen: { value: 0 },
+            flash: { value: 0 },
+          };
+          function glass(side, gain, opacity) {
+            return keep(
+              new THREE.ShaderMaterial({
+                vertexShader: GLASS_VS,
+                fragmentShader: GLASS_FS,
+                uniforms: Object.assign({}, glassUniforms, {
+                  faceGain: { value: gain },
+                  opacity: { value: opacity },
+                }),
+                side: side,
+                transparent: opacity < 1,
+                depthWrite: opacity >= 1,
+              }),
+            );
+          }
+          var crystal = new THREE.Group();
+          crystal.position.set(1.31, 0, 0);
+          var back = new THREE.Mesh(geometry, glass(THREE.BackSide, 0.45, 1));
+          var front = new THREE.Mesh(geometry, glass(THREE.FrontSide, 1, 0.9));
+          back.renderOrder = 1;
+          front.renderOrder = 2;
+          crystal.add(back, front);
+          scene.add(crystal);
+          // coloured glow behind it (8-bit bloom only catches near-white)
+          var glowMat = keep(
+            new THREE.SpriteMaterial({
+              map: keep(glowTexture()),
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          var glow = new THREE.Sprite(glowMat);
+          glow.position.set(1.31, 0, -1.5);
+          glow.scale.set(9, 9, 1);
+          glow.renderOrder = 0;
+          scene.add(glow);
+
+          // ----- the overlay: ring dots and grain, in 1080p pixels (y up from the bottom) -----
+          var overlay = new THREE.Scene();
+          var pixelCamera = new THREE.OrthographicCamera(0, 1920, 1080, 0, -1, 1);
+          var MAX_DOTS = 160 * 30;
+          var dotPos = new Float32Array(3 * MAX_DOTS),
+            dotCol = new Float32Array(3 * MAX_DOTS),
+            dotSize = new Float32Array(MAX_DOTS);
+          var dotGeo = keep(new THREE.BufferGeometry());
+          dotGeo.setAttribute("position", new THREE.BufferAttribute(dotPos, 3));
+          dotGeo.setAttribute("dotColor", new THREE.BufferAttribute(dotCol, 3));
+          dotGeo.setAttribute("size", new THREE.BufferAttribute(dotSize, 1));
+          var dotMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: DOT_VS,
+              fragmentShader: DOT_FS,
+              uniforms: { pxScale: { value: 1 } },
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var dots = new THREE.Points(dotGeo, dotMat);
+          dots.frustumCulled = false;
+          overlay.add(dots);
+          var grainMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: GRAIN_FS,
+              uniforms: { amount: { value: 0 }, seed: { value: 0 } },
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var grain = new THREE.Mesh(quad, grainMat);
+          grain.frustumCulled = false;
+          grain.renderOrder = 10;
+          overlay.add(grain);
+
+          // ----- glow; every target 8-bit (three.js defaults to a high-precision type) -----
+          var target = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, { type: THREE.UnsignedByteType, samples: 4 }),
+          );
+          var composer = new K.EffectComposer(renderer, target);
+          keep(composer);
+          composer.setPixelRatio(1);
+          composer.addPass(new K.RenderPass(scene, camera));
+          var overlayPass = new K.RenderPass(overlay, pixelCamera);
+          overlayPass.clear = false;
+          composer.addPass(overlayPass);
+          var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.45, 0.4, 0.9);
+          [bloom.renderTargetBright]
+            .concat(bloom.renderTargetsHorizontal, bloom.renderTargetsVertical)
+            .forEach(function (rt) {
+              rt.texture.type = THREE.UnsignedByteType;
+            });
+          keep(bloom);
+          composer.addPass(bloom);
+          composer.addPass(new K.OutputPass());
+
+          function resize(scale) {
+            var W = Math.round(1920 * scale),
+              H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            composer.setSize(W, H);
+            bloom.setSize(Math.round(W / 2), Math.round(H / 2));
+            backdrop.setSize(W, H);
+            glassUniforms.res.value.set(W, H);
+            dotMat.uniforms.pxScale.value = scale;
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- the background picture (optional), blurred once on a 2D canvas -----
+          var pictureTex = null;
+          var pictureBlur = -1;
+          function loadPicture() {
+            var img = document.getElementById("bgImage");
+            var blur = setting("backgroundBlur");
+            if (pictureTex && pictureBlur === blur) return;
+            if (!img || !img.complete || !img.naturalWidth) return;
+            var c2 = document.createElement("canvas");
+            c2.width = 1920;
+            c2.height = 1080;
+            var ctx = c2.getContext("2d");
+            var blurPx = (blur / 100) * 80;
+            ctx.filter = blurPx > 0 ? "blur(" + blurPx + "px)" : "none";
+            var pad = blurPx * 2; // draw past the edges so the blur doesn't darken them
+            var s = Math.max(
+              (1920 + 2 * pad) / img.naturalWidth,
+              (1080 + 2 * pad) / img.naturalHeight,
+            );
+            var dw = img.naturalWidth * s,
+              dh = img.naturalHeight * s;
+            ctx.drawImage(img, (1920 - dw) / 2, (1080 - dh) / 2, dw, dh);
+            if (pictureTex) pictureTex.dispose();
+            pictureTex = new THREE.CanvasTexture(c2);
+            pictureBlur = blur;
+            bokehMat.uniforms.picture.value = pictureTex;
+          }
+
+          // ----- settings: colours, audio, ring layout (no new WebGL objects) -----
+          var audio, MAIN, ACC, INT, SPIN, DOT, ANGLES, POINTS, spec, SHOW_BG, NOISE;
+          function apply() {
+            MAIN = color(setting("mainColor"));
+            ACC = color(setting("accentColor"));
+            INT = setting("intensity");
+            SPIN = setting("spin");
+            DOT = M.dotSize(setting("bandThickness"));
+            NOISE = (setting("noiseAmount") / 100) * 0.02;
+            SHOW_BG = setting("showBackground") === true;
+            audio = V.createAudio(window.AUDIO_DATA, {
+              beatRange: setting("beatRange"),
+              spectrumLow: setting("spectrumLow"),
+              spectrumHigh: setting("spectrumHigh"),
+              spectrumBoost: Number(setting("spectrumBoost")),
+              spectrumCount: 30,
+            });
+            spec = new Float32Array(30);
+            ANGLES = V.ringAngles(M.ringCount(V, setting("bandCount")), 360);
+            POINTS = [];
+            for (var k = 0; k < ANGLES.length; k++) POINTS.push(V.ringPoint(ANGLES[k], "circle"));
+            glassUniforms.mainCol.value.copy(MAIN);
+            glassUniforms.accCol.value.copy(ACC);
+            glowMat.color.copy(MAIN);
+            grainMat.uniforms.amount.value = NOISE;
+            grain.visible = NOISE > 0;
+          }
+          apply();
+
+          var tmp = new THREE.Color();
+          var loudLine = document.getElementById("loudLine");
+          function render(t) {
+            var a = audio.sample(t);
+            var songTime = t + audio.songStart;
+            var env = V.beatEnvelope(audio, t, M.PULSE_RELEASE);
+
+            // the backdrop: drifting bokeh, or the picture
+            if (SHOW_BG) loadPicture();
+            bokehMat.uniforms.usePicture.value = SHOW_BG && pictureTex ? 1 : 0;
+            var level = M.bokehLevel(a.loud) * 0.22;
+            for (var i = 0; i < 40; i++) {
+              var disc = BOKEH.subarray(6 * i, 6 * i + 6);
+              var at = M.bokehAt(disc, songTime);
+              discData[i].set(at[0], at[1], disc[2], 0);
+              discColors[i].copy(MAIN).lerp(ACC, disc[3]).multiplyScalar(level);
+            }
+            renderer.setRenderTarget(backdrop);
+            renderer.render(backdropScene, flatCamera);
+            renderer.setRenderTarget(null);
+
+            // the crystal
+            var turn = M.turnAngles(songTime, SPIN);
+            crystal.rotation.set(turn.x, turn.y, 0);
+            crystal.scale.setScalar(M.crystalScale(env, INT));
+            glassUniforms.sheen.value = M.sheenShift(a.loud);
+            glassUniforms.flash.value = M.edgeFlash(audio, t);
+            var glowLevel = M.glowLevel(a.loud, INT);
+            glowMat.opacity = 0.6 * glowLevel;
+
+            // the ring: a base dot per point, then dots out to its bar length
+            var lens = M.ringLengths(V.ringValues(audio.spectrum(t, spec), ANGLES, 360), INT);
+            var n = 0;
+            for (var k = 0; k < POINTS.length; k++) {
+              var p = POINTS[k];
+              var bx = M.RING.x + p[0] * M.RING.r,
+                by = M.RING.y + p[1] * M.RING.r;
+              for (var dd = 0; dd <= lens[k] && n < MAX_DOTS; dd += 2 * DOT) {
+                dotPos[3 * n] = bx + p[2] * dd;
+                dotPos[3 * n + 1] = 1080 - (by + p[3] * dd); // overlay y runs up
+                dotPos[3 * n + 2] = 0;
+                tmp.copy(MAIN).lerp(ACC, dd / M.RING.max);
+                dotCol[3 * n] = tmp.r;
+                dotCol[3 * n + 1] = tmp.g;
+                dotCol[3 * n + 2] = tmp.b;
+                dotSize[n] = DOT;
+                n++;
+              }
+            }
+            dotGeo.setDrawRange(0, n);
+            dotGeo.attributes.position.needsUpdate = true;
+            dotGeo.attributes.dotColor.needsUpdate = true;
+            dotGeo.attributes.size.needsUpdate = true;
+            grainMat.uniforms.seed.value = M.grainSeed(songTime) % 997;
+
+            composer.render();
+
+            // the line under the title glows with the loudness (setting a style, not measuring)
+            loudLine.style.boxShadow =
+              "0 0 " +
+              (6 + 14 * a.loud).toFixed(1) +
+              "px " +
+              rgba(setting("mainColor"), (0.4 + 0.5 * a.loud).toFixed(2));
+            loudLine.style.opacity = (0.55 + 0.45 * a.loud).toFixed(3);
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            if (pictureTex) pictureTex.dispose();
+            renderer.dispose();
+          }
+          return { render: render, dispose: dispose, apply: apply, resize: resize };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale) } from setup()
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        // the background picture may arrive after the first frame
+        var bgImage = document.getElementById("bgImage");
+        bgImage.addEventListener("load", function () {
+          draw(Math.max(0, lastTime));
+        });
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

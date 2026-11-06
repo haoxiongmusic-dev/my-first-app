@@ -107,7 +107,11 @@ describe("Prism Heart crystal", () => {
 describe("Prism Heart motion", () => {
   it("turns by time only, and stands still at 0 % spin", () => {
     expect(m.turnAngles(1, 100).y).toBeCloseTo(12 * DEG, 9);
-    for (const t of [0, 3.3, 100]) expect(m.turnAngles(t, 0).y).toBe(0);
+    for (const t of [0, 3.3, 100]) {
+      expect(m.turnAngles(t, 0).y).toBe(0);
+      expect(m.turnAngles(t, 0).x).toBe(0); // no wobble either: the crystal stands still
+    }
+    expect(m.turnAngles(2.25, 50).x).toBeCloseTo(3 * DEG, 9); // half the wobble at half spin
     expect(m.turnAngles(0, 100).x).toBe(0);
     for (let i = 0; i < 50; i++) {
       expect(Math.abs(m.turnAngles(i * 0.7, 100).x)).toBeLessThanOrEqual(6 * DEG + 1e-12);
@@ -134,12 +138,13 @@ describe("Prism Heart motion", () => {
     expect(m.glowLevel(1, 2)).toBe(1);
     expect(m.glowLevel(0, 1)).toBe(0.5);
     expect(m.sheenShift(0.9)).toBeCloseTo(0.3, 9);
-    expect(m.bokehLevel(1)).toBeCloseTo(1.1, 9);
+    expect(m.bokehLevel(1)).toBeCloseTo(1.2, 9);
+    expect(m.bokehLevel(0)).toBeCloseTo(0.85, 9);
   });
 
   it("ring bars follow the square of the value and cap at 110 px", () => {
-    expect(Array.from(m.ringLengths([0, 0.5, 1], 1))).toEqual([0, 27.5, 110]);
-    expect(Array.from(m.ringLengths([0, 0.5, 1], 2))).toEqual([0, 55, 110]);
+    expect(Array.from(m.ringLengths([0, 0.5, 1], 1))).toEqual([0, 40, 110]);
+    expect(Array.from(m.ringLengths([0, 0.5, 1], 2))).toEqual([0, 80, 110]);
   });
 
   it("the ring at full length stays in the frame and clear of the text", () => {
