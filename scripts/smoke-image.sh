@@ -18,8 +18,14 @@ fail() {
 
 # A throwaway test account and secret, made only for this run.
 SECRET="$(head -c 36 /dev/urandom | base64 | tr -d '/+=\n' | head -c 48)"
-ACCOUNT="$(docker run --rm "$IMAGE" npx tsx -e \
-  "import('./src/lib/auth/passwords.ts').then(m => console.log('smoke:' + m.hashPassword('smoke-password-1')))")"
+# (--entrypoint skips the CUDA base image's start-up banner, which would mix into the output)
+ACCOUNT="$(docker run --rm --entrypoint npx "$IMAGE" tsx -e \
+  "import('./src/lib/auth/passwords.ts').then(m => console.log('smoke:' + m.hashPassword('smoke-password-1')))" \
+  | tail -1)"
+case "$ACCOUNT" in
+  smoke:scrypt\$*) ;;
+  *) echo "SMOKE FAILED: couldn't make the test account: $ACCOUNT" >&2; exit 1 ;;
+esac
 
 docker run -d --name "$NAME" -p "$PORT:3000" \
   -e ACCOUNTS="$ACCOUNT" -e SESSION_SECRET="$SECRET" -e GPU_CHECK=0 \
