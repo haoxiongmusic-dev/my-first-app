@@ -32,8 +32,11 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
   - [x] Halo Rings (nested dotted rings, Astral Pulse-style, plus the toolkit's ring kit;
         spec `docs/superpowers/specs/2026-11-06-m6-halo-rings-design.md`, plan
         `docs/superpowers/plans/2026-11-06-m6-halo-rings.md`)
-  - [ ] Neon Sundown (synthwave, Gridwave-style), Prism Heart (glass crystal): specs written
-        and approved in `docs/superpowers/specs/2026-11-06-m6-*` · then M7 polish
+  - [x] Neon Sundown (synthwave, Gridwave-style: cover in a striped sun, grid floor, VHS look;
+        spec `docs/superpowers/specs/2026-11-06-m6-neon-sundown-design.md`, plan
+        `docs/superpowers/plans/2026-11-06-m6-neon-sundown.md`)
+  - [ ] Prism Heart (glass crystal): spec written and approved
+        (`docs/superpowers/specs/2026-11-06-m6-prism-heart-design.md`) · then M7 polish
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
@@ -117,6 +120,9 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   (frame capture 1 min 35 s ≈ 3.2×) and 4 min 33 s without.
 - Halo Rings is quicker still: a 30 s Final section of T-REX took 3 min 45 s in total (frame
   capture 1 min 30 s ≈ 3×).
+- Neon Sundown: a 30 s Final section of T-REX with a cover took 4 min 7 s (frame capture
+  1 min 58 s ≈ 3.9×). Its files are the biggest so far (≈ 26 MB per 30 s at CRF 20, Halo Rings
+  ≈ 13 MB): the always-scrolling grid is most of it, the VHS look adds ≈ 25 %.
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
   `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 
