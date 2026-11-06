@@ -19,6 +19,7 @@ import {
   type Resolution,
 } from "@/lib/exports/progress";
 import { prepareJob } from "@/lib/jobs";
+import { renderGpuArgs } from "@/lib/gpu-check";
 import { outputName } from "@/lib/render-args";
 import type { RunCommand } from "@/lib/run-command";
 import { defaultValues, loadTemplate, type TemplateValues } from "@/lib/templates";
@@ -163,6 +164,7 @@ export async function runExport(o: RunExportOptions): Promise<{ file: string }> 
     [
       ...["hyperframes", "render", jobDir, "--variables-file", job.variablesPath],
       ...["--strict-variables", "--quality", quality, "-o", raw],
+      ...renderGpuArgs(),
     ],
     (line) => {
       const p = parseHfProgress(line);
