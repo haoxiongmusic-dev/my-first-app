@@ -49,6 +49,14 @@ export function passwordProblem(password: string): string | null {
 export const MAX_PASSWORD = 256;
 
 /**
+ * The same ACCOUNTS line for a .env file: Next's .env loader reads "$name" as a variable, so
+ * each $ is written as \$. (RunPod's settings take the line as it is.)
+ */
+export function envFileLine(line: string): string {
+  return line.replaceAll("$", "\\$");
+}
+
+/**
  * A valid fingerprint of a random password nobody knows. Unknown usernames are checked
  * against it, so a wrong username takes as long as a wrong password.
  */

@@ -4,6 +4,7 @@ import {
   DUMMY_HASH,
   formatAccountLine,
   hashPassword,
+  envFileLine,
   passwordProblem,
   parseAccounts,
   verifyPassword,
@@ -35,6 +36,11 @@ describe("passwords", () => {
     // the login refuses anything longer, so add-user must too
     expect(passwordProblem("p".repeat(256))).toBeNull();
     expect(passwordProblem("p".repeat(257))).toBe("Use at most 256 characters.");
+  });
+
+  it("an ACCOUNTS line for a .env file writes each $ as \\$", () => {
+    expect(envFileLine("ana:scrypt$a$b")).toBe("ana:scrypt\\$a\\$b");
+    expect(envFileLine("no-dollars")).toBe("no-dollars");
   });
 
   it("parses ACCOUNTS typed by hand: spaces, empty entries, case", () => {
