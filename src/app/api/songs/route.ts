@@ -13,7 +13,9 @@ import {
   TOO_BIG_MESSAGE,
   UNREADABLE_MESSAGE,
 } from "@/lib/songs";
-import { saveUpload } from "@/lib/uploads";
+import { expectedBytes, saveUpload, SONG_UPLOAD } from "@/lib/uploads";
+import { requireLogin } from "@/lib/auth/require-login";
+import { storageRoot as storageRootOf } from "@/lib/storage-root";
 
 const STATUS: Record<SongErrorKind, number> = {
   unreadable: 422,
@@ -32,13 +34,16 @@ function fileNameFrom(request: Request): string {
 }
 
 export async function PUT(request: Request): Promise<Response> {
+  // The proxy leaves upload routes alone (it would cut bodies at 10 MB): check the login here.
+  const denied = requireLogin(request);
+  if (denied) return denied;
   if (!request.body) return Response.json({ error: UNREADABLE_MESSAGE }, { status: 422 });
   if (Number(request.headers.get("content-length")) > MAX_SONG_BYTES) {
     return Response.json({ error: TOO_BIG_MESSAGE }, { status: 413 });
   }
 
   const root = process.cwd();
-  const storageRoot = path.join(root, "storage");
+  const storageRoot = storageRootOf(root);
   let upload: string | undefined;
   try {
     upload = await saveUpload(
@@ -46,6 +51,8 @@ export async function PUT(request: Request): Promise<Response> {
       path.join(storageRoot, "uploads"),
       fileNameFrom(request),
       MAX_SONG_BYTES,
+      SONG_UPLOAD,
+      expectedBytes(request),
     );
     const song = await prepareSong({
       sourcePath: upload,

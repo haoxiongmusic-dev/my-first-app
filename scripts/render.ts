@@ -13,6 +13,7 @@ import { outputName, parseRenderArgs, type RenderArgs } from "../src/lib/render-
 import { runCommand } from "../src/lib/run-command";
 import { prepareSong } from "../src/lib/songs";
 import { loadTemplate, resolveValues } from "../src/lib/templates";
+import { storageRoot as storageRootOf } from "../src/lib/storage-root";
 
 /** Run a program with its output shown live; true if it succeeded. */
 function runLive(cmd: string, args: string[]): boolean {
@@ -53,7 +54,7 @@ function stamp(): string {
 async function render(args: RenderArgs): Promise<void> {
   const root = process.cwd();
   const template = await loadTemplate(path.join(root, "templates", args.templateId));
-  const storageRoot = path.join(root, "storage");
+  const storageRoot = storageRootOf(root);
   // Each --image picture is stored like an upload; its id becomes that setting's value.
   const overrides = { ...args.overrides };
   for (const [id, file] of Object.entries(args.images)) {
@@ -72,7 +73,7 @@ async function render(args: RenderArgs): Promise<void> {
     run: runCommand,
   });
 
-  const jobDir = path.join(root, "storage", "jobs", `${stamp()}-${template.id}`);
+  const jobDir = path.join(storageRootOf(root), "jobs", `${stamp()}-${template.id}`);
   const job = await prepareJob({
     template,
     song,

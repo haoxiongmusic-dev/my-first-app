@@ -14,7 +14,12 @@ import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import type { RunCommand } from "@/lib/run-command";
 import { songIdFor } from "@/lib/songs";
 import { IMAGE_FITS, IMAGE_ID, type ImageFit } from "@/lib/template-values";
-import { saveUpload, type UploadKind } from "@/lib/uploads";
+import {
+  expectedBytes,
+  INCOMPLETE_UPLOAD_MESSAGE,
+  saveUpload,
+  type UploadKind,
+} from "@/lib/uploads";
 
 export const TOO_BIG_IMAGE_MESSAGE = "Images can be up to 50 MB.";
 export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -32,6 +37,7 @@ export const IMAGE_UPLOAD: UploadKind = {
   extensions: IMAGE_EXTENSIONS,
   unreadable: () => new JobError(UNREADABLE_IMAGE_MESSAGE),
   tooBig: () => new ImageTooBig(TOO_BIG_IMAGE_MESSAGE),
+  incomplete: () => new JobError(INCOMPLETE_UPLOAD_MESSAGE),
 };
 
 /** FFmpeg arguments: cover the fit's size (crop the overflow), on black, one JPEG frame. */
@@ -106,6 +112,7 @@ export async function uploadImageResponse(
       name,
       MAX_IMAGE_BYTES,
       IMAGE_UPLOAD,
+      expectedBytes(request),
     );
     return Response.json({ id: await saveImage(upload, storageRoot, run, fit) });
   } catch (error) {

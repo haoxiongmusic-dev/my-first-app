@@ -7,16 +7,17 @@ import path from "node:path";
 import { runCommand } from "@/lib/run-command";
 import { prepareSong } from "@/lib/songs";
 import { ensureTemplateAssets } from "@/lib/template-assets";
+import { storageRoot } from "@/lib/storage-root";
 
 let pending: Promise<string | null> | null = null;
 
 export function sampleSongId(projectRoot: string): Promise<string | null> {
   pending ??= (async () => {
-    const samplePath = path.join(projectRoot, "storage", "sample", "sample-song.wav");
+    const samplePath = path.join(storageRoot(projectRoot), "sample", "sample-song.wav");
     if (!existsSync(samplePath)) await ensureTemplateAssets(projectRoot, runCommand);
     const song = await prepareSong({
       sourcePath: samplePath,
-      storageRoot: path.join(projectRoot, "storage"),
+      storageRoot: storageRoot(projectRoot),
       projectRoot,
       platform: process.platform,
       run: runCommand,

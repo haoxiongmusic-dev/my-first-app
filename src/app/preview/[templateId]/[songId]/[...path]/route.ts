@@ -5,6 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { parseRange, resolvePreviewFile } from "@/lib/preview";
 import { sampleSongId } from "@/lib/sample-song-id";
+import { storageRoot } from "@/lib/storage-root";
 
 type Params = { templateId: string; songId: string; path: string[] };
 
@@ -16,7 +17,7 @@ export async function GET(
   const root = process.cwd();
   const file = await resolvePreviewFile({
     templatesRoot: path.join(root, "templates"),
-    storageRoot: path.join(root, "storage"),
+    storageRoot: storageRoot(root),
     templateId,
     songId,
     path: filePath,

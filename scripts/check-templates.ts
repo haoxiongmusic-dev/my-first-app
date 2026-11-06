@@ -12,6 +12,7 @@ import { SAMPLE_SONG } from "../src/lib/sample-song";
 import { ensureTemplateAssets } from "../src/lib/template-assets";
 import { listTemplates, validateTemplate, type Template } from "../src/lib/templates";
 import { toolkitCopies } from "../src/lib/toolkit-sync";
+import { storageRoot } from "../src/lib/storage-root";
 
 const MIN_DIFFERENCE = 6; // average pixel difference between quiet and loud (0–255)
 const MIN_BRIGHTER = 3; // the loud frame must be at least this much brighter
@@ -50,7 +51,7 @@ async function readGray(image: string): Promise<Uint8Array> {
 }
 
 async function reactionCheck(t: Template): Promise<string[]> {
-  const outDir = path.join(process.cwd(), "storage", "checks", t.id);
+  const outDir = path.join(storageRoot(process.cwd()), "checks", t.id);
   const at = `${SAMPLE_SONG.quietAt},${SAMPLE_SONG.loudAt}`;
   const result = await runCommand("npx", [
     ...["hyperframes", "snapshot", `"${t.dir}"`, "--at", at, "--no-end", "--json"],

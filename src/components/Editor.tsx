@@ -12,6 +12,7 @@ import { PreviewPlayer } from "./PreviewPlayer";
 import type { Section } from "@/lib/section";
 import { BackgroundCard, type ChosenBackground } from "./BackgroundCard";
 import { ExportPanel } from "./ExportPanel";
+import { RenderStatus } from "./RenderStatus";
 import { ImageCard } from "./ImageCard";
 import { ContentFields, CustomizePanel } from "./SettingsForm";
 import { type ChosenSong, SongCard } from "./SongCard";
@@ -78,6 +79,7 @@ export function Editor({ template }: { template: EditorTemplate }) {
         >
           {exportProgress || status.text}
         </p>
+        <RenderStatus />
         <button
           type="button"
           onClick={() => setExportOpen(true)}

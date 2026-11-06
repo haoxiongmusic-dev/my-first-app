@@ -17,7 +17,7 @@
     "setup:py": "tsx scripts/setup-py.ts",
     "test:py": "tsx scripts/py.ts -m pytest -c analyzer/pytest.ini",
     "doctor": "tsx scripts/doctor.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run test:py",
     "analyze": "tsx scripts/analyze.ts",
     "sync:toolkit": "tsx scripts/sync-toolkit.ts",
@@ -25,7 +25,8 @@
     "check:templates": "tsx scripts/check-templates.ts",
     "render": "tsx scripts/render.ts",
     "thumbs": "tsx scripts/thumbs.ts",
-    "build:three": "tsx scripts/build-three-kit.ts"
+    "build:three": "tsx scripts/build-three-kit.ts",
+    "add-user": "tsx scripts/add-user.ts"
   },
   "dependencies": {
     "next": "16.4.5",

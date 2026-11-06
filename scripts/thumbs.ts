@@ -11,6 +11,7 @@ import { prepareSong } from "../src/lib/songs";
 import { ensureTemplateAssets } from "../src/lib/template-assets";
 import { loadTemplate, resolveValues } from "../src/lib/templates";
 import { thumbSection } from "../src/lib/thumbs";
+import { storageRoot } from "../src/lib/storage-root";
 
 const USAGE = "Usage: npm run thumbs -- <template> [--song <file>] [--at <seconds>]";
 
@@ -33,16 +34,16 @@ async function main(): Promise<void> {
   const root = process.cwd();
   await ensureTemplateAssets(root, runCommand);
   const template = await loadTemplate(path.join(root, "templates", id));
-  const songFile = option("--song") ?? path.join(root, "storage", "sample", "sample-song.wav");
+  const songFile = option("--song") ?? path.join(storageRoot(root), "sample", "sample-song.wav");
   const song = await prepareSong({
     sourcePath: path.resolve(songFile),
-    storageRoot: path.join(root, "storage"),
+    storageRoot: storageRoot(root),
     projectRoot: root,
     platform: process.platform,
     run: runCommand,
   });
 
-  const work = path.join(root, "storage", "jobs", `thumbs-${id}`);
+  const work = path.join(storageRoot(root), "jobs", `thumbs-${id}`);
   await rm(work, { recursive: true, force: true });
   await mkdir(path.join(template.dir, "presets"), { recursive: true });
   const presets = template.manifest.presets;

@@ -1,0 +1,22 @@
+# What the container image must never contain: git history, app data and renders, music and
+# video, secrets, local caches. The image is public, like the repo.
+.git
+.github
+node_modules
+.next
+storage
+test-renders
+.superpowers
+.claude
+.hyperframes
+analyzer/.venv
+.env*
+!.env.example
+**/*.wav
+**/*.mp3
+**/*.flac
+**/*.m4a
+**/*.mp4
+**/*.mov
+**/*.webm
+**/__pycache__

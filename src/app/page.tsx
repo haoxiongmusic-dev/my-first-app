@@ -4,10 +4,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { APP_NAME, APP_TAGLINE } from "@/lib/app-info";
 import { listTemplates } from "@/lib/templates";
+import { LogoutLink } from "@/components/LogoutButton";
 
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center gap-8 bg-black px-6 py-16 text-center">
+    <main className="relative flex flex-1 flex-col items-center gap-8 bg-black px-6 py-16 text-center">
+      <LogoutLink />
       <h1 className="text-4xl font-semibold tracking-tight text-zinc-50">{APP_NAME}</h1>
       <p className="text-lg text-zinc-400">{APP_TAGLINE}</p>
       <Suspense fallback={<p className="text-zinc-500">Loading templates…</p>}>

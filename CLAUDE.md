@@ -38,6 +38,10 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
   - [x] Prism Heart (iridescent glass crystal, three.js with our own glass shader; spec
         `docs/superpowers/specs/2026-11-06-m6-prism-heart-design.md`, plan
         `docs/superpowers/plans/2026-11-06-m6-prism-heart.md`)
+- [ ] Online test version (rented cloud GPU, invited logins, files on a kept disk; spec
+      `docs/superpowers/specs/2026-11-06-online-test-design.md`, plan
+      `docs/superpowers/plans/2026-11-06-online-test.md`, owner's guide
+      `docs/online-test-guide.md`): built; first RunPod session pending
 - [ ] M7 polish: the deferred minors listed in PRs #8–#11, the editor's Presets panel
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
@@ -57,6 +61,18 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   Content / Presets / Customize Basic+Advanced / Preferences; live preview; Export), with our
   own name and styling. Reference notes: spec §4.1.
 - **Songs up to 60 min**: the owner makes album-length videos (e.g. the 36-min Sunlight album).
+- **Online test version** (cloud): the same app in a container image
+  (`ghcr.io/haoxiongmusic-dev/my-first-app`, built and smoke-tested by `.github/workflows/image.yml`)
+  on a RunPod GPU pod. Settings come only from the pod's environment:
+  - `ACCOUNTS` (`npm run add-user -- <name>` makes each line): logins are **off when it is unset**,
+    so the owner's PC is unchanged
+  - `SESSION_SECRET` (32+ chars; the server refuses to run without it when ACCOUNTS is set)
+  - `STORAGE_DIR` (every storage path goes through `storageRoot()` in `src/lib/storage-root.ts`)
+  - `RENDER_GPU=1` (passes `--browser-gpu` to renders)
+  - `GPU_CHECK` (the start-up check render runs on the online version; `0` off, `1` force)
+
+  The gate is `src/proxy.ts` (Next 16's renamed middleware, Node runtime) with the pure
+  `decide()` in `src/lib/auth/gate.ts`. Secrets never go in the repo or the image.
 
 ## Template rules (see spec §6)
 
@@ -162,6 +178,11 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 | `npm run template:assets`             | Put the generated sample song into every template's `assets/`                                                                                                                             |
 | `npm run thumbs -- <template>`        | Make the preset thumbnails (`--song <file> --at <s>` for a real track)                                                                                                                    |
 | `npm run build:three`                 | Rebuild `templates/shared/three-kit.js` (three.js + add-ons) after changing three.js or `scripts/three-kit-entry.js`                                                                      |
+| `npm run add-user -- <name>`          | Make an `ACCOUNTS` line (username + scrypt fingerprint) for the online version; asks for the password without showing it                                                                  |
+
+CI: `.github/workflows/ci.yml` runs `npm run check` and `npm run build` on Linux for every push;
+`.github/workflows/image.yml` builds, smoke-tests (`scripts/smoke-image.sh`) and publishes the
+container image. `npm run typecheck` runs `next typegen` first (fresh machines have no route types).
 
 Notes: dev scripts in `scripts/` run with `tsx` and compile as CommonJS, so no top-level
 `await` (wrap in `main()`). Shared helpers live in `src/lib/` so the app can reuse them.

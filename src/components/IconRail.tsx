@@ -1,7 +1,10 @@
 "use client";
 
 // The icon rail on the left of the editor (like the Videobolt editor): each icon opens a
-// panel; Fullscreen is an action. Labels appear on hover.
+// panel; Fullscreen is an action. Labels appear on hover. On the online version a Log out button
+// sits at the bottom.
+import { logOut, useLoginEnabled } from "./LogoutButton";
+
 export type PanelId = "content" | "customize" | "preferences";
 
 const PANELS: { id: PanelId; icon: string; label: string }[] = [
@@ -38,6 +41,7 @@ function RailButton(props: { icon: string; label: string; active?: boolean; onCl
 }
 
 export function IconRail({ active, onSelect, onFullscreen }: Props) {
+  const loginEnabled = useLoginEnabled();
   return (
     <nav className="flex w-16 shrink-0 flex-col items-center gap-2 border-r border-zinc-800 bg-black py-3">
       {PANELS.map((p) => (
@@ -50,6 +54,11 @@ export function IconRail({ active, onSelect, onFullscreen }: Props) {
         />
       ))}
       <RailButton icon="⛶" label="Fullscreen" onClick={onFullscreen} />
+      {loginEnabled && (
+        <div className="mt-auto">
+          <RailButton icon="⏻" label="Log out" onClick={logOut} />
+        </div>
+      )}
     </nav>
   );
 }

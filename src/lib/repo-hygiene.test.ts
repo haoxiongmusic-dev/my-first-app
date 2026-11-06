@@ -1,5 +1,6 @@
 // The repo is public: music, video, app data and local settings must never be committed.
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 function isIgnored(path: string): boolean {
@@ -53,5 +54,31 @@ describe(".gitignore keeps private files out of the public repo", () => {
     "templates/particle-horizon/template.json",
   ])("still tracks %s", (path) => {
     expect(isIgnored(path)).toBe(false);
+  });
+});
+
+describe("the container image keeps private files and secrets out", () => {
+  const read = (file: string) => {
+    try {
+      return readFileSync(file, "utf8");
+    } catch {
+      return "";
+    }
+  };
+
+  it(".dockerignore leaves out git, app data, renders, music and secrets", () => {
+    const ignore = read(".dockerignore")
+      .split(/\r?\n/)
+      .map((l) => l.trim());
+    for (const entry of [".git", "storage", "test-renders", ".env*", "node_modules", "**/*.wav"]) {
+      expect(ignore, entry).toContain(entry);
+    }
+  });
+
+  it("the Dockerfile copies no .env and bakes in no secrets or accounts", () => {
+    const dockerfile = read("Dockerfile");
+    expect(dockerfile).toContain("FROM ");
+    expect(dockerfile).not.toMatch(/COPY\s+\.env/);
+    expect(dockerfile).not.toMatch(/^\s*(ARG|ENV)\s+[^\n]*(SECRET|ACCOUNTS)/m);
   });
 });
