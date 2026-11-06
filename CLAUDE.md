@@ -28,8 +28,12 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
         `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`): merged (PR #7)
   - [x] Nova Streak (Soundwave-style, plus the general `image` setting; spec
         `docs/superpowers/specs/2026-11-06-m6-nova-streak-design.md`, plan
-        `docs/superpowers/plans/2026-11-06-m6-nova-streak.md`)
-  - [ ] radial ring, Gridwave Reactor, glass crystal · then M7 polish
+        `docs/superpowers/plans/2026-11-06-m6-nova-streak.md`): merged (PR #8)
+  - [x] Halo Rings (nested dotted rings, Astral Pulse-style, plus the toolkit's ring kit;
+        spec `docs/superpowers/specs/2026-11-06-m6-halo-rings-design.md`, plan
+        `docs/superpowers/plans/2026-11-06-m6-halo-rings.md`)
+  - [ ] Neon Sundown (synthwave, Gridwave-style), Prism Heart (glass crystal): specs written
+        and approved in `docs/superpowers/specs/2026-11-06-m6-*` · then M7 polish
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
@@ -61,6 +65,12 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   committing any template change (settings rules, HyperFrames check, quiet vs loud reaction).
 - The toolkit lives in `templates/shared/viz-toolkit.js`: edit it there, then
   `npm run sync:toolkit` (each template keeps an identical copy in `assets/`).
+- **Ring kit** (toolkit) for spectrum bars around a centre: `ringAngles(count, arcDeg)`
+  (clockwise from the top, centred on it), `ringPoint(angle, "circle"|"rounded")` →
+  `[x, y, nx, ny]` (y down), `ringValues(spectrum, angles, arcDeg)` (bass at the top, mirrored
+  left/right), `beatEnvelope(audio, t, release)`, `bandsToRingCount(pct, full)`. Analyzer
+  band values sit around 0.5–1 in loud music: shape bar lengths (Halo Rings squares them) or
+  every bar looks full.
 - **three.js templates** load `assets/three-kit.js` (`npm run build:three`, then
   `npm run sync:toolkit`, which copies it only into templates that reference it). The bundle
   swaps three.js's own `Math.random`/frame loop for a seeded generator so `hyperframes check`
@@ -105,6 +115,8 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   versus 6 min 11 s for Particle Horizon's.
 - Nova Streak is the quickest so far: a 30 s Final section of T-REX took 5 min 27 s with a cover
   (frame capture 1 min 35 s ≈ 3.2×) and 4 min 33 s without.
+- Halo Rings is quicker still: a 30 s Final section of T-REX took 3 min 45 s in total (frame
+  capture 1 min 30 s ≈ 3×).
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
   `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 

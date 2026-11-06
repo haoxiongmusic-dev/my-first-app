@@ -289,3 +289,68 @@ describe("live preview helpers", () => {
     expect(deleted).toHaveLength(4); // nothing deleted twice
   });
 });
+
+describe("ring kit", () => {
+  const DEG = Math.PI / 180;
+
+  it("ringAngles spreads points evenly over an arc centred on the top", () => {
+    const four = Array.from(viz.ringAngles(4, 360));
+    [-135, -45, 45, 135].forEach((deg, i) => expect(four[i]).toBeCloseTo(deg * DEG, 6));
+    const five = Array.from(viz.ringAngles(5, 220));
+    five.forEach((a, i) => {
+      expect(a).toBeCloseTo(-five[4 - i], 6); // symmetric about the top
+      expect(Math.abs(a)).toBeLessThanOrEqual(110 * DEG + 1e-6);
+    });
+    for (let i = 1; i < 5; i++) expect(five[i] - five[i - 1]).toBeCloseTo(44 * DEG, 6);
+    expect(Array.from(viz.ringAngles(1, 360))).toEqual([0]);
+  });
+
+  it("ringPoint on a circle has length 1 and points outward", () => {
+    for (const a of Array.from(viz.ringAngles(24, 360))) {
+      const [x, y, nx, ny] = viz.ringPoint(a, "circle");
+      expect(Math.hypot(x, y)).toBeCloseTo(1, 9);
+      expect(nx).toBeCloseTo(x, 9);
+      expect(ny).toBeCloseTo(y, 9);
+    }
+    viz.ringPoint(0, "circle").forEach((v, i) => expect(v).toBeCloseTo([0, -1, 0, -1][i], 9));
+  });
+
+  it("ringPoint on a rounded square sits on x⁴ + y⁴ = 1 with outward unit normals", () => {
+    for (const a of Array.from(viz.ringAngles(24, 360))) {
+      const [x, y, nx, ny] = viz.ringPoint(a, "rounded");
+      expect(x ** 4 + y ** 4).toBeCloseTo(1, 6);
+      expect(Math.hypot(nx, ny)).toBeCloseTo(1, 9);
+      expect(nx * x + ny * y).toBeGreaterThan(0);
+    }
+    const [, , nx, ny] = viz.ringPoint(Math.PI / 4, "rounded");
+    expect(nx).toBeCloseTo(Math.SQRT1_2, 6);
+    expect(ny).toBeCloseTo(-Math.SQRT1_2, 6); // up and right: y points down on screen
+  });
+
+  it("ringValues puts the bass at the top, mirrored, the last band at the arc ends", () => {
+    const v = Array.from(viz.ringValues([1, 0.5, 0], viz.ringAngles(4, 360), 360));
+    expect(v[0]).toBeCloseTo(v[3], 9);
+    expect(v[1]).toBeCloseTo(v[2], 9);
+    expect(viz.ringValues([1, 0.5, 0], [0], 360)[0]).toBe(1);
+    expect(viz.ringValues([1, 0.5, 0], [Math.PI], 360)[0]).toBeCloseTo(0, 9);
+    expect(viz.ringValues([1, 0.5, 0], [-Math.PI], 360)[0]).toBeCloseTo(0, 9);
+    expect(viz.ringValues([1, 0.5, 0], [Math.PI / 2], 360)[0]).toBeCloseTo(0.5, 9);
+  });
+
+  it("beatEnvelope follows the beat and fades over the release", () => {
+    const kick = Array.from({ length: 120 }, (_, i) => frame({ k: i === 30 ? 1 : 0 }));
+    const audio = viz.createAudio(fakeAnalysis(kick));
+    const quiet = viz.createAudio(fakeAnalysis(Array.from({ length: 120 }, () => frame())));
+    expect(viz.beatEnvelope(quiet, 1, 0.18)).toBe(0);
+    expect(viz.beatEnvelope(audio, 0.5, 0.18)).toBe(0);
+    expect(viz.beatEnvelope(audio, 1.0, 0.18)).toBeGreaterThan(0.9);
+    expect(viz.beatEnvelope(audio, 1.18, 0.18)).toBeCloseTo(Math.exp(-1), 1);
+    expect(viz.beatEnvelope(audio, 0, 0.18)).toBe(0); // never reads before the start
+  });
+
+  it("bandsToRingCount maps 10 % to a fifth of the ring and 100 % to all of it", () => {
+    expect(viz.bandsToRingCount(10, 120)).toBe(24);
+    expect(viz.bandsToRingCount(100, 120)).toBe(120);
+    expect(viz.bandsToRingCount(100, 72)).toBe(72);
+  });
+});
