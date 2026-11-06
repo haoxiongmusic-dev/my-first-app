@@ -1,0 +1,47 @@
+{
+  "name": "Prism Heart",
+  "description": "An iridescent glass crystal turning inside a dotted ring of spectrum bars.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    {
+      "name": "Effects",
+      "fields": [
+        "intensity",
+        "spin",
+        "bandThickness",
+        "noiseAmount",
+        "showBackground",
+        "backgroundBlur"
+      ]
+    },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "bandThickness", "noiseAmount", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#c38bff", "accentColor": "#ff7ac8" }
+    },
+    {
+      "name": "Amber",
+      "thumbnail": "presets/amber.jpg",
+      "values": { "mainColor": "#ffb547", "accentColor": "#ff6a2b" }
+    },
+    {
+      "name": "Ice",
+      "thumbnail": "presets/ice.jpg",
+      "values": { "mainColor": "#8ee9ff", "accentColor": "#5b7cff" }
+    },
+    {
+      "name": "Opal",
+      "thumbnail": "presets/opal.jpg",
+      "values": { "mainColor": "#9dffd9", "accentColor": "#ff9df0" }
+    }
+  ]
+}

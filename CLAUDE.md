@@ -23,7 +23,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
 - [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
       export confirmed. **The first complete app.**
-- [ ] M6 five more templates, one at a time:
+- [x] M6 five more templates, one at a time (pull requests #9–#11 merge in order):
   - [x] Iron Wraith (voxel robot skull, three.js; spec
         `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`): merged (PR #7)
   - [x] Nova Streak (Soundwave-style, plus the general `image` setting; spec
@@ -35,8 +35,10 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
   - [x] Neon Sundown (synthwave, Gridwave-style: cover in a striped sun, grid floor, VHS look;
         spec `docs/superpowers/specs/2026-11-06-m6-neon-sundown-design.md`, plan
         `docs/superpowers/plans/2026-11-06-m6-neon-sundown.md`)
-  - [ ] Prism Heart (glass crystal): spec written and approved
-        (`docs/superpowers/specs/2026-11-06-m6-prism-heart-design.md`) · then M7 polish
+  - [x] Prism Heart (iridescent glass crystal, three.js with our own glass shader; spec
+        `docs/superpowers/specs/2026-11-06-m6-prism-heart-design.md`, plan
+        `docs/superpowers/plans/2026-11-06-m6-prism-heart.md`)
+- [ ] M7 polish: the deferred minors listed in PRs #8–#11, the editor's Presets panel
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
@@ -81,6 +83,11 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   target (three.js defaults to half-float: blank on this PC). 8-bit bloom only catches
   near-white, so give coloured glows their own additive sprites. Build the renderer once and
   update materials on settings changes (don't recreate it: WebGL contexts pile up in preview).
+  **Glass:** never three.js's physical glass (`transmission` needs high-precision targets:
+  blank here). Fake it with a `ShaderMaterial` that reads an 8-bit backdrop render target at
+  `gl_FragCoord` nudged by the normal (Prism Heart). Prism Heart turns colour management off
+  (`THREE.ColorManagement.enabled = false`, `NoToneMapping`, linear output) so preset colours
+  come out exactly as picked, like the plain-WebGL templates.
 - **Image settings** (cover art, logos): declare `{"type":"image","fit":"square","default":""}`.
   The editor shows an upload card on the Content tab; uploads are converted once
   (`storage/images/<id>-square.jpg`, 1024×1024, centre-cropped). The template receives a
@@ -123,6 +130,8 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - Neon Sundown: a 30 s Final section of T-REX with a cover took 4 min 7 s (frame capture
   1 min 58 s ≈ 3.9×). Its files are the biggest so far (≈ 26 MB per 30 s at CRF 20, Halo Rings
   ≈ 13 MB): the always-scrolling grid is most of it, the VHS look adds ≈ 25 %.
+- Prism Heart (three.js): a 30 s Final section of T-REX took 4 min 32 s (frame capture
+  2 min 15 s ≈ 4.5×), the smallest files so far (8.9 MB per 30 s).
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
   `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 
