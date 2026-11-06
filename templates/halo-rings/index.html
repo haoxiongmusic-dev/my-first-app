@@ -111,17 +111,26 @@
       }
       #songTitle,
       #songArtist {
-        display: table; /* as wide as its text, so it can be measured and shrunk to fit */
+        display: block;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
         margin-left: auto;
         margin-right: auto;
-        white-space: nowrap;
         text-transform: uppercase;
       }
       #songTitle {
+        max-width: 440px; /* TITLE_SAFE: a long title wraps onto a second line */
+        /* a word too long to wrap overflows to the right, so it is scaled from the left edge */
+        transform-origin: 0 50%;
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.15;
         font-size: 44px;
         font-weight: 600;
         letter-spacing: 0.24em;
         padding-left: 0.24em;
+      }
+      #songArtist {
+        white-space: nowrap;
       }
       #songArtist {
         margin-top: 10px;
@@ -274,14 +283,28 @@
         }
         applyPage();
 
-        // Shrink each title line until it fits inside the inner ring. Measured on seeks,
-        // settings and font loads only, never in the timeline callback.
-        var TITLE_SAFE = 380;
-        var LINES = [
-          ["songTitle", 44],
-          ["songArtist", 22],
-        ];
+        // Fit the titles inside the inner ring. The song title may wrap onto two lines before it
+        // shrinks; the artist line is never bigger than 0.6 × the title, so the title always
+        // reads first; and past the smallest size a line is scaled down so nothing can ever be
+        // wider than the space. Measured on seeks, settings and font loads only, never in the
+        // timeline callback.
+        var TITLE_SAFE = 440;
+        var TITLE_LINES = 2;
+        var ARTIST_RATIO = 0.6;
+        var TITLE_FLOOR = 12;
+        var TITLE_SIZE = 44,
+          ARTIST_SIZE = 22,
+          LINE_HEIGHT = 1.15;
         var fitted = "";
+        /** How wide the line's text really is, including a word too long to wrap. */
+        function textWidth(line) {
+          return Math.max(line.scrollWidth, line.offsetWidth);
+        }
+        /** Scale a line down if, even at its smallest size, it is wider than the space. */
+        function clampWidth(line) {
+          var w = textWidth(line);
+          line.style.transform = w > TITLE_SAFE ? "scale(" + (TITLE_SAFE / w).toFixed(4) + ")" : "";
+        }
         function fitTitles() {
           var loaded = 0;
           if (document.fonts)
@@ -296,15 +319,28 @@
           ].join("|");
           if (key === fitted) return;
           fitted = key;
-          for (var i = 0; i < LINES.length; i++) {
-            var line = document.getElementById(LINES[i][0]);
-            var size = LINES[i][1];
-            line.style.fontSize = size + "px";
-            while (line.offsetWidth > TITLE_SAFE && size > 8) {
-              size = Math.floor(size * 0.95);
-              line.style.fontSize = size + "px";
-            }
+          var title = document.getElementById("songTitle");
+          var artist = document.getElementById("songArtist");
+          title.style.transform = "";
+          artist.style.transform = "";
+          var size = TITLE_SIZE;
+          function titleTooBig() {
+            var maxHeight = TITLE_LINES * size * LINE_HEIGHT + 2;
+            return textWidth(title) > TITLE_SAFE + 1 || title.offsetHeight > maxHeight;
           }
+          title.style.fontSize = size + "px";
+          while (titleTooBig() && size > TITLE_FLOOR) {
+            size = Math.max(TITLE_FLOOR, Math.floor(size * 0.95));
+            title.style.fontSize = size + "px";
+          }
+          clampWidth(title);
+          var small = Math.min(ARTIST_SIZE, Math.max(8, Math.round(size * ARTIST_RATIO)));
+          artist.style.fontSize = small + "px";
+          while (textWidth(artist) > TITLE_SAFE && small > 8) {
+            small -= 1;
+            artist.style.fontSize = small + "px";
+          }
+          clampWidth(artist);
         }
 
         // ---------- shaders ----------
