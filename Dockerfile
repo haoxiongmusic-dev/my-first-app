@@ -42,8 +42,10 @@ RUN npm run setup:py \
  && npx hyperframes browser ensure \
  && npm run build
 
+# REQUIRE_LOGIN=1: this image never runs without logins; a blank ACCOUNTS stops it instead.
 ENV PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    STORAGE_DIR=/workspace/storage
+    STORAGE_DIR=/workspace/storage \
+    REQUIRE_LOGIN=1
 EXPOSE 3000
 CMD ["npm", "start"]

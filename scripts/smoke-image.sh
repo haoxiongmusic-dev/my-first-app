@@ -49,6 +49,18 @@ HEALTH="$(curl -s -b "$JAR" "http://localhost:$PORT/api/health")"
 echo "health: $HEALTH"
 echo "$HEALTH" | grep -q '"gpu"' || fail "/api/health did not answer after login"
 
+# A 3-minute song (about 32 MB) must arrive whole: a login gate in front of the upload route
+# once cut every upload to its first 10 MB. Signed out it is refused; signed in it is 180 s.
+ffmpeg -loglevel error -f lavfi -i "sine=frequency=330:duration=180" -ac 2 -ar 44100 /tmp/long.wav
+[ "$(code -X PUT -H 'x-file-name: long.wav' --data-binary @/tmp/long.wav \
+  "http://localhost:$PORT/api/songs")" = 401 ] || fail "a signed-out upload was not refused"
+SONG="$(curl -s -b "$JAR" -X PUT -H 'x-file-name: long.wav' --data-binary @/tmp/long.wav \
+  "http://localhost:$PORT/api/songs")"
+DUR="$(echo "$SONG" | grep -o '"duration":[0-9.]*' | cut -d: -f2)"
+echo "uploaded 3-minute song: ${DUR:-?} s"
+awk -v d="${DUR:-0}" 'BEGIN { exit !(d > 175 && d < 185) }' \
+  || fail "the 3-minute upload came out as ${DUR:-nothing} s"
+
 # A real 2-second Draft render of a generated tone (software drawing: no GPU here).
 docker exec "$NAME" bash -c '
   set -e

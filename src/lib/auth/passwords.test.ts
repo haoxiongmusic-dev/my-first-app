@@ -4,24 +4,34 @@ import {
   DUMMY_HASH,
   formatAccountLine,
   hashPassword,
+  passwordProblem,
   parseAccounts,
   verifyPassword,
 } from "@/lib/auth/passwords";
 
 describe("passwords", () => {
-  it("a hash verifies its own password and nothing else", () => {
+  it("a hash verifies its own password and nothing else", async () => {
     const stored = hashPassword("correct horse");
     expect(stored).toMatch(/^scrypt\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
-    expect(verifyPassword("correct horse", stored)).toBe(true);
-    expect(verifyPassword("correct hors", stored)).toBe(false);
+    expect(await verifyPassword("correct horse", stored)).toBe(true);
+    expect(await verifyPassword("correct hors", stored)).toBe(false);
     expect(hashPassword("correct horse")).not.toBe(stored); // a fresh salt every time
   });
 
-  it("malformed fingerprints never verify", () => {
-    expect(verifyPassword("x", "garbage")).toBe(false);
-    expect(verifyPassword("x", "scrypt$onlysalt")).toBe(false);
-    expect(verifyPassword("x", "")).toBe(false);
-    expect(verifyPassword("anything", DUMMY_HASH)).toBe(false);
+  it("malformed fingerprints never verify", async () => {
+    expect(await verifyPassword("x", "garbage")).toBe(false);
+    expect(await verifyPassword("x", "scrypt$onlysalt")).toBe(false);
+    expect(await verifyPassword("x", "")).toBe(false);
+    expect(await verifyPassword("anything", DUMMY_HASH)).toBe(false);
+  });
+
+  it("checking a password doesn't block the server (it runs off the main thread)", () => {
+    expect(verifyPassword("x", DUMMY_HASH)).toBeInstanceOf(Promise);
+  });
+
+  it("add-user asks for passwords of 12+ characters", () => {
+    expect(passwordProblem("short-pass1")).toBe("Use at least 12 characters.");
+    expect(passwordProblem("twelve-chars")).toBeNull();
   });
 
   it("parses ACCOUNTS typed by hand: spaces, empty entries, case", () => {

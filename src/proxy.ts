@@ -1,7 +1,11 @@
 // Runs before every request (Next.js 16 "proxy", Node runtime). With ACCOUNTS set (the cloud
 // machine) only signed-in people get past the login page; with it unset (the owner's PC) every
-// request passes, exactly as before. It never reads request bodies, so big uploads stream
-// straight through to their routes.
+// request passes, exactly as before. The cloud image also sets REQUIRE_LOGIN=1, so a blank
+// ACCOUNTS stops the server instead of opening it.
+//
+// The upload routes (songs, images, backgrounds) are left out of the matcher on purpose: when
+// the proxy runs on a route, Next copies the request body into memory and keeps only the first
+// 10 MB, which cut long songs short. Those routes call requireLogin() themselves instead.
 import { NextResponse, type NextRequest } from "next/server";
 import { decide } from "@/lib/auth/gate";
 import { SESSION_COOKIE } from "@/lib/auth/session";
@@ -14,6 +18,7 @@ export function proxy(request: NextRequest) {
     secret: process.env.SESSION_SECRET,
     cookie: request.cookies.get(SESSION_COOKIE)?.value,
     now: Date.now(),
+    requireLogin: process.env.REQUIRE_LOGIN === "1",
   });
   switch (d.kind) {
     case "pass":
@@ -31,5 +36,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Everything except static files and the three upload routes (exact paths, anchored).
+  matcher: ["/((?!_next/static/|favicon\\.ico$|api/songs$|api/images$|api/backgrounds$).*)"],
 };

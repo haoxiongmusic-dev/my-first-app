@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { decide, MISCONFIGURED_MESSAGE, safeNext } from "@/lib/auth/gate";
+import { decide, MISCONFIGURED_MESSAGE, NEEDS_ACCOUNTS_MESSAGE, safeNext } from "@/lib/auth/gate";
 import { hashPassword } from "@/lib/auth/passwords";
 import { signSession } from "@/lib/auth/session";
 
@@ -84,10 +84,34 @@ describe("the login gate", () => {
     expect(decide({ ...base, cookie, path: "/api/songs" }).kind).toBe("unauthorized");
   });
 
+  it("on the cloud machine, missing accounts stop the server instead of opening it", () => {
+    for (const a of [undefined, "", " ", ","]) {
+      expect(decide({ ...base, accounts: a, requireLogin: true, path: "/" })).toEqual({
+        kind: "misconfigured",
+        message: NEEDS_ACCOUNTS_MESSAGE,
+      });
+    }
+    expect(NEEDS_ACCOUNTS_MESSAGE).toBe(
+      "This server needs ACCOUNTS (the invited logins) because REQUIRE_LOGIN is set.",
+    );
+  });
+
   it("only follows ?next= to a page on this site", () => {
     expect(safeNext("/edit/x?y=1")).toBe("/edit/x?y=1");
-    for (const bad of ["https://evil.example", "//evil.example", "/\\evil", "", null]) {
-      expect(safeNext(bad)).toBe("/");
+    expect(safeNext("/edit/x#a")).toBe("/edit/x#a");
+    for (const bad of [
+      "https://evil.example",
+      "//evil.example",
+      "/\\evil",
+      "",
+      null,
+      "/\t/evil.com", // browsers drop tabs and newlines, so this would become //evil.com
+      "/\n/evil.com",
+      "/\r/evil.com",
+      "/\t\\evil.com",
+      "/ /evil.com",
+    ]) {
+      expect(safeNext(bad), JSON.stringify(bad)).toBe("/");
     }
   });
 

@@ -7,6 +7,9 @@ import { readSession } from "@/lib/auth/session";
 
 export const MISCONFIGURED_MESSAGE =
   "This server needs SESSION_SECRET (32+ characters) because ACCOUNTS is set.";
+/** The cloud image sets REQUIRE_LOGIN=1, so a blank or missing ACCOUNTS can't open it up. */
+export const NEEDS_ACCOUNTS_MESSAGE =
+  "This server needs ACCOUNTS (the invited logins) because REQUIRE_LOGIN is set.";
 const MIN_SECRET = 32;
 
 export type Decision =
@@ -44,8 +47,14 @@ export function decide(input: {
   secret: string | undefined;
   cookie: string | undefined;
   now: number;
+  /** the cloud machine: logins must be on (REQUIRE_LOGIN=1) */
+  requireLogin?: boolean;
 }): Decision {
-  if (!loginEnabled(input.accounts)) return { kind: "pass" };
+  if (!loginEnabled(input.accounts)) {
+    return input.requireLogin
+      ? { kind: "misconfigured", message: NEEDS_ACCOUNTS_MESSAGE }
+      : { kind: "pass" };
+  }
   let accounts: Map<string, string>;
   try {
     accounts = accountsFrom(input.accounts as string);
@@ -65,10 +74,29 @@ export function decide(input: {
   return { kind: "redirect", to: "/login?next=" + encodeURIComponent(p + (input.search ?? "")) };
 }
 
-/** Where to go after logging in: only ever a page on this site. */
+/** Control characters (tabs, newlines…), spaces, DEL or a backslash anywhere in the text. */
+function hasUnsafeChar(text: string): boolean {
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    if (code <= 32 || code === 127 || code === 92) return true; // 92 is the backslash
+  }
+  return false;
+}
+
+/**
+ * Where to go after logging in: only ever a page on this site. Anything with control
+ * characters, spaces or backslashes is refused (browsers drop tabs and newlines, which would
+ * turn "/<tab>/evil.com" into "//evil.com"), and the rest is parsed to make sure it stays here.
+ */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) {
+  if (!next || !next.startsWith("/") || next.startsWith("//")) return "/";
+  if (hasUnsafeChar(next)) return "/";
+  const base = "http://this.site.invalid";
+  try {
+    const url = new URL(next, base);
+    if (url.origin !== base) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {
     return "/";
   }
-  return next;
 }

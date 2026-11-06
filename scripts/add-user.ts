@@ -2,7 +2,12 @@
 // Asks for a password (twice, not shown on screen) and prints the line to add to the ACCOUNTS
 // setting on the cloud machine. The password itself is never stored or printed: only its
 // scrypt fingerprint. Dev scripts compile as CommonJS, so no top-level await (see CLAUDE.md).
-import { formatAccountLine, hashPassword, parseAccounts } from "../src/lib/auth/passwords";
+import {
+  formatAccountLine,
+  hashPassword,
+  parseAccounts,
+  passwordProblem,
+} from "../src/lib/auth/passwords";
 
 /** Read one line from the terminal without echoing it. */
 function askHidden(prompt: string): Promise<string> {
@@ -42,9 +47,10 @@ async function main() {
     console.error("Usage: npm run add-user -- <username>   (letters, digits, . _ - ; up to 32)");
     process.exit(1);
   }
-  const password = await askHidden(`Password for ${username} (8+ characters): `);
-  if (password.length < 8) {
-    console.error("That password is shorter than 8 characters.");
+  const password = await askHidden(`Password for ${username} (12+ characters): `);
+  const problem = passwordProblem(password);
+  if (problem) {
+    console.error(problem);
     process.exit(1);
   }
   if ((await askHidden("Type it again: ")) !== password) {

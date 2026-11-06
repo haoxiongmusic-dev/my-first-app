@@ -1,14 +1,19 @@
 // POST /api/auth/login's logic: right and wrong logins, the attempt limit, the cookie.
 import { describe, expect, it } from "vitest";
-import { loginResponse, TOO_MANY, WRONG_LOGIN } from "@/lib/auth/login";
+import {
+  clientIp,
+  createLoginLimits,
+  loginResponse,
+  TOO_MANY,
+  WRONG_LOGIN,
+} from "@/lib/auth/login";
 import { hashPassword } from "@/lib/auth/passwords";
-import { createRateLimiter } from "@/lib/auth/rate-limit";
 import { readSession } from "@/lib/auth/session";
 
 const secret = "z".repeat(40);
 const env = { ACCOUNTS: `ana:${hashPassword("password123")}`, SESSION_SECRET: secret };
 const now = Date.UTC(2026, 10, 6);
-const limiter = () => createRateLimiter({ max: 10, windowMs: 600_000, blockMs: 600_000 });
+const limiter = () => createLoginLimits();
 
 function post(body: unknown, headers: Record<string, string> = {}) {
   return new Request("http://pod.example/api/auth/login", {
@@ -85,5 +90,60 @@ describe("login", () => {
       now,
     );
     expect(res.status).toBe(400);
+  });
+
+  it("uses the real address: Cloudflare's header, else the last forwarded entry", () => {
+    const h = (o: Record<string, string>) => new Headers(o);
+    expect(
+      clientIp(h({ "cf-connecting-ip": "8.8.8.8", "x-forwarded-for": "1.1.1.1, 8.8.8.8" })),
+    ).toBe("8.8.8.8");
+    expect(clientIp(h({ "x-forwarded-for": "1.1.1.1, 9.9.9.9" }))).toBe("9.9.9.9");
+    expect(clientIp(h({}))).toBe("local");
+  });
+
+  it("faking the first forwarded address does not reset the limit", async () => {
+    const l = limiter();
+    for (let i = 0; i < 10; i++) {
+      const from = { "x-forwarded-for": `1.1.1.${i}, 7.7.7.7` };
+      await loginResponse(post({ username: "ana", password: "x" }, from), env, l, now);
+    }
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123" }, { "x-forwarded-for": "2.2.2.2, 7.7.7.7" }),
+      env,
+      l,
+      now,
+    );
+    expect(res.status).toBe(429);
+  });
+
+  it("caps guesses at one username even from many addresses", async () => {
+    const l = limiter();
+    for (let i = 0; i < 10; i++) {
+      const from = { "cf-connecting-ip": `3.3.3.${i}` };
+      await loginResponse(post({ username: "ana", password: "x" }, from), env, l, now);
+    }
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123" }, { "cf-connecting-ip": "4.4.4.4" }),
+      env,
+      l,
+      now,
+    );
+    expect(res.status).toBe(429);
+  });
+
+  // 50 real scrypt checks: give it time when the whole suite is running at once.
+  it("caps guesses across the whole server", { timeout: 30_000 }, async () => {
+    const l = limiter();
+    for (let i = 0; i < 50; i++) {
+      const from = { "cf-connecting-ip": `5.5.${Math.floor(i / 9)}.${i % 9}` };
+      await loginResponse(post({ username: `u${i % 7}`, password: "x" }, from), env, l, now);
+    }
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123" }, { "cf-connecting-ip": "6.6.6.6" }),
+      env,
+      l,
+      now,
+    );
+    expect(res.status).toBe(429);
   });
 });

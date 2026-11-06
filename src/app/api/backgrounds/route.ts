@@ -6,10 +6,14 @@ import { MAX_IMAGE_BYTES, saveBackground, TOO_BIG_IMAGE_MESSAGE } from "@/lib/ba
 import { IMAGE_UPLOAD, ImageTooBig } from "@/lib/images";
 import { JobError, UNREADABLE_IMAGE_MESSAGE } from "@/lib/jobs";
 import { runCommand } from "@/lib/run-command";
-import { saveUpload } from "@/lib/uploads";
+import { expectedBytes, saveUpload } from "@/lib/uploads";
+import { requireLogin } from "@/lib/auth/require-login";
 import { storageRoot as storageRootOf } from "@/lib/storage-root";
 
 export async function PUT(request: Request): Promise<Response> {
+  // The proxy leaves upload routes alone (it would cut bodies at 10 MB): check the login here.
+  const denied = requireLogin(request);
+  if (denied) return denied;
   if (!request.body) return Response.json({ error: UNREADABLE_IMAGE_MESSAGE }, { status: 422 });
   if (Number(request.headers.get("content-length")) > MAX_IMAGE_BYTES) {
     return Response.json({ error: TOO_BIG_IMAGE_MESSAGE }, { status: 413 });
@@ -29,6 +33,7 @@ export async function PUT(request: Request): Promise<Response> {
       name,
       MAX_IMAGE_BYTES,
       IMAGE_UPLOAD,
+      expectedBytes(request),
     );
     return Response.json({ backgroundId: await saveBackground(upload, storageRoot, runCommand) });
   } catch (error) {

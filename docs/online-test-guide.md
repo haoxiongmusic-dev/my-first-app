@@ -47,7 +47,8 @@ In a terminal in the project folder, make one line per person:
 npm run add-user -- yourname
 ```
 
-- It asks for a password twice. The password isn't shown, stored, or printed.
+- It asks for a password twice: at least 12 characters (a short sentence works well). The
+  password isn't shown, stored, or printed.
 - It prints a line like `yourname:scrypt$…`.
 - Do the same for each friend (their own username and password), and send them their password
   privately.
@@ -145,6 +146,7 @@ The next session starts again at step 1, with the same volume.
 | What you see | What to do |
 |---|---|
 | A page saying `This server needs SESSION_SECRET (32+ characters) because ACCOUNTS is set.` | Add `SESSION_SECRET` (step 0.3) to the pod's environment variables and restart the pod |
+| A page saying `This server needs ACCOUNTS (the invited logins) because REQUIRE_LOGIN is set.` | The `ACCOUNTS` setting is empty or missing: paste your accounts line (step 0.3) and restart the pod. The app never runs online without logins |
 | `ACCOUNTS entry N is not username:scrypt$…` | Entry number N of ACCOUNTS was pasted wrongly: make that line again with `npm run add-user` |
 | `Wrong username or password.` | Check the username (lower case) and password; after 10 wrong tries, wait 10 minutes |
 | 502 for more than 5 minutes | Open the pod's **Logs** and send the last lines to Claude |

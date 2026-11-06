@@ -1,7 +1,7 @@
 // Invited accounts. Passwords are never stored: only a scrypt fingerprint
 // ("scrypt$<salt>$<hash>", base64url), which can check a password but not reveal it. The list
 // comes from the ACCOUNTS setting: "username:scrypt$…,username:scrypt$…".
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 
 const KEY_BYTES = 32;
 const SCRYPT = { N: 16384, r: 8, p: 1 };
@@ -14,19 +14,33 @@ export function hashPassword(password: string): string {
   return `scrypt$${salt.toString("base64url")}$${hash.toString("base64url")}`;
 }
 
+/** scrypt off the main thread, so a burst of logins can't freeze the server. */
+function scryptAsync(password: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) =>
+    scrypt(password, salt, KEY_BYTES, SCRYPT, (error, key) =>
+      error ? reject(error) : resolve(key),
+    ),
+  );
+}
+
 /** Whether the password matches the fingerprint. Malformed fingerprints never match. */
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split("$");
   if (parts.length !== 3 || parts[0] !== "scrypt") return false;
   try {
     const salt = Buffer.from(parts[1], "base64url");
     const expected = Buffer.from(parts[2], "base64url");
     if (salt.length === 0 || expected.length !== KEY_BYTES) return false;
-    const actual = scryptSync(password, salt, KEY_BYTES, SCRYPT);
+    const actual = await scryptAsync(password, salt);
     return timingSafeEqual(actual, expected);
   } catch {
     return false;
   }
+}
+
+/** Why a new password isn't good enough for `npm run add-user`, or null if it is. */
+export function passwordProblem(password: string): string | null {
+  return password.length < 12 ? "Use at least 12 characters." : null;
 }
 
 /**

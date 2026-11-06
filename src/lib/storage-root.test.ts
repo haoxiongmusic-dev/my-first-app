@@ -20,7 +20,8 @@ describe("storageRoot", () => {
     expect(storageRoot(root, { STORAGE_DIR: "data/files" })).toBe(path.resolve("data/files"));
   });
 
-  it("is the only place that builds a storage path", async () => {
+  // Reads every source file; give it time when the whole suite is busy.
+  it("is the only place that builds a storage path", { timeout: 30_000 }, async () => {
     const files: string[] = [];
     async function walk(dir: string) {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
