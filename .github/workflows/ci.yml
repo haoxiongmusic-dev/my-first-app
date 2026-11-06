@@ -1,0 +1,31 @@
+# Runs the full project check (lint, formatting, types, all TypeScript and Python tests) on
+# Linux for every change, so the app is known to work on the cloud machine before anyone pays
+# for one. The owner's PC is Windows; this proves the same code on Ubuntu.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+      - run: npm run setup:py
+      - run: npm run check
