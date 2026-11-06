@@ -1,0 +1,965 @@
+<!doctype html>
+<!--
+  Neon Sundown: a synthwave sunset. A striped retro sun sits on the horizon with your cover art
+  in a circle inside it; spectrum bars fan around the sun; neon wireframe mountains frame a
+  valley; a glowing grid floor rushes toward you and flashes on the beat. An optional VHS look
+  adds scanlines, colour fringing, a slow tracking band and fine grain.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The cover arrives as a picture location (assets/images/cover.jpg in an export, the image
+  route in the live preview) or "" for none. The committed root duration (20 s) matches the
+  generated sample song; the job builder sets every data-song-length element to the real
+  song's length. The motion and scene maths live in assets/sundown-motion.js (unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"cover","type":"image","label":"Cover art","default":"","fit":"square"},
+    {"id":"skyColor","type":"color","label":"Sky color","default":"#1a0533"},
+    {"id":"sunTopColor","type":"color","label":"Sun top color","default":"#ffd23f"},
+    {"id":"sunBottomColor","type":"color","label":"Sun bottom color","default":"#ff2e88"},
+    {"id":"gridColor","type":"color","label":"Grid color","default":"#00e5ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"spectrumSide","type":"enum","label":"Spectrum side","default":"outside","options":[
+      {"value":"outside","label":"Outside"},
+      {"value":"inside","label":"Inside"},
+      {"value":"both","label":"Both"}]},
+    {"id":"gridSpeed","type":"number","label":"Grid speed","default":100,"min":0,"max":200,"step":1,"unit":"%"},
+    {"id":"vhsLook","type":"boolean","label":"VHS look","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":70,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/sundown-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #titles {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 800px;
+        text-align: center;
+        font-family: "Montserrat", sans-serif;
+        color: #fff6fb;
+        opacity: 0;
+      }
+      #songArtist,
+      #songTitle {
+        display: table; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        white-space: nowrap;
+        text-transform: uppercase;
+      }
+      #songArtist {
+        font-size: 26px;
+        font-weight: 500;
+        letter-spacing: 0.4em;
+        padding-left: 0.4em;
+      }
+      #songTitle {
+        margin-top: 6px;
+        font-size: 54px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        padding-left: 0.12em;
+      }
+      #coverImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+        <div id="songTitle" data-var-text="title">SONG NAME</div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="coverImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.SundownMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), uploadCover(), dispose() } from setup()
+        var lastTime = -1;
+
+        // ---------- the cover picture ----------
+        // The location is set at once, so the page's own loading waits for it; the frame is
+        // drawn again when it arrives. A picture that fails to load is simply left out.
+        var coverImg = document.getElementById("coverImg");
+        var coverSrc = "";
+        var coverLoaded = false;
+        coverImg.addEventListener("load", function () {
+          coverLoaded = true;
+          if (drawing) drawing.uploadCover();
+          draw(Math.max(0, lastTime));
+        });
+        coverImg.addEventListener("error", function () {
+          coverLoaded = false;
+          draw(Math.max(0, lastTime));
+        });
+        function setCover(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === coverSrc) return;
+          coverSrc = src;
+          coverLoaded = false;
+          if (src) coverImg.src = src;
+          else coverImg.removeAttribute("src");
+        }
+        setCover(setting("cover"));
+
+        // ---------- the titles ----------
+        function rgba(hex, alpha) {
+          var c = V.hexToRGB(hex);
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function applyPage() {
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          var glow = rgba(setting("sunBottomColor"), 0.6);
+          titles.style.textShadow = "0 0 12px " + glow + ", 0 0 32px " + glow;
+        }
+        applyPage();
+
+        // Shrink each title line until it fits the 80 % title-safe width. Measured on seeks,
+        // settings and font loads only, never in the timeline callback.
+        var TITLE_SAFE = 1536;
+        var LINES = [
+          ["songArtist", 26],
+          ["songTitle", 54],
+        ];
+        var fitted = "";
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            document.getElementById("songTitle").textContent,
+            document.getElementById("songArtist").textContent,
+            setting("font"),
+            loaded,
+          ].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          for (var i = 0; i < LINES.length; i++) {
+            var line = document.getElementById(LINES[i][0]);
+            var size = LINES[i][1];
+            line.style.fontSize = size + "px";
+            while (line.offsetWidth > TITLE_SAFE && size > 10) {
+              size = Math.floor(size * 0.95);
+              line.style.fontSize = size + "px";
+            }
+          }
+        }
+
+        // ---------- shaders ----------
+        // Shapes (bars, mountains, outlines) are triangles in 1080p pixels from the frame
+        // centre, y down, so they keep their size at every preview resolution.
+        var SHAPE_VS = [
+          "attribute vec2 pos; attribute vec3 col; varying vec3 vCol;",
+          "void main(){ vCol = col; gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0); }",
+        ].join("\n");
+        var SHAPE_FS = [
+          "precision mediump float; varying vec3 vCol;",
+          "void main(){ gl_FragColor = vec4(vCol, 1.0); }",
+        ].join("\n");
+        // Stars: points in 1080p pixels from the top-left corner.
+        var STAR_VS = [
+          "attribute vec4 star; uniform float pxScale; varying float vB;",
+          "void main(){",
+          "  vB = star.w;",
+          "  gl_PointSize = max(star.z * 2.0 * pxScale, 1.5);",
+          "  gl_Position = vec4(star.x / 960.0 - 1.0, 1.0 - star.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var STAR_FS = [
+          "precision mediump float; varying float vB;",
+          "void main(){",
+          "  vec2 d = gl_PointCoord - 0.5;",
+          "  gl_FragColor = vec4(vec3(1.0, 0.92, 0.98) * exp(-dot(d, d) * 10.0) * vB, 1.0);",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The scene behind the light: sky, sun (with its drifting gaps), the cover inside the
+        // sun, and the dark floor below the horizon. px is in 1080p pixels, y down.
+        var BASE_FS = [
+          "precision highp float;",
+          "uniform sampler2D cover;",
+          "uniform vec3 skyCol, sunTop, sunBot;",
+          "uniform float sunR, coverR, hasCover, loud;",
+          "uniform vec2 gaps[7]; uniform float gapCount;",
+          "varying vec2 uv;",
+          "void main(){",
+          "  vec2 px = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec2 c = vec2(960.0, 430.0);",
+          "  float d = length(px - c);",
+          "  float above = step(px.y, 640.0);",
+          "  vec3 sky = mix(skyCol, mix(skyCol, sunBot, 0.3), pow(clamp(px.y / 640.0, 0.0, 1.0), 1.5));",
+          "  sky += sunBot * 0.25 * (0.5 + loud) * exp(-max(0.0, d - sunR) / 130.0);",
+          "  vec3 col = sky;",
+          "  float inSun = 1.0 - smoothstep(sunR - 1.0, sunR + 1.0, d);",
+          "  vec3 sunCol = mix(sunTop, sunBot, clamp((px.y - (430.0 - sunR)) / (2.0 * sunR), 0.0, 1.0));",
+          "  float s = (px.y - 430.0) / sunR;",
+          "  float edge = 1.0 / sunR;",
+          "  float cut = 0.0;",
+          "  for (int i = 0; i < 7; i++) {",
+          "    if (float(i) >= gapCount) break;",
+          "    vec2 g = gaps[i];",
+          "    cut = max(cut, smoothstep(g.x - edge, g.x + edge, s) * (1.0 - smoothstep(g.y - edge, g.y + edge, s)));",
+          "  }",
+          "  cut *= 1.0 - hasCover * (1.0 - smoothstep(coverR + 3.0, coverR + 5.0, d));",
+          "  col = mix(col, sunCol, inSun * (1.0 - cut));",
+          "  float inCover = hasCover * (1.0 - smoothstep(coverR - 1.0, coverR, d));",
+          "  vec2 cuv = (px - c) / max(coverR, 1.0) * 0.5 + 0.5;",
+          "  col = mix(col, texture2D(cover, vec2(cuv.x, 1.0 - cuv.y)).rgb, inCover);",
+          "  float ring = hasCover * (1.0 - smoothstep(1.5, 2.5, abs(d - coverR - 2.0)));",
+          "  col = mix(col, sunTop, ring);",
+          "  vec3 floorCol = skyCol * 0.35 + sunBot * 0.15 * exp(-(px.y - 640.0) / 60.0);",
+          "  gl_FragColor = vec4(mix(floorCol, col, above), 1.0);",
+          "}",
+        ].join("\n");
+        // The grid floor (and the horizon line): lines in perspective, drawn analytically so
+        // they stay smooth at any distance, faded out where they would crowd into one pixel.
+        var GRID_FS = [
+          "precision highp float;",
+          "uniform vec3 gridCol; uniform float bright, offset, lineHalf, lineGain;",
+          "uniform float soft, crowdLo, crowdHi;",
+          "varying vec2 uv;",
+          "const float K = 1.375;", // 6 cells across the near edge
+          "const float D = 1600.0;", // row spacing: about 120 px at the near edge
+          "void main(){",
+          "  vec2 px = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  float dy = px.y - 640.0;",
+          "  float hq = dy / 1.6;",
+          "  float horizon = exp(-hq * hq) * 1.2 + exp(-abs(dy) / 18.0) * 0.25;",
+          "  vec3 c = gridCol * horizon;",
+          "  if (dy > 0.5) {",
+          "    float u = (px.x - 960.0) / dy * K;",
+          "    float v = D / dy + offset;",
+          // columns lean toward the horizon: measure the distance across the line, not sideways
+          "    float across = dy / length(vec2(px.x - 960.0, dy));",
+          "    float du = abs(fract(u + 0.5) - 0.5) * dy / K * across;",
+          "    float dv = abs(fract(v + 0.5) - 0.5) * dy * dy / D;",
+          "    float colLine = (1.0 - smoothstep(lineHalf - soft, lineHalf + soft, du)) * smoothstep(crowdLo, crowdHi, dy / K * across);",
+          "    float rowLine = (1.0 - smoothstep(lineHalf - soft, lineHalf + soft, dv)) * smoothstep(crowdLo, crowdHi, dy * dy / D);",
+          "    float fade = smoothstep(0.0, 160.0, dy) * 0.85 + 0.15;",
+          "    c += gridCol * max(colLine, rowLine) * lineGain * bright * fade;",
+          "  }",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The scene with its light (sharp plus glow) screened on top.
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D base, scene, bloomA, bloomB;",
+          "varying vec2 uv;",
+          "void main(){",
+          "  vec3 b = texture2D(base, uv).rgb;",
+          "  vec3 light = texture2D(scene, uv).rgb + texture2D(bloomA, uv).rgb * 0.8 + texture2D(bloomB, uv).rgb * 1.0;",
+          "  light = vec3(1.0) - exp(-light * 1.4);",
+          "  gl_FragColor = vec4(vec3(1.0) - (vec3(1.0) - b) * (vec3(1.0) - light), 1.0);",
+          "}",
+        ].join("\n");
+        // The VHS look (or a plain copy): colour fringe, scanlines, a slow tracking band and
+        // fine grain that changes at most 6 times a second; then a vignette.
+        var VHS_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform float vhs, songTime, grainSeed;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }",
+          "void main(){",
+          "  vec2 px = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec3 c = texture2D(src, uv).rgb;",
+          "  if (vhs > 0.5) {",
+          "    float f = 2.0 * (1.0 - 0.8 * exp(-pow((px.x - 960.0) / 320.0, 2.0))) / 1920.0;",
+          "    c.r = texture2D(src, uv + vec2(f, 0.0)).r;",
+          "    c.b = texture2D(src, uv - vec2(f, 0.0)).b;",
+          "    c *= 1.0 - 0.12 * step(fract(px.y / 3.0), 0.34);",
+          "    float bandY = 1080.0 * (1.0 - fract(songTime / 7.0));",
+          "    c *= 1.0 + 0.04 * exp(-pow((px.y - bandY) / 20.0, 2.0));",
+          "    c += (hash(floor(px * 0.5) + grainSeed * 17.0) - 0.5) * 0.016;",
+          "  }",
+          "  c *= mix(0.7, 1.0, smoothstep(1.2, 0.4, length((uv - 0.5) * vec2(1.3, 1.0))));",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var SKY = V.hexToRGB(setting("skyColor"));
+          var TOP = V.hexToRGB(setting("sunTopColor"));
+          var BOT = V.hexToRGB(setting("sunBottomColor"));
+          var GRID = V.hexToRGB(setting("gridColor"));
+          var INT = setting("intensity");
+          var SIDE = setting("spectrumSide");
+          var SPEED = setting("gridSpeed");
+          var VHS = setting("vhsLook") !== false;
+          var BARS = M.barCount(V, setting("bandCount"));
+          var ANGLES = V.ringAngles(BARS, M.ARC);
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 24,
+          });
+          var spec = new Float32Array(24);
+          var POINTS = [];
+          for (var k = 0; k < BARS; k++) POINTS.push(V.ringPoint(ANGLES[k], "circle"));
+          var MOUNTAINS = M.buildMountains(V.mulberry32);
+          // stars hidden behind the sun (and its pulse) are left out
+          var allStars = M.buildStars(V.mulberry32);
+          var kept = [];
+          for (var s = 0; s < allStars.length; s += 4) {
+            var dx = allStars[s] - 960,
+              dy = allStars[s + 1] - 430;
+            if (Math.sqrt(dx * dx + dy * dy) > 230) kept.push.apply(kept, allStars.slice(s, s + 4));
+          }
+          var STARS = new Float32Array(kept);
+
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          var base = V.createTarget(gl, W, H); // sky, sun, cover, mountains, floor
+          var scene = V.createTarget(gl, W, H); // light: bars, outlines, grid
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4)),
+            qB = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4));
+          var final = V.createTarget(gl, W, H);
+
+          function blankTexture() {
+            var tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            var black = new Uint8Array([0, 0, 0, 255]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, black);
+            return tex;
+          }
+
+          // The cover, square-cropped to 512 px (a power of two, so it can be mipmapped and
+          // stays crisp when drawn at 280 px).
+          var coverTex = blankTexture();
+          var coverReady = false;
+          function uploadCover() {
+            coverReady = false;
+            if (!coverLoaded || !coverImg.naturalWidth) return;
+            var c2 = document.createElement("canvas");
+            c2.width = 512;
+            c2.height = 512;
+            var w = coverImg.naturalWidth,
+              h = coverImg.naturalHeight,
+              sq = Math.min(w, h);
+            c2.getContext("2d").drawImage(
+              coverImg,
+              (w - sq) / 2,
+              (h - sq) / 2,
+              sq,
+              sq,
+              0,
+              0,
+              512,
+              512,
+            );
+            gl.bindTexture(gl.TEXTURE_2D, coverTex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c2);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            coverReady = true;
+          }
+          uploadCover();
+
+          var shapeProg = V.createProgram(gl, SHAPE_VS, SHAPE_FS);
+          var starProg = V.createProgram(gl, STAR_VS, STAR_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var baseProg = V.createProgram(gl, QUAD_VS, BASE_FS);
+          var gridProg = V.createProgram(gl, QUAD_VS, GRID_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+          var vhsProg = V.createProgram(gl, QUAD_VS, VHS_FS);
+          var shapeBuf = gl.createBuffer();
+          var starBuf = gl.createBuffer();
+
+          // Triangles for the frame's shapes: x, y, r, g, b per vertex.
+          var verts = new Float32Array(5 * 6 * 2048);
+          var nv = 0;
+          function vert(x, y, c, k) {
+            if (5 * (nv + 1) > verts.length) {
+              var bigger = new Float32Array(verts.length * 2);
+              bigger.set(verts);
+              verts = bigger;
+            }
+            var o = 5 * nv++;
+            verts[o] = x;
+            verts[o + 1] = y;
+            verts[o + 2] = c[0] * k;
+            verts[o + 3] = c[1] * k;
+            verts[o + 4] = c[2] * k;
+          }
+          /** A quad a-b-c-d (corners in order), coloured cA at a/b and cB at c/d. */
+          function quad(ax, ay, bx, by, cx, cy, dx, dy, cA, kA, cB, kB) {
+            vert(ax, ay, cA, kA);
+            vert(bx, by, cA, kA);
+            vert(cx, cy, cB, kB);
+            vert(ax, ay, cA, kA);
+            vert(cx, cy, cB, kB);
+            vert(dx, dy, cB, kB);
+          }
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel:
+           * a thinner line is drawn wider and dimmer, so the preview shows what the render
+           * shows when scaled down.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+            return [w, width / w];
+          }
+          /** A stroke from (x0, y0) to (x1, y1), coloured cA at the start and cB at the end. */
+          function stroke(x0, y0, x1, y1, width, cA, kA, cB, kB) {
+            var t = thin(width);
+            var ddx = x1 - x0,
+              ddy = y1 - y0;
+            var len = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+            var nx = (-ddy / len) * (t[0] / 2),
+              ny = (ddx / len) * (t[0] / 2);
+            quad(
+              x0 + nx,
+              y0 + ny,
+              x0 - nx,
+              y0 - ny,
+              x1 - nx,
+              y1 - ny,
+              x1 + nx,
+              y1 + ny,
+              cA,
+              kA * t[1],
+              cB,
+              kB * t[1],
+            );
+          }
+          var BLACK = [0, 0, 0];
+          var FAR_FILL = [
+            SKY[0] * 0.45 + GRID[0] * 0.03,
+            SKY[1] * 0.45 + GRID[1] * 0.03,
+            SKY[2] * 0.45 + GRID[2] * 0.03,
+          ];
+          var NEAR_FILL = [SKY[0] * 0.3, SKY[1] * 0.3, SKY[2] * 0.3];
+
+          /** Both ridges filled down to the horizon, in the given colours. */
+          function mountainFills(farCol, nearCol) {
+            var ridges = [
+              [MOUNTAINS.far, farCol],
+              [MOUNTAINS.near, nearCol],
+            ];
+            for (var r = 0; r < 2; r++) {
+              var ridge = ridges[r][0];
+              var c = ridges[r][1];
+              for (var i = 0; i + 1 < ridge.length; i++) {
+                var x0 = i * 20 - 960,
+                  x1 = (i + 1) * 20 - 960;
+                quad(x0, ridge[i] - 540, x1, ridge[i + 1] - 540, x1, 100, x0, 100, c, 1, c, 1);
+              }
+            }
+          }
+          /** The neon ridge outlines and their faint wireframe lines down to the horizon. */
+          function mountainOutlines(level) {
+            var ridges = [
+              [MOUNTAINS.far, 0.55],
+              [MOUNTAINS.near, 1],
+            ];
+            for (var r = 0; r < 2; r++) {
+              var ridge = ridges[r][0];
+              var k = ridges[r][1] * level;
+              for (var i = 0; i + 1 < ridge.length; i++) {
+                var x0 = i * 20 - 960,
+                  x1 = (i + 1) * 20 - 960;
+                var y0 = ridge[i] - 540,
+                  y1 = ridge[i + 1] - 540;
+                if (y0 > 99.5 && y1 > 99.5) continue; // flat on the horizon: no outline
+                stroke(x0, y0, x1, y1, 2, GRID, k, GRID, k);
+                if (i % 3 === 0 && y0 < 98)
+                  stroke(x0, y0, x0, 100, 1, GRID, 0.25 * k, GRID, 0.1 * k);
+              }
+            }
+          }
+          /** The bars around the sun, outside and/or inside, scaled with the sun's pulse. */
+          /**
+           * The bars around the sun, scaled with its pulse. Outside bars glow (light layer);
+           * inside bars are cut into the bright sun in a dark sky colour, like its gaps, since
+           * light added to the sun would not show.
+           */
+          var CUT = [SKY[0] * 0.7, SKY[1] * 0.7, SKY[2] * 0.7];
+          function sunBars(lens, pulse, inside) {
+            var cx = M.SUN.x,
+              cy = M.SUN.y;
+            for (var k = 0; k < BARS; k++) {
+              var p = POINTS[k];
+              if (!inside && lens.outer[k] > 0.5) {
+                var r0 = M.OUT_START * pulse,
+                  r1 = (M.OUT_START + lens.outer[k]) * pulse;
+                stroke(
+                  cx + p[0] * r0,
+                  cy + p[1] * r0,
+                  cx + p[0] * r1,
+                  cy + p[1] * r1,
+                  4,
+                  TOP,
+                  1,
+                  BOT,
+                  0.9,
+                );
+              }
+              if (inside && lens.inner[k] > 0.5) {
+                var i0 = (M.SUN.r + 1) * pulse,
+                  i1 = (M.SUN.r - lens.inner[k]) * pulse;
+                stroke(
+                  cx + p[0] * i0,
+                  cy + p[1] * i0,
+                  cx + p[0] * i1,
+                  cy + p[1] * i1,
+                  4,
+                  CUT,
+                  1,
+                  CUT,
+                  1,
+                );
+              }
+            }
+          }
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+          function drawArrays(prog, buffer, data, count, mode, layout) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+            var stride = 0;
+            for (var i = 0; i < layout.length; i++) stride += layout[i][1];
+            var locs = [],
+              offset = 0;
+            for (var j = 0; j < layout.length; j++) {
+              var loc = gl.getAttribLocation(prog, layout[j][0]);
+              gl.enableVertexAttribArray(loc);
+              gl.vertexAttribPointer(loc, layout[j][1], gl.FLOAT, false, stride * 4, offset * 4);
+              offset += layout[j][1];
+              locs.push(loc);
+            }
+            gl.drawArrays(mode, 0, count);
+            for (var k = 0; k < locs.length; k++) gl.disableVertexAttribArray(locs[k]);
+          }
+          function flushShapes() {
+            if (nv === 0) return;
+            gl.useProgram(shapeProg);
+            drawArrays(shapeProg, shapeBuf, verts.subarray(0, 5 * nv), nv, gl.TRIANGLES, [
+              ["pos", 2],
+              ["col", 3],
+            ]);
+            nv = 0;
+          }
+          function bindTextures(prog, units) {
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(prog.u[units[u][0]], u);
+            }
+          }
+          var gapData = new Float32Array(14);
+          var GRID_LINE = M.gridLineParams(PREVIEW_SCALE);
+
+          function renderAt(t) {
+            var a = audio.sample(t);
+            var songTime = t + audio.songStart;
+            var env = V.beatEnvelope(audio, t, M.PULSE_RELEASE);
+            var pulse = M.sunPulse(env, INT);
+            var hasCover = coverReady && coverLoaded;
+
+            // 1. the scene: sky, sun, cover, floor; then the stars and the mountain fills
+            bindTarget(base);
+            gl.useProgram(baseProg);
+            var gaps = M.sunGaps(M.stripeOffset(songTime));
+            gapData.fill(0);
+            for (var g = 0; g < gaps.length && g < 7; g++) {
+              gapData[2 * g] = gaps[g][0];
+              gapData[2 * g + 1] = gaps[g][1];
+            }
+            bindTextures(baseProg, [["cover", coverTex]]);
+            gl.uniform3fv(baseProg.u.skyCol, SKY);
+            gl.uniform3fv(baseProg.u.sunTop, TOP);
+            gl.uniform3fv(baseProg.u.sunBot, BOT);
+            gl.uniform1f(baseProg.u.sunR, M.SUN.r * pulse);
+            gl.uniform1f(baseProg.u.coverR, M.COVER_R * pulse);
+            gl.uniform1f(baseProg.u.hasCover, hasCover ? 1 : 0);
+            gl.uniform1f(baseProg.u.loud, a.loud);
+            gl.uniform2fv(baseProg.u.gaps, gapData);
+            gl.uniform1f(baseProg.u.gapCount, Math.min(7, gaps.length));
+            V.drawQuad(gl, baseProg);
+            var lens = M.barLengths(
+              V.ringValues(audio.spectrum(t, spec), ANGLES, M.ARC),
+              INT,
+              SIDE,
+              hasCover,
+            );
+            sunBars(lens, pulse, true); // inside bars, cut into the sun
+            flushShapes();
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            gl.useProgram(starProg);
+            gl.uniform1f(starProg.u.pxScale, PREVIEW_SCALE);
+            drawArrays(starProg, starBuf, STARS, STARS.length / 4, gl.POINTS, [["star", 4]]);
+            gl.disable(gl.BLEND);
+            mountainFills(FAR_FILL, NEAR_FILL);
+            flushShapes();
+
+            // 2. light: bars, hidden behind the mountains; outlines; the grid
+            bindTarget(scene);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            sunBars(lens, pulse, false); // outside bars, glowing
+            flushShapes();
+            gl.disable(gl.BLEND);
+            mountainFills(BLACK, BLACK);
+            flushShapes();
+            gl.enable(gl.BLEND);
+            mountainOutlines(M.mountainLevel(a.loud));
+            flushShapes();
+            gl.useProgram(gridProg);
+            gl.uniform3fv(gridProg.u.gridCol, GRID);
+            gl.uniform1f(gridProg.u.bright, M.gridBrightness(env));
+            gl.uniform1f(gridProg.u.offset, M.gridOffset(songTime, SPEED));
+            gl.uniform1f(gridProg.u.lineHalf, GRID_LINE.half);
+            gl.uniform1f(gridProg.u.lineGain, GRID_LINE.gain);
+            gl.uniform1f(gridProg.u.soft, GRID_LINE.soft);
+            gl.uniform1f(gridProg.u.crowdLo, GRID_LINE.crowdLo);
+            gl.uniform1f(gridProg.u.crowdHi, GRID_LINE.crowdHi);
+            V.drawQuad(gl, gridProg);
+            gl.disable(gl.BLEND);
+
+            // 3. glow: half-size medium, quarter-size wide (radii kept in 1080p terms)
+            copy(scene, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, hA, hB, 3.0 * PREVIEW_SCALE);
+            copy(hA, qA);
+            V.blur(gl, blurProg, qA, qB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, qA, qB, 3.0 * PREVIEW_SCALE);
+
+            // 4. the scene with its light on top
+            bindTarget(final);
+            gl.useProgram(compProg);
+            bindTextures(compProg, [
+              ["base", base.tex],
+              ["scene", scene.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", qA.tex],
+            ]);
+            V.drawQuad(gl, compProg);
+
+            // 5. the VHS look (or a plain copy) onto the screen
+            bindTarget(null);
+            gl.useProgram(vhsProg);
+            bindTextures(vhsProg, [["src", final.tex]]);
+            gl.uniform1f(vhsProg.u.vhs, VHS ? 1 : 0);
+            gl.uniform1f(vhsProg.u.songTime, songTime);
+            gl.uniform1f(vhsProg.u.grainSeed, Math.floor(songTime * 6) % 997);
+            V.drawQuad(gl, vhsProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, uploadCover: uploadCover, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            setCover(setting("cover"));
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
