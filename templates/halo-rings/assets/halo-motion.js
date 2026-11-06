@@ -16,7 +16,7 @@
     { radius: 325, full: 96, spin: -1.5 },
     { radius: 400, full: 120, spin: 1 },
   ];
-  var BAR_SCALE = 48; // px of bar for a full-scale band at intensity 1
+  var BAR_SCALE = 56; // px of bar for a full-scale band at intensity 1 (the value is squared)
   var BAR_MAX = 56; // px: a bar never reaches the next ring (75 px apart)
   var PULSE_RELEASE = 0.2; // seconds for the beat pulse to fall to about a third
   var PULSE = 0.05; // scale added by a full beat at intensity 1
@@ -33,11 +33,11 @@
     return out;
   }
 
-  /** Bar lengths in px, outward from the ring. */
+  /** Bar lengths in px, outward from the ring. Squared, so quiet bands drop back and peaks stand out. */
   function barLengths(values, intensity) {
     var out = new Float32Array(values.length);
     for (var i = 0; i < values.length; i++) {
-      out[i] = Math.min(BAR_MAX, values[i] * BAR_SCALE * intensity);
+      out[i] = Math.min(BAR_MAX, values[i] * values[i] * BAR_SCALE * intensity);
     }
     return out;
   }

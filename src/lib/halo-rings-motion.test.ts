@@ -73,9 +73,9 @@ describe("Halo Rings motion", () => {
     expect(m.ringThird([0.7], 2)[0]).toBeCloseTo(0.7, 6);
   });
 
-  it("bar lengths scale by intensity and cap at 56 px", () => {
-    expect(Array.from(m.barLengths([0, 0.5, 2], 1))).toEqual([0, 24, 56]);
-    expect(Array.from(m.barLengths([0, 0.5, 2], 2))).toEqual([0, 48, 56]);
+  it("bar lengths follow the square of the value (peaks stand out), cap at 56 px", () => {
+    expect(Array.from(m.barLengths([0, 0.5, 2], 1))).toEqual([0, 14, 56]);
+    expect(Array.from(m.barLengths([0, 0.5, 2], 2))).toEqual([0, 28, 56]);
   });
 
   it("rings spin by time only, in opposite directions", () => {

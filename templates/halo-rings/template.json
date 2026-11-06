@@ -1,0 +1,49 @@
+{
+  "name": "Halo Rings",
+  "description": "Three nested rings of dotted spectrum bars around your title, pulsing on the beat.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    {
+      "name": "Effects",
+      "fields": [
+        "intensity",
+        "spectrumStyle",
+        "ringShape",
+        "spin",
+        "scaleOnBeat",
+        "shakeOnBeat",
+        "showBackground",
+        "backgroundBlur"
+      ]
+    },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "spectrumStyle", "ringShape", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#8fe8ff", "accentColor": "#4f7bff" }
+    },
+    {
+      "name": "Ember",
+      "thumbnail": "presets/ember.jpg",
+      "values": { "mainColor": "#ffb35c", "accentColor": "#ff4a3d" }
+    },
+    {
+      "name": "Aurora",
+      "thumbnail": "presets/aurora.jpg",
+      "values": { "mainColor": "#7dffb0", "accentColor": "#a46bff" }
+    },
+    {
+      "name": "Rose",
+      "thumbnail": "presets/rose.jpg",
+      "values": { "mainColor": "#ffd1dc", "accentColor": "#ff7aa8" }
+    }
+  ]
+}
