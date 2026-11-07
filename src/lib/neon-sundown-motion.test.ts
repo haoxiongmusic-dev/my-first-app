@@ -35,6 +35,7 @@ type Motion = {
     near: Float32Array;
   };
   buildStars: (mulberry32: (seed: number) => () => number) => Float32Array;
+  scanlineDark: (y: number, footprint: number) => number;
   gridLineParams: (previewScale: number) => {
     half: number;
     gain: number;
@@ -196,5 +197,29 @@ describe("Neon Sundown motion", () => {
       expect(m.sunPulse(env, 1)).toBe(1);
       expect(m.gridBrightness(env)).toBeCloseTo(0.55, 9);
     }
+  });
+
+  describe("VHS scanlines", () => {
+    const pointSample = (y: number) => 0.12 * ((((y / 3) % 1) + 1) % 1 < 0.34 ? 1 : 0);
+
+    it("in an export (one 1080p pixel per pixel) they are exactly today's lines", () => {
+      for (let k = 0; k < 1080; k++) {
+        expect(m.scanlineDark(k + 0.5, 1)).toBeCloseTo(pointSample(k + 0.5), 9);
+      }
+    });
+
+    it("at 360p each pixel shows the lines' average darkness", () => {
+      for (const y of [1.5, 100.5, 541.5, 1078.5]) {
+        expect(m.scanlineDark(y, 3)).toBeCloseTo(0.12 * 0.34, 9);
+      }
+    });
+
+    it("at 720p the frame is as dark overall as the export", () => {
+      let preview = 0;
+      for (let k = 0; k < 720; k++) preview += m.scanlineDark((k + 0.5) * 1.5, 1.5);
+      let render = 0;
+      for (let k = 0; k < 1080; k++) render += pointSample(k + 0.5);
+      expect(Math.abs(preview / 720 - render / 1080)).toBeLessThan(1e-3);
+    });
   });
 });
