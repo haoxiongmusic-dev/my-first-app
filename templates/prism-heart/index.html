@@ -109,9 +109,6 @@
         color: #fbf6ff;
         opacity: 0;
       }
-      #songArtist {
-        white-space: nowrap;
-      }
       #songTitle {
         max-width: 560px; /* TITLE_SAFE: a long title wraps onto a second line */
         white-space: normal;
@@ -119,6 +116,7 @@
         line-height: 1.12;
       }
       #songArtist {
+        white-space: nowrap;
         font-size: 26px;
         font-weight: 500;
         letter-spacing: 0.35em;
@@ -380,6 +378,7 @@
           "varying vec2 vUv;",
           "void main(){",
           "  vec2 px = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  if (usePicture > 0.5) { gl_FragColor = vec4(texture2D(picture, vUv).rgb * 0.6, 1.0); return; }",
           "  vec3 c = topCol * pow(max(vUv.y, 0.0), 1.3);",
           "  for (int i = 0; i < 40; i++) {",
           "    float r = discs[i].z;",
@@ -387,7 +386,6 @@
           "    float soft = 1.0 - smoothstep(r * 0.25, r, d);",
           "    c += discCol[i] * soft * soft;",
           "  }",
-          "  if (usePicture > 0.5) c = texture2D(picture, vUv).rgb * 0.6;",
           "  gl_FragColor = vec4(c, 1.0);",
           "}",
         ].join("\n");
@@ -405,7 +403,7 @@
         // The glass: a thin-film rainbow that changes with the viewing angle, a bright rim, the
         // backdrop bent through the facet, and thin bright facet edges that flash on hits.
         var GLASS_FS = [
-          "uniform sampler2D backdrop; uniform vec2 res;",
+          "uniform sampler2D backdrop; uniform vec2 res; uniform float pxScale;",
           "uniform vec3 mainCol, accCol; uniform float sheen, flash, faceGain, opacity;",
           "varying vec3 vEdge; varying vec3 vN; varying vec3 vV;",
           "void main(){",
@@ -422,30 +420,37 @@
           "  float glint = pow(max(dot(R, normalize(vec3(-0.4, 0.8, 0.6))), 0.0), 24.0);",
           "  glint += 0.6 * pow(max(dot(R, normalize(vec3(0.7, 0.2, 0.7))), 0.0), 12.0);",
           "  float e = min(min(vEdge.x, vEdge.y), vEdge.z);",
-          "  float line = 1.0 - smoothstep(0.0, fwidth(e) * 1.5, e);",
+          // 1.5 screen pixels in an export; in a smaller preview as thin as the frame shrinks
+          // (under one pixel, it fades instead of thinning).
+          "  float lw = 1.5 * pxScale;",
+          "  float line = (1.0 - smoothstep(0.0, fwidth(e) * max(lw, 1.0), e)) * min(lw, 1.0);",
           "  vec3 col = (bg * 0.9 * mix(vec3(1.0), tint, 0.3) + tint * (0.12 + 1.2 * fres)) * faceGain;",
           "  col += vec3(glint) * 1.1 * faceGain;",
           "  col += line * (0.8 + flash) * mix(vec3(1.0), mainCol, 0.3);",
           "  gl_FragColor = vec4(col, opacity);",
           "}",
         ].join("\n");
-        // Ring dots: points in 1080p pixels, at least about one screen pixel wide.
+        // Ring dots: points in 1080p pixels, at least one screen pixel wide (dimmer if widened).
+        // Under 2 pixels a dot is drawn as a whole square pixel: a round mask that small would
+        // dim it or drop it depending on where it lands.
         var DOT_VS = [
           "attribute float size; attribute vec3 dotColor; uniform float pxScale;",
-          "varying vec3 vC;",
+          "varying vec3 vC; varying float vRound;",
           "void main(){",
           "  float s = size * pxScale;",
-          "  float w = max(s, 1.2);",
+          "  float w = max(s, 1.0);",
           "  vC = dotColor * (s / w) * (s / w);",
+          "  vRound = w >= 2.0 ? 1.0 : 0.0;",
           "  gl_PointSize = w;",
           "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
           "}",
         ].join("\n");
         var DOT_FS = [
-          "varying vec3 vC;",
+          "varying vec3 vC; varying float vRound;",
           "void main(){",
           "  float d = length(gl_PointCoord - 0.5);",
-          "  gl_FragColor = vec4(vC * (1.0 - smoothstep(0.35, 0.5, d)), 1.0);",
+          "  float mask = vRound > 0.5 ? 1.0 - smoothstep(0.35, 0.5, d) : 1.0;",
+          "  gl_FragColor = vec4(vC * mask, 1.0);",
           "}",
         ].join("\n");
         // Fine grain toward white or black, changing at most 6 times a second.
@@ -532,6 +537,7 @@
           var glassUniforms = {
             backdrop: { value: backdrop.texture },
             res: { value: new THREE.Vector2(1920, 1080) },
+            pxScale: { value: 1 },
             mainCol: { value: new THREE.Color() },
             accCol: { value: new THREE.Color() },
             sheen: { value: 0 },
@@ -622,8 +628,8 @@
           var composer = new K.EffectComposer(renderer, target);
           keep(composer);
           composer.setPixelRatio(1);
-          composer.addPass(new K.RenderPass(scene, camera));
-          var overlayPass = new K.RenderPass(overlay, pixelCamera);
+          composer.addPass(keep(new K.RenderPass(scene, camera)));
+          var overlayPass = keep(new K.RenderPass(overlay, pixelCamera));
           overlayPass.clear = false;
           composer.addPass(overlayPass);
           var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.45, 0.4, 0.9);
@@ -634,7 +640,7 @@
             });
           keep(bloom);
           composer.addPass(bloom);
-          composer.addPass(new K.OutputPass());
+          composer.addPass(keep(new K.OutputPass()));
 
           function resize(scale) {
             var W = Math.round(1920 * scale),
@@ -645,34 +651,44 @@
             backdrop.setSize(W, H);
             glassUniforms.res.value.set(W, H);
             dotMat.uniforms.pxScale.value = scale;
+            glassUniforms.pxScale.value = scale;
           }
           resize(PREVIEW_SCALE);
 
-          // ----- the background picture (optional), blurred once on a 2D canvas -----
+          // ----- the background picture (optional), blurred on a 2D canvas -----
+          // One canvas and one texture, redrawn only when the blur or the preview size changes.
+          // The preview draws it at its own size (the blur scaled to match), so dragging the
+          // Blur slider stays smooth; an export draws it at 1920x1080 as before.
+          var pictureCanvas = null;
           var pictureTex = null;
           var pictureBlur = -1;
+          var pictureScale = -1;
           function loadPicture() {
             var img = document.getElementById("bgImage");
             var blur = setting("backgroundBlur");
-            if (pictureTex && pictureBlur === blur) return;
+            if (pictureTex && pictureBlur === blur && pictureScale === PREVIEW_SCALE) return;
             if (!img || !img.complete || !img.naturalWidth) return;
-            var c2 = document.createElement("canvas");
-            c2.width = 1920;
-            c2.height = 1080;
-            var ctx = c2.getContext("2d");
-            var blurPx = (blur / 100) * 80;
+            var W = Math.round(1920 * PREVIEW_SCALE),
+              H = Math.round(1080 * PREVIEW_SCALE);
+            if (!pictureCanvas) pictureCanvas = document.createElement("canvas");
+            pictureCanvas.width = W; // also clears it
+            pictureCanvas.height = H;
+            var ctx = pictureCanvas.getContext("2d");
+            var blurPx = (blur / 100) * 80 * PREVIEW_SCALE;
             ctx.filter = blurPx > 0 ? "blur(" + blurPx + "px)" : "none";
             var pad = blurPx * 2; // draw past the edges so the blur doesn't darken them
-            var s = Math.max(
-              (1920 + 2 * pad) / img.naturalWidth,
-              (1080 + 2 * pad) / img.naturalHeight,
-            );
+            var s = Math.max((W + 2 * pad) / img.naturalWidth, (H + 2 * pad) / img.naturalHeight);
             var dw = img.naturalWidth * s,
               dh = img.naturalHeight * s;
-            ctx.drawImage(img, (1920 - dw) / 2, (1080 - dh) / 2, dw, dh);
-            if (pictureTex) pictureTex.dispose();
-            pictureTex = new THREE.CanvasTexture(c2);
+            ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+            if (pictureTex && pictureScale !== PREVIEW_SCALE) {
+              pictureTex.dispose(); // a new size needs a new texture
+              pictureTex = null;
+            }
+            if (!pictureTex) pictureTex = new THREE.CanvasTexture(pictureCanvas);
+            pictureTex.needsUpdate = true;
             pictureBlur = blur;
+            pictureScale = PREVIEW_SCALE;
             bokehMat.uniforms.picture.value = pictureTex;
           }
 
@@ -716,7 +732,7 @@
             if (SHOW_BG) loadPicture();
             bokehMat.uniforms.usePicture.value = SHOW_BG && pictureTex ? 1 : 0;
             var level = M.bokehLevel(a.loud) * 0.22;
-            for (var i = 0; i < 40; i++) {
+            for (var i = 0; i < 40 && !(SHOW_BG && pictureTex); i++) {
               var disc = BOKEH.subarray(6 * i, 6 * i + 6);
               var at = M.bokehAt(disc, songTime);
               discData[i].set(at[0], at[1], disc[2], 0);
