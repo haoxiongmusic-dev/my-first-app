@@ -44,7 +44,8 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/online-test-guide.md`): built; first RunPod session pending
 - [x] M7 polish (spec `docs/superpowers/specs/2026-11-07-m7-polish-design.md`, plan
       `docs/superpowers/plans/2026-11-07-m7-polish.md`): Presets panel, undo/redo, the deferred
-      minors from PRs #7–#12
+      minors from PRs #7–#12, except Iron Wraith's exact tower colour (spec §5.4.3: needs a look
+      change; the owner decides)
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.

@@ -31,3 +31,15 @@ export function isEditableTarget(t: TargetLike): boolean {
   if (tag === "INPUT") return TYPING_INPUTS.has((t.type ?? "").toLowerCase());
   return false;
 }
+
+/**
+ * The editor's undo/redo for this key press, or null: not while typing in a box, and not while
+ * a dialog such as the Export panel is open (its export uses the settings on screen).
+ */
+export function editorShortcut(
+  e: KeyLike & { target: TargetLike },
+  dialogOpen: boolean,
+): "undo" | "redo" | null {
+  if (dialogOpen || isEditableTarget(e.target)) return null;
+  return historyShortcut(e);
+}

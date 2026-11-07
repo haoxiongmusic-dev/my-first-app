@@ -100,7 +100,13 @@ passing and must not change the look of an export except where the item says so.
    safe width, shrinking as needed.
 2. **Thinnest wave:** at the thinnest setting it must stay visible in the small preview. Use at
    least one screen pixel.
-3. **Tower colours:** they must come out as the exact hex picked, so they skip tone mapping.
+3. **Tower colours (not done in M7; owner to decide):** they were to come out as the exact hex
+   picked. Building it showed this can't be done by adjusting the colour: the final OutputPass
+   tone-maps the whole frame (ACES), and ACES can't produce saturated colours such as the
+   default #1f5fff (the closest it gets is visibly purple) or #22ff88 (near white). Muted
+   colours could match exactly. An exact match needs either no tone mapping for Iron Wraith or
+   the towers drawn in a separate pass after tone mapping; both change the approved look, so
+   the towers stay as they were.
 4. **Skull nod (owner's choice: keep 3.4°):** correct the Iron Wraith design spec's "≤ 2°" to the
    approved "≤ 3.4°". The code doesn't change.
 

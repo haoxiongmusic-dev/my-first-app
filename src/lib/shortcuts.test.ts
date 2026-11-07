@@ -1,6 +1,6 @@
 // Keyboard shortcuts for undo/redo, and where they must leave the browser's own undo alone.
 import { describe, expect, it } from "vitest";
-import { historyShortcut, isEditableTarget } from "@/lib/shortcuts";
+import { editorShortcut, historyShortcut, isEditableTarget } from "@/lib/shortcuts";
 
 const key = (
   k: string,
@@ -48,5 +48,29 @@ describe("isEditableTarget", () => {
     }
     expect(isEditableTarget({ tagName: "BUTTON" })).toBe(false);
     expect(isEditableTarget(null)).toBe(false);
+  });
+});
+
+describe("editorShortcut", () => {
+  it("undoes and redoes on the page", () => {
+    expect(
+      editorShortcut({ ...key("z", { ctrl: true }), target: { tagName: "BUTTON" } }, false),
+    ).toBe("undo");
+    expect(editorShortcut({ ...key("y", { ctrl: true }), target: null }, false)).toBe("redo");
+  });
+
+  it("leaves typing in a box to the browser", () => {
+    expect(
+      editorShortcut(
+        { ...key("z", { ctrl: true }), target: { tagName: "INPUT", type: "text" } },
+        false,
+      ),
+    ).toBeNull();
+  });
+
+  it("does nothing while the Export panel is open (its export uses the settings shown)", () => {
+    expect(
+      editorShortcut({ ...key("z", { ctrl: true }), target: { tagName: "BUTTON" } }, true),
+    ).toBeNull();
   });
 });

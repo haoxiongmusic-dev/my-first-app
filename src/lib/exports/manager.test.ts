@@ -340,3 +340,26 @@ describe("export manager and the start-up GPU check", () => {
     expect(run.options).not.toBeNull();
   });
 });
+
+describe("export manager when the GPU check never finishes", () => {
+  it("stops waiting after the wait limit and renders anyway", async () => {
+    const run = controllableRun();
+    const m = createExportManager({
+      projectRoot: root,
+      spawn: unusedSpawn,
+      run: okRun,
+      runExport: run.runExport,
+      now: () => 1_000_000,
+      freeBytes: async () => 84e9,
+      failureGraceMs: 0,
+      gpuCheck: { running: () => true, done: () => new Promise<void>(() => {}) },
+      gpuWaitMs: 30,
+    });
+    const started = await m.start(request());
+    expect(started.stage).toBe("waiting");
+    await settle();
+    expect(run.options).toBeNull();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(run.options).not.toBeNull();
+  });
+});

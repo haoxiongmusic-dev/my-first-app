@@ -93,7 +93,11 @@ export type ExportManagerOptions = {
    * so the two renders don't share the machine.
    */
   gpuCheck?: { running(): boolean; done(): Promise<void> };
+  /** The longest an export waits for that check (default 5 min): a hung check can't block exports. */
+  gpuWaitMs?: number;
 };
+
+export const GPU_WAIT_MS = 5 * 60 * 1000;
 
 function stamp(ms: number): string {
   const d = new Date(ms);
@@ -242,7 +246,13 @@ export function createExportManager(o: ExportManagerOptions) {
         return new Promise<void>((resolve, reject) => {
           const onAbort = () => reject(new ExportCancelled());
           controller.signal.addEventListener("abort", onAbort, { once: true });
-          void gpuCheck.done().then(() => {
+          // Whichever comes first: the check's result, or the wait limit.
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const limit = new Promise<void>((done) => {
+            timer = setTimeout(done, o.gpuWaitMs ?? GPU_WAIT_MS);
+          });
+          void Promise.race([gpuCheck.done(), limit]).then(() => {
+            clearTimeout(timer);
             controller.signal.removeEventListener("abort", onAbort);
             if (controller.signal.aborted) return reject(new ExportCancelled());
             r.status = { ...r.status, stage: "preparing" };

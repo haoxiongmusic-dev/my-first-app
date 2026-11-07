@@ -6,7 +6,7 @@ import { APP_NAME } from "@/lib/app-info";
 import { canRedo, canUndo, type History, historyReducer, startHistory } from "@/lib/edit-history";
 import { previewScale, previewSrc, previewValues } from "@/lib/editor-state";
 import { type FormTemplate, imageFields, mergeValues } from "@/lib/form-model";
-import { historyShortcut, isEditableTarget } from "@/lib/shortcuts";
+import { editorShortcut } from "@/lib/shortcuts";
 import type { TemplatePreset, TemplateValues } from "@/lib/template-values";
 import { IconRail, type PanelId } from "./IconRail";
 import { applyPreset, presetMatches } from "@/lib/presets";
@@ -55,17 +55,6 @@ export function Editor({ template }: { template: EditorTemplate }) {
       }),
     [template],
   );
-  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (Cmd on a Mac), except while typing in a box.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const action = historyShortcut(e);
-      if (!action || isEditableTarget(e.target as HTMLElement | null)) return;
-      e.preventDefault();
-      dispatch({ type: action });
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
   // The preview gets picture addresses instead of image ids (exports still send the ids).
   const sentToPreview = useMemo(
     () => previewValues(template.variables, values),
@@ -74,6 +63,21 @@ export function Editor({ template }: { template: EditorTemplate }) {
   const [song, setSong] = useState<ChosenSong | null>(null);
   const [section, setSection] = useState<Section | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (Cmd on a Mac), except while typing in a box or while the
+  // Export panel is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = editorShortcut(
+        e as KeyboardEvent & { target: HTMLElement | null },
+        exportOpen,
+      );
+      if (!action) return;
+      e.preventDefault();
+      dispatch({ type: action });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [exportOpen]);
   const [exportProgress, setExportProgress] = useState("");
   const hasBackground = template.variables.some((v) => v.id === "showBackground");
   const [panel, setPanel] = useState<PanelId>("content");
