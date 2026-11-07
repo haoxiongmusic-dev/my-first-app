@@ -23,7 +23,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [x] M4 editor + live preview (plan: `docs/superpowers/plans/2026-11-05-m4-editor-preview.md`)
 - [x] M5 export (plan: `docs/superpowers/plans/2026-11-05-m5-export.md`): owner's full-song
       export confirmed. **The first complete app.**
-- [x] M6 five more templates, one at a time (pull requests #9–#11 merge in order):
+- [x] M6 five more templates, one at a time (merged):
   - [x] Iron Wraith (voxel robot skull, three.js; spec
         `docs/superpowers/specs/2026-11-05-m6-iron-wraith-design.md`): merged (PR #7)
   - [x] Nova Streak (Soundwave-style, plus the general `image` setting; spec
@@ -42,7 +42,9 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/superpowers/specs/2026-11-06-online-test-design.md`, plan
       `docs/superpowers/plans/2026-11-06-online-test.md`, owner's guide
       `docs/online-test-guide.md`): built; first RunPod session pending
-- [ ] M7 polish: the deferred minors listed in PRs #8–#11, the editor's Presets panel
+- [x] M7 polish (spec `docs/superpowers/specs/2026-11-07-m7-polish-design.md`, plan
+      `docs/superpowers/plans/2026-11-07-m7-polish.md`): Presets panel, undo/redo, the deferred
+      minors from PRs #7–#12
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
@@ -60,6 +62,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - **Editor layout mirrors the Videobolt editor the owner already uses** (icon rail:
   Content / Presets / Customize Basic+Advanced / Preferences; live preview; Export), with our
   own name and styling. Reference notes: spec §4.1.
+- **Presets and undo:** picking a preset resets the template's "look fields" (every field any
+  preset sets) to their defaults, then applies it (`src/lib/presets.ts`); undo/redo is a pure
+  history reducer over the settings and background picture (`src/lib/edit-history.ts`),
+  joining quick changes to one field into one step.
 - **Songs up to 60 min**: the owner makes album-length videos (e.g. the 36-min Sunlight album).
 - **Online test version** (cloud): the same app in a container image
   (`ghcr.io/haoxiongmusic-dev/my-first-app`, built and smoke-tested by `.github/workflows/image.yml`)
@@ -78,6 +84,9 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 
 - Draw only from the `hf-seek` time; no `Math.random()`, `Date.now()` or timers. Use the
   seeded `mulberry32` from the toolkit.
+- **Shader maths must be defined on every GPU** (`src/lib/template-glsl.test.ts` checks): no
+  `pow()` of a base that can be negative (wrap it in `max`, `clamp` or `abs`), and `sin()`
+  hashes take `mod(p, 256.0)`.
 - **WebGL: 8-bit render targets only.** Half-float targets silently render blank on this
   PC's Intel UHD 620 (ANGLE/D3D11). Always check shader compile _and_ link status.
 - Keep grain subtle and slow (≤ 0.02, ≤ 6 updates/s); per-frame noise makes files huge.
