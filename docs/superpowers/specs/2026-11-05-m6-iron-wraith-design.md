@@ -75,7 +75,7 @@ Layout at 1920×1080:
 | Part | Signal | Behaviour |
 |---|---|---|
 | Jaw | `beat` (follows **Beat range**) | Opens up to `jawStrength` × 0.3 rad on a beat, then closes fast (attack ≈ 40 ms, release ≈ 180 ms) |
-| Head | `beat` | Small nod (≤ 2°) in step with the jaw |
+| Head | `beat` | Small nod (≤ 3.4° at high Intensity, the approved look) in step with the jaw |
 | Eyes | `loud`, plus recent hits | Brightness follows loudness; hits add a short flare (≤ 0.4 s) scaled by `glow` |
 | Rim light | `loud` | Blue rim light on the chrome breathes with loudness (`lightColor`) |
 | Towers | Fixed spectrum, 20 Hz–16 kHz, 12 columns | Height in whole blocks (voxel look). A falling "peak" block shows the highest value of the last 0.6 s, computed from time, so seeking gives the same frame |

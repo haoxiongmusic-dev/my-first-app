@@ -1,11 +1,36 @@
 // The login check behind POST /api/auth/login, kept apart from the route so it can be tested.
 import { safeNext, loginEnabled } from "@/lib/auth/gate";
-import { DUMMY_HASH, parseAccounts, verifyPassword } from "@/lib/auth/passwords";
+import { DUMMY_HASH, MAX_PASSWORD, parseAccounts, verifyPassword } from "@/lib/auth/passwords";
 import { createRateLimiter, type RateLimiter } from "@/lib/auth/rate-limit";
 import { cookieOptions, SESSION_COOKIE, signSession } from "@/lib/auth/session";
 
 export const WRONG_LOGIN = "Wrong username or password.";
 export const TOO_MANY = "Too many attempts: try again in 10 minutes.";
+export const TOO_BIG = "That request is too big.";
+/** A login is a few short fields; anything bigger is refused before it is read in full. */
+export const MAX_LOGIN_BODY = 4096;
+export { MAX_PASSWORD };
+
+/** The request body as text, or null once it passes `max` bytes (stops reading there). */
+export async function readCappedText(request: Request, max: number): Promise<string | null> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 const MIN = 60_000;
 
@@ -63,8 +88,10 @@ export async function loginResponse(
     return Response.json({ error: "Logins are not set up on this server." }, { status: 400 });
   }
   let body: { username?: unknown; password?: unknown; next?: unknown };
+  const text = await readCappedText(request, MAX_LOGIN_BODY);
+  if (text === null) return Response.json({ error: TOO_BIG }, { status: 413 });
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     return Response.json({ error: WRONG_LOGIN }, { status: 400 });
   }
@@ -81,8 +108,12 @@ export async function loginResponse(
   }
   const accounts = parseAccounts(env.ACCOUNTS);
   const stored = accounts.get(user);
-  // Always run one scrypt check, so an unknown name takes as long as a wrong password.
-  const matches = (await verifyPassword(password, stored ?? DUMMY_HASH)) && stored !== undefined;
+  // Always run one scrypt check, so an unknown name takes as long as a wrong password
+  // (except for an over-long password, which can't be right: no account allows one).
+  const matches =
+    password.length <= MAX_PASSWORD &&
+    (await verifyPassword(password, stored ?? DUMMY_HASH)) &&
+    stored !== undefined;
   if (!matches) {
     limits.ip.fail(ip, now);
     limits.user.fail(userKey, now);

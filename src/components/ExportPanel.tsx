@@ -4,7 +4,7 @@
 // Download. Exports run on the server one at a time; this panel only starts and watches them,
 // so closing it (or reloading the page) doesn't stop an export.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { exportSummary, progressText, shouldNotify } from "@/lib/export-client";
+import { exportSummary, progressText, shortProgressText, shouldNotify } from "@/lib/export-client";
 import type { ExportStatus } from "@/lib/exports/manager";
 import type { Quality, Resolution } from "@/lib/exports/progress";
 import { isWholeSong, type Section, sectionLabel } from "@/lib/section";
@@ -60,7 +60,7 @@ export function ExportPanel(props: Props) {
       }
       previous.current = next;
       setStatus(next);
-      onProgress(next?.state === "running" ? `Exporting ${Math.floor(next.percent)} %` : "");
+      onProgress(shortProgressText(next));
     },
     [onProgress],
   );

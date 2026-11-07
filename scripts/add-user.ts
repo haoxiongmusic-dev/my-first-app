@@ -3,6 +3,7 @@
 // setting on the cloud machine. The password itself is never stored or printed: only its
 // scrypt fingerprint. Dev scripts compile as CommonJS, so no top-level await (see CLAUDE.md).
 import {
+  envFileLine,
   formatAccountLine,
   hashPassword,
   parseAccounts,
@@ -61,6 +62,8 @@ async function main() {
   parseAccounts(line); // proves the line is readable
   console.log("\nAdd this to ACCOUNTS (separate several people with commas):\n");
   console.log(line);
+  console.log("\nIn a .env file on your PC, write each $ as \\$, like this:\n");
+  console.log(envFileLine(line));
   console.log(
     "\nThe server also needs SESSION_SECRET: a random 48-character text. Make one with:\n" +
       "  node -e \"console.log(require('crypto').randomBytes(36).toString('base64url'))\"\n",

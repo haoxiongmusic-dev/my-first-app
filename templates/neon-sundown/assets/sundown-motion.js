@@ -150,7 +150,28 @@
     };
   }
 
+  // VHS scanlines: every 3 rows (1080p units) the first 0.34 of the period is darkened by 12 %.
+  // An export samples each pixel's centre (footprint 1). A smaller preview pixel covers
+  // `footprint` rows, so it shows the average darkness over them (a box filter): the same lines
+  // the export has, seen from further away, without moire. The VHS shader does the same sums.
+  var SCAN_PERIOD = 3;
+  var SCAN_DARK = 0.34 * SCAN_PERIOD;
+  function scanCovered(y) {
+    var whole = Math.floor(y / SCAN_PERIOD);
+    return whole * SCAN_DARK + Math.min(y - whole * SCAN_PERIOD, SCAN_DARK);
+  }
+  function scanlineDark(y, footprint) {
+    if (footprint <= 1) {
+      var f = y / SCAN_PERIOD - Math.floor(y / SCAN_PERIOD);
+      return f < 0.34 ? 0.12 : 0;
+    }
+    var a = y - footprint / 2;
+    var b = y + footprint / 2;
+    return (0.12 * (scanCovered(b) - scanCovered(a))) / footprint;
+  }
+
   var api = {
+    scanlineDark: scanlineDark,
     gridLineParams: gridLineParams,
     ARC: ARC,
     SUN: SUN,

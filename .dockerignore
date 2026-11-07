@@ -16,6 +16,8 @@ analyzer/.venv
 **/*.mp3
 **/*.flac
 **/*.m4a
+**/*.aac
+**/*.ogg
 **/*.mp4
 **/*.mov
 **/*.webm

@@ -46,7 +46,10 @@ export async function checkGpu(
   }
 }
 
-const holder = globalThis as unknown as { __gpuStatus?: GpuStatus };
+const holder = globalThis as unknown as {
+  __gpuStatus?: GpuStatus;
+  __gpuWaiters?: (() => void)[];
+};
 
 /** The latest check result ("off" when no check was started). */
 export function getGpuStatus(): GpuStatus {
@@ -55,4 +58,19 @@ export function getGpuStatus(): GpuStatus {
 
 export function setGpuStatus(status: GpuStatus): void {
   holder.__gpuStatus = status;
+  if (status.gpu === "checking") return;
+  const waiters = holder.__gpuWaiters ?? [];
+  holder.__gpuWaiters = [];
+  for (const release of waiters) release();
+}
+
+/**
+ * Resolves once no check is running: at once, or when the running check reports any result
+ * (a failed check too). Exports wait on it so they don't render alongside the check.
+ */
+export function gpuCheckDone(): Promise<void> {
+  if (getGpuStatus().gpu !== "checking") return Promise.resolve();
+  return new Promise((resolve) => {
+    holder.__gpuWaiters = [...(holder.__gpuWaiters ?? []), resolve];
+  });
 }

@@ -58,7 +58,7 @@
    */
   function shakeOffset(env, intensity, songTime, on, mulberry32) {
     if (!on || env <= 0) return [0, 0];
-    var angle = 2 * Math.PI * mulberry32(Math.floor(songTime * SHAKE_RATE))();
+    var angle = 2 * Math.PI * mulberry32(Math.floor(songTime * SHAKE_RATE + 1e-6))();
     var len = SHAKE * env * intensity;
     return [Math.cos(angle) * len, Math.sin(angle) * len];
   }
@@ -108,6 +108,19 @@
     return knots[i] + (knots[i + 1] - knots[i]) * f;
   }
 
+  // A dot in the small preview: at least one screen pixel wide, centred on a screen pixel so it
+  // doesn't flicker as it moves across pixels, and dimmed by the area it gained, so its
+  // brightness matches the export. Exports (scale 1) draw dots exactly as given.
+  // Returns [x, y, size, gain] in 1080p units.
+  function previewDot(x, y, size, scale) {
+    if (scale >= 1) return [x, y, size, 1];
+    var w = Math.max(size, 1 / scale);
+    var snap = function (v) {
+      return (Math.floor(v * scale) + 0.5) / scale;
+    };
+    return [snap(x), snap(y), w, (size / w) * (size / w)];
+  }
+
   var api = {
     RINGS: RINGS,
     BAR_SCALE: BAR_SCALE,
@@ -120,6 +133,7 @@
     shakeOffset: shakeOffset,
     glowLevel: glowLevel,
     buildSky: buildSky,
+    previewDot: previewDot,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else window.HaloMotion = api;

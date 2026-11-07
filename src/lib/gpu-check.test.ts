@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   checkGpu,
   getGpuStatus,
+  gpuCheckDone,
+  setGpuStatus,
   parseGpuMode,
   renderGpuArgs,
   shouldCheckGpu,
@@ -78,5 +80,31 @@ describe("GPU check", () => {
       () => 0,
     );
     expect(seen.at(-1)?.gpu).toBe("failed");
+  });
+});
+
+describe("waiting for the GPU check", () => {
+  it("resolves at once when no check is running", async () => {
+    setGpuStatus({ gpu: "off", seconds: null });
+    await expect(gpuCheckDone()).resolves.toBeUndefined();
+  });
+
+  it("waits while the check runs and resolves when it reports a result", async () => {
+    setGpuStatus({ gpu: "checking", seconds: null });
+    let done = false;
+    const waiting = gpuCheckDone().then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(done).toBe(false);
+    setGpuStatus({ gpu: "hardware", seconds: 12 });
+    await waiting;
+    expect(done).toBe(true);
+  });
+
+  it("a failed check still releases the waiting export", async () => {
+    setGpuStatus({ gpu: "checking", seconds: null });
+    const waiting = gpuCheckDone();
+    setGpuStatus({ gpu: "failed", seconds: null });
+    await expect(waiting).resolves.toBeUndefined();
+    setGpuStatus({ gpu: "off", seconds: null });
   });
 });

@@ -117,6 +117,8 @@ Keep both somewhere private (a password manager). **Never put them in the repo:*
   background, so long exports are fine.
 - **Uploads:** MP3s upload faster than WAVs.
 - **Shared space:** everyone shares one space and one export at a time, like on your PC.
+- **Log out** signs out only that browser. To sign everyone out everywhere (say, after sharing a
+  login by mistake), change `SESSION_SECRET` in the pod's settings and restart the pod.
 
 ---
 
@@ -125,7 +127,8 @@ Keep both somewhere private (a password manager). **Never put them in the repo:*
 On the pod, choose **Terminate**, not just Stop.
 - **Terminate** removes the machine and stops all GPU charges. Your files stay on the
   `visualizer` storage disk.
-- **Stop** keeps the machine reserved and can still cost a little.
+- **Stop** keeps the machine reserved and can still cost a little. A pod that uses a storage
+  disk may offer only Terminate anyway: that's the right one.
 
 The next session starts again at step 1, with the same volume.
 

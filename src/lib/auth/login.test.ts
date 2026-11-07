@@ -1,13 +1,22 @@
 // POST /api/auth/login's logic: right and wrong logins, the attempt limit, the cookie.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   clientIp,
   createLoginLimits,
   loginResponse,
+  MAX_LOGIN_BODY,
+  MAX_PASSWORD,
+  TOO_BIG,
   TOO_MANY,
   WRONG_LOGIN,
 } from "@/lib/auth/login";
-import { hashPassword } from "@/lib/auth/passwords";
+import { hashPassword, verifyPassword } from "@/lib/auth/passwords";
+
+// The real password functions, with verifyPassword watched (to prove when scrypt is skipped).
+vi.mock("@/lib/auth/passwords", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/passwords")>();
+  return { ...real, verifyPassword: vi.fn(real.verifyPassword) };
+});
 import { readSession } from "@/lib/auth/session";
 
 const secret = "z".repeat(40);
@@ -80,6 +89,78 @@ describe("login", () => {
     );
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: TOO_MANY });
+  });
+
+  it("the size limits are 4 KB for the request and 256 characters for the password", () => {
+    expect(MAX_LOGIN_BODY).toBe(4096);
+    expect(MAX_PASSWORD).toBe(256);
+    expect(TOO_BIG).toBe("That request is too big.");
+  });
+
+  it("refuses a body over 4 KB", async () => {
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123", pad: "x".repeat(5000) }),
+      env,
+      limiter(),
+      now,
+    );
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: TOO_BIG });
+  });
+
+  it("refuses a chunked body over 4 KB", async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ username: "ana", password: "password123", pad: "x".repeat(5000) }),
+    );
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += 1000) controller.enqueue(bytes.slice(i, i + 1000));
+        controller.close();
+      },
+    });
+    const request = new Request("http://pod.example/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit);
+    expect(request.headers.get("content-length")).toBeNull();
+    const res = await loginResponse(request, env, limiter(), now);
+    expect(res.status).toBe(413);
+  });
+
+  it("a password over 256 characters is a wrong login without scrypt", async () => {
+    const l = limiter();
+    const from = { "x-forwarded-for": "8.8.8.8" };
+    vi.mocked(verifyPassword).mockClear();
+    for (let i = 0; i < 10; i++) {
+      const res = await loginResponse(
+        post({ username: "ana", password: "p".repeat(257) }, from),
+        env,
+        l,
+        now,
+      );
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: WRONG_LOGIN });
+    }
+    expect(verifyPassword).not.toHaveBeenCalled();
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123" }, from),
+      env,
+      l,
+      now,
+    );
+    expect(res.status).toBe(429); // those tries counted
+  });
+
+  it("a normal-sized login still works", async () => {
+    const res = await loginResponse(
+      post({ username: "ana", password: "password123", next: `/${"a".repeat(150)}` }),
+      env,
+      limiter(),
+      now,
+    );
+    expect(res.status).toBe(200);
   });
 
   it("does nothing when logins aren't set up", async () => {

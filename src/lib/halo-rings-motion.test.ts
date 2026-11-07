@@ -26,6 +26,12 @@ type Motion = {
     mulberry32: (seed: number) => () => number,
   ) => [number, number];
   glowLevel: (loud: number) => number;
+  previewDot: (
+    x: number,
+    y: number,
+    size: number,
+    scale: number,
+  ) => [number, number, number, number];
   buildSky: (mulberry32: (seed: number) => () => number) => {
     ridges: Float32Array[];
     stars: Float32Array;
@@ -118,13 +124,38 @@ describe("Halo Rings motion", () => {
     expect(a[1]).toBeCloseTo(b[1], 6);
   });
 
+  it("a section's shake matches the full song on every frame", () => {
+    // a section starting at 7.4 s: its frame i is the full song's frame 222 + i
+    for (let i = 0; i <= 900; i++) {
+      expect(m.shakeOffset(1, 1, 7.4 + i / 30, true, viz.mulberry32)).toEqual(
+        m.shakeOffset(1, 1, (222 + i) / 30, true, viz.mulberry32),
+      );
+    }
+  });
+
+  it("preview dots are at least one screen pixel, centred on a pixel, with matched brightness", () => {
+    expect(m.previewDot(100.3, 200.7, 3, 1)).toEqual([100.3, 200.7, 3, 1]); // exports unchanged
+    const third = 1 / 3;
+    const [x, y, size, gain] = m.previewDot(100.3, 200.7, 3, third);
+    expect(size).toBeCloseTo(3, 9);
+    expect(gain).toBeCloseTo(1, 9);
+    for (const v of [x, y]) {
+      const pixel = v * third - 0.5;
+      expect(Math.abs(pixel - Math.round(pixel))).toBeLessThan(1e-9);
+    }
+    const small = m.previewDot(50, 50, 2, third);
+    expect(small[2]).toBeCloseTo(3, 9);
+    expect(small[3]).toBeCloseTo((2 / 3) ** 2, 9);
+  });
+
   it("the outer ring stays inside the frame at the strongest pulse and shake", () => {
     const outer = m.RINGS[2].radius;
     const pulse = m.pulseScale(1, 2, true);
     const reach = outer * pulse + m.BAR_MAX * pulse + 8 * 2;
     expect(reach).toBeLessThan(520); // the centre is 520 px from the top of the frame
-    // the rounded square reaches no further than the circle along its normal at the corners
-    // and exactly as far at the sides, so this bound covers both shapes
+    // the rounded square touches the unit circle at its sides (angle 0, the top); its corners
+    // reach further (about 1.19 at 45°) but only about 0.84 of that upward, so the top side is
+    // still its highest point and this bound covers both shapes
     const [x, y] = viz.ringPoint(0, "rounded");
     expect(Math.hypot(x, y)).toBeCloseTo(1, 9);
   });
