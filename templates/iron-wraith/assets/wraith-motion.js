@@ -110,6 +110,27 @@
     return Math.max(0.75, (pct / 100) * 12);
   }
 
+  /**
+   * The largest whole font size (at most `size`) at which text measured `widthAtSize` wide at
+   * `size` fits within `safe` pixels; at least 1. Text width grows in proportion to the size.
+   */
+  function fitFontSize(widthAtSize, size, safe) {
+    if (widthAtSize <= safe) return size;
+    return Math.max(1, Math.floor((size * safe) / widthAtSize));
+  }
+
+  /**
+   * A wave line `widthPx` wide (1080p pixels) on a canvas drawn at `scale`: at least one canvas
+   * pixel wide in the small preview, fainter instead of thinner (a line's brightness goes with
+   * its width), so it stays visible and matches the export seen from afar. Returns
+   * [width in canvas pixels, alpha]. Exports (scale 1) draw it exactly as given.
+   */
+  function previewLine(widthPx, scale) {
+    if (scale >= 1) return [widthPx, 1];
+    var w = widthPx * scale;
+    return w >= 1 ? [w, 1] : [1, w];
+  }
+
   var api = {
     jawEnvelope: jawEnvelope,
     jawAngle: jawAngle,
@@ -119,6 +140,8 @@
     waveformPoints: waveformPoints,
     bandsToCount: bandsToCount,
     thicknessToPx: thicknessToPx,
+    fitFontSize: fitFontSize,
+    previewLine: previewLine,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else window.WraithMotion = api;

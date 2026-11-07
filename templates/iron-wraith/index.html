@@ -263,10 +263,13 @@
           var key = [line.textContent, setting("font"), loaded].join("|");
           if (key === fitted) return;
           fitted = key;
-          var size = TITLE_SIZE;
+          // Measure at full size, jump to the size that should fit, then step down a pixel at a
+          // time while it still doesn't (letter spacing and rounding aren't quite in proportion).
+          line.style.fontSize = TITLE_SIZE + "px";
+          var size = M.fitFontSize(line.offsetWidth, TITLE_SIZE, TITLE_SAFE);
           line.style.fontSize = size + "px";
-          while (line.offsetWidth > TITLE_SAFE && size > 12) {
-            size = Math.floor(size * 0.95);
+          while (line.offsetWidth > TITLE_SAFE && size > 1) {
+            size -= 1;
             line.style.fontSize = size + "px";
           }
         }
@@ -449,7 +452,7 @@
           var composer = new K.EffectComposer(renderer, target);
           keep(composer);
           composer.setPixelRatio(1);
-          composer.addPass(new K.RenderPass(scene, camera));
+          composer.addPass(keep(new K.RenderPass(scene, camera)));
           var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.6, 0.35, 0.93);
           [bloom.renderTargetBright]
             .concat(bloom.renderTargetsHorizontal, bloom.renderTargetsVertical)
@@ -458,7 +461,7 @@
             });
           keep(bloom);
           composer.addPass(bloom);
-          composer.addPass(new K.OutputPass());
+          composer.addPass(keep(new K.OutputPass()));
 
           // ----- the two mirrored waveforms, on a 2D canvas over the 3D picture -----
           var wavesCanvas = document.getElementById("waves");
@@ -486,13 +489,15 @@
             waves.strokeStyle = layer.color;
             waves.shadowColor = layer.color;
             waves.shadowBlur = 12 * s;
-            waves.lineWidth = M.thicknessToPx(layer.thickness) * s;
+            // at least one canvas pixel in the small preview, fainter instead of thinner
+            var line = M.previewLine(M.thicknessToPx(layer.thickness), s);
+            waves.lineWidth = line[0];
             waves.lineJoin = "round";
             waves.lineCap = "round";
             for (var pass = 0; pass < 2; pass++) {
               // pass 0: the wave; pass 1: its reflection below the baseline, half height
               var flip = pass === 0 ? 1 : -0.5;
-              waves.globalAlpha = pass === 0 ? 1 : 0.35;
+              waves.globalAlpha = (pass === 0 ? 1 : 0.35) * line[1];
               var n = pts.length / 2;
               var y = function (i) {
                 return base + (pts[2 * i + 1] - base) * flip;

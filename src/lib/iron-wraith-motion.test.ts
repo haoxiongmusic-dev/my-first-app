@@ -26,6 +26,8 @@ type Motion = {
   ) => Float32Array;
   bandsToCount: (pct: number) => number;
   thicknessToPx: (pct: number) => number;
+  fitFontSize: (widthAtSize: number, size: number, safe: number) => number;
+  previewLine: (widthPx: number, scale: number) => [number, number];
 };
 const m = require("../../templates/iron-wraith/assets/wraith-motion.js") as Motion;
 
@@ -167,5 +169,24 @@ describe("waveform", () => {
     expect(m.thicknessToPx(2)).toBe(0.75);
     expect(m.thicknessToPx(110)).toBeCloseTo(13.2);
     expect(m.thicknessToPx(7)).toBeCloseTo(0.84);
+  });
+
+  it("long titles shrink to fit the safe width, short ones keep their size", () => {
+    expect(m.fitFontSize(3000, 34, 1536)).toBeLessThanOrEqual(Math.floor((34 * 1536) / 3000));
+    expect(m.fitFontSize(3000, 34, 1536)).toBeGreaterThanOrEqual(
+      Math.floor((34 * 1536) / 3000) - 1,
+    );
+    expect(m.fitFontSize(1000, 34, 1536)).toBe(34);
+    expect(m.fitFontSize(1e6, 34, 1536)).toBe(1);
+  });
+
+  it("a wave line in the preview is at least one screen pixel, fainter instead of thinner", () => {
+    expect(m.previewLine(0.75, 1)).toEqual([0.75, 1]); // exports unchanged
+    const thin = m.previewLine(0.75, 1 / 3);
+    expect(thin[0]).toBeCloseTo(1, 9);
+    expect(thin[1]).toBeCloseTo(0.25, 9);
+    const wide = m.previewLine(6, 1 / 3);
+    expect(wide[0]).toBeCloseTo(2, 9);
+    expect(wide[1]).toBe(1);
   });
 });
