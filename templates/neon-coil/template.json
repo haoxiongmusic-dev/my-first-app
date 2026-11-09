@@ -1,0 +1,38 @@
+{
+  "name": "Neon Coil",
+  "description": "A twisting fan of neon lines sweeping over the frame, your cover art with a glowing border, and a glowing line with blobs that pulse with the music.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["cover"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "scaleOnBeat", "showTimer"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "scaleOnBeat", "showTimer", "font"],
+  "content": ["title", "artist", "cover"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#3d8bff", "accentColor": "#ff4fd8" }
+    },
+    {
+      "name": "Matrix",
+      "thumbnail": "presets/matrix.jpg",
+      "values": { "mainColor": "#2aff6a", "accentColor": "#c8ff2a" }
+    },
+    {
+      "name": "Sunset",
+      "thumbnail": "presets/sunset.jpg",
+      "values": { "mainColor": "#ff7a2a", "accentColor": "#ffd12a" }
+    },
+    {
+      "name": "Ice",
+      "thumbnail": "presets/ice.jpg",
+      "values": { "mainColor": "#9ae8ff", "accentColor": "#ffffff" }
+    }
+  ]
+}
