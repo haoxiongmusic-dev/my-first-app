@@ -38,10 +38,11 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
   - [x] Prism Heart (iridescent glass crystal, three.js with our own glass shader; spec
         `docs/superpowers/specs/2026-11-06-m6-prism-heart-design.md`, plan
         `docs/superpowers/plans/2026-11-06-m6-prism-heart.md`)
-- [ ] Online test version (rented cloud GPU, invited logins, files on a kept disk; spec
+- [x] Online test version (rented cloud GPU, invited logins, files on a kept disk; spec
       `docs/superpowers/specs/2026-11-06-online-test-design.md`, plan
       `docs/superpowers/plans/2026-11-06-online-test.md`, owner's guide
-      `docs/online-test-guide.md`): built; first RunPod session pending
+      `docs/online-test-guide.md`): first RunPod session (2026-11-09) worked end to end
+      (login, upload, export) and renders on the graphics chip
 - [x] M7 polish (spec `docs/superpowers/specs/2026-11-07-m7-polish-design.md`, plan
       `docs/superpowers/plans/2026-11-07-m7-polish.md`): Presets panel, undo/redo, the deferred
       minors from PRs #7–#12, except Iron Wraith's exact tower colour (spec §5.4.3: needs a look
@@ -158,6 +159,9 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   ≈ 13 MB): the always-scrolling grid is most of it, the VHS look adds ≈ 25 %.
 - Prism Heart (three.js): a 30 s Final section of T-REX took 4 min 32 s (frame capture
   2 min 15 s ≈ 4.5×), the smallest files so far (8.9 MB per 30 s).
+- RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
+  section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
+  GPU should pull ahead on full songs; not measured yet).
 - Test tracks: `C:\Users\ydogg\Downloads\AXIOM\` in album folders (e.g.
   `Hardlight\T-REX.wav`). **Never copy music into the repo**: it is public.
 
