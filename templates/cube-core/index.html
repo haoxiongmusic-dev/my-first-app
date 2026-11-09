@@ -1,0 +1,1103 @@
+<!doctype html>
+<!--
+  Cube Core: three nested neon wireframe cubes hang over a glossy floor in a near-black room.
+  On the beat they snap to new angles (or glide there, all jump together, or just flash while
+  they drift: the Behaviour setting). A coloured glow round them, and on the floor under them,
+  follows the music's power. Left: the artist small, the title big in a colour gradient, the
+  timer. Right: a sci-fi readout (the mode, the power bar, each cube's angles and which one moved
+  last).
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials).
+    1. The room: one full-screen pass. Each pixel's ray from the camera meets the back wall or
+       the glossy floor; the floor reflects the glow round the cubes and holds a pool of coloured
+       light under them.
+    2. The cubes: each edge is a flat strip facing the camera (GL lines are 1 px wide on this
+       PC), drawn twice: a wide soft copy (the glow) and a thin bright core, added on top.
+       The reflection: the same strips mirrored under the floor, darker and fading with depth.
+    3. A bloom pass catches the near-white cores.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The beat, rotation and readout maths
+  live in assets/cube-motion.js (unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Oswald","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#9a4dff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff8a2a"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"behaviour","type":"enum","label":"Behaviour","default":"snap","options":[
+      {"value":"snap","label":"Snap"},
+      {"value":"glide","label":"Glide"},
+      {"value":"raver","label":"Raver"},
+      {"value":"drift","label":"Drift"}]},
+    {"id":"showReadout","type":"boolean","label":"Show readout","default":true},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/cube-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* ----- left: the artist, the title and the timer, centred on the cubes' height ----- */
+      #info {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        color: #fff;
+        font-family: "Oswald", sans-serif;
+        opacity: 0;
+      }
+      #infoInner {
+        position: absolute;
+        left: 120px;
+        top: 0;
+        width: 470px;
+        height: 940px; /* centred on the cubes (y ≈ 470) */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: flex-start;
+      }
+      #rule {
+        width: 56px;
+        height: 3px;
+        margin-bottom: 22px;
+      }
+      #songArtist {
+        width: fit-content;
+        max-width: 470px; /* ARTIST_SAFE */
+        font-size: 24px;
+        line-height: 1.3;
+        font-weight: 600;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.82);
+        transform-origin: left center;
+      }
+      #songTitle {
+        /* Big letters are taller than their tight line height: the padding keeps them inside
+           the box (the gradient only paints the box) and is the space above and below. */
+        padding: 0.24em 0;
+        margin-top: 2px;
+        width: fit-content;
+        max-width: 470px; /* TITLE_SAFE */
+        font-size: 96px;
+        line-height: 1.04;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: transparent;
+        -webkit-background-clip: text;
+        background-clip: text;
+        transform-origin: left center;
+      }
+      #timer {
+        margin-top: 4px;
+        font-size: 20px;
+        line-height: 24px;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        color: rgba(255, 255, 255, 0.7);
+      }
+      /* ----- right: the readout ----- */
+      #readout {
+        position: absolute;
+        left: 1376px;
+        top: 0;
+        width: 440px;
+        height: 940px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        font-family: "Inter", sans-serif;
+        color: rgba(255, 255, 255, 0.86);
+        text-transform: uppercase;
+        font-variant-numeric: tabular-nums;
+        opacity: 0;
+      }
+      #panel {
+        position: relative;
+        padding: 26px 28px 24px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: linear-gradient(180deg, rgba(14, 14, 24, 0.55), rgba(6, 6, 12, 0.35));
+      }
+      .corner {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border-color: rgba(255, 255, 255, 0.55);
+        border-style: solid;
+        border-width: 0;
+      }
+      .c-tl {
+        left: -1px;
+        top: -1px;
+        border-left-width: 2px;
+        border-top-width: 2px;
+      }
+      .c-tr {
+        right: -1px;
+        top: -1px;
+        border-right-width: 2px;
+        border-top-width: 2px;
+      }
+      .c-bl {
+        left: -1px;
+        bottom: -1px;
+        border-left-width: 2px;
+        border-bottom-width: 2px;
+      }
+      .c-br {
+        right: -1px;
+        bottom: -1px;
+        border-right-width: 2px;
+        border-bottom-width: 2px;
+      }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        letter-spacing: 0.26em;
+        color: rgba(255, 255, 255, 0.52);
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        margin-bottom: 16px;
+      }
+      .line {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        font-size: 15px;
+        line-height: 26px;
+        letter-spacing: 0.16em;
+        white-space: nowrap;
+      }
+      .label {
+        color: rgba(255, 255, 255, 0.5);
+      }
+      #mode {
+        font-weight: 600;
+      }
+      #powerBar {
+        position: relative;
+        height: 10px;
+        margin: 8px 0 18px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      #powerFill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 0;
+      }
+      /* segments: thin dark gaps over the bar and its fill */
+      #powerBar::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          90deg,
+          transparent 0 11px,
+          rgba(6, 6, 12, 0.95) 11px 14px
+        );
+      }
+      .cube {
+        display: flex;
+        align-items: center;
+        font-size: 14px;
+        line-height: 30px;
+        letter-spacing: 0.12em;
+        white-space: nowrap;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .cube .name {
+        width: 84px;
+        color: rgba(255, 255, 255, 0.62);
+      }
+      .swatch {
+        width: 9px;
+        height: 9px;
+        margin-right: 14px;
+      }
+      .nums {
+        flex: 1;
+        letter-spacing: 0.06em;
+      }
+      .nums span {
+        display: inline-block;
+        width: 58px;
+      }
+      .tag {
+        font-size: 10px;
+        line-height: 16px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        padding: 0 6px;
+        color: #fff;
+        background: #d4143a;
+        visibility: hidden;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fontPreload b {
+        font-weight: 700;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="info"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="infoInner">
+          <div id="rule"></div>
+          <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+          <div id="songTitle" data-var-text="title">SONG NAME</div>
+          <div id="timer">0:00 / 0:00</div>
+        </div>
+      </div>
+      <div
+        id="readout"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="3"
+      >
+        <div id="panel">
+          <i class="corner c-tl"></i><i class="corner c-tr"></i><i class="corner c-bl"></i
+          ><i class="corner c-br"></i>
+          <div class="head"><span>Core // status</span><span>3 units</span></div>
+          <div class="line">
+            <span><span class="label">Mode: </span><span id="mode">SNAP</span></span>
+          </div>
+          <div class="line">
+            <span><span class="label">Sync: </span><span id="sync">KICK</span></span>
+          </div>
+          <div class="line" style="margin-top: 10px">
+            <span class="label">Power</span><span id="powerText">000%</span>
+          </div>
+          <div id="powerBar"><div id="powerFill"></div></div>
+          <div class="cube">
+            <span class="name">Cube_1</span><span class="swatch" id="sw0"></span
+            ><span class="nums"
+              ><span id="n00">000.0</span><span id="n01">000.0</span
+              ><span id="n02">000.0</span></span
+            ><span class="tag" id="tag0">Active</span>
+          </div>
+          <div class="cube">
+            <span class="name">Cube_2</span><span class="swatch" id="sw1"></span
+            ><span class="nums"
+              ><span id="n10">000.0</span><span id="n11">000.0</span
+              ><span id="n12">000.0</span></span
+            ><span class="tag" id="tag1">Active</span>
+          </div>
+          <div class="cube">
+            <span class="name">Cube_3</span><span class="swatch" id="sw2"></span
+            ><span class="nums"
+              ><span id="n20">000.0</span><span id="n21">000.0</span
+              ><span id="n22">000.0</span></span
+            ><span class="tag" id="tag2">Active</span>
+          </div>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa<b>Aa</b></span
+      ><span class="f-inter">Aa<b>Aa</b></span> <span class="f-outfit">Aa<b>Aa</b></span
+      ><span class="f-poppins">Aa<b>Aa</b></span> <span class="f-lato">Aa<b>Aa</b></span
+      ><span class="f-oswald">Aa<b>Aa</b></span> <span class="f-playfair">Aa<b>Aa</b></span
+      ><span class="f-garamond">Aa<b>Aa</b></span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.CubeMotion;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        /**
+         * A line this many 1080p pixels wide, never thinner than about one screen pixel: a
+         * thinner line is drawn wider and dimmer, so the preview shows what the render shows
+         * when scaled down. Returns [width, brightness].
+         */
+        function thin(width) {
+          var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+          return [w, width / w];
+        }
+
+        /** The three cubes' colours: outer main, middle accent, inner a bright mix of both. */
+        function cubeColours() {
+          var a = V.hexToRGB(setting("mainColor"));
+          var b = V.hexToRGB(setting("accentColor"));
+          var mix = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+          var top = Math.max(a[0], a[1], a[2], b[0], b[1], b[2]);
+          var peak = Math.max(mix[0], mix[1], mix[2], 1e-6);
+          var k = top / peak;
+          return [a, b, [mix[0] * k, mix[1] * k, mix[2] * k]];
+        }
+        function css(rgb, alpha) {
+          return (
+            "rgba(" +
+            Math.round(rgb[0] * 255) +
+            "," +
+            Math.round(rgb[1] * 255) +
+            "," +
+            Math.round(rgb[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+
+        // ---------- the text on the left and the readout on the right ----------
+        var timer = document.getElementById("timer");
+        var readout = document.getElementById("readout");
+        var modeText = document.getElementById("mode");
+        var syncText = document.getElementById("sync");
+        var powerText = document.getElementById("powerText");
+        var powerFill = document.getElementById("powerFill");
+        var nums = [],
+          tags = [];
+        for (var c0 = 0; c0 < 3; c0++) {
+          nums.push([
+            document.getElementById("n" + c0 + "0"),
+            document.getElementById("n" + c0 + "1"),
+            document.getElementById("n" + c0 + "2"),
+          ]);
+          tags.push(document.getElementById("tag" + c0));
+        }
+        function beatRangeLabel(value) {
+          if (value === "kick") return "KICK";
+          return String(value).replace("-", "–") + " HZ";
+        }
+        function applyPage() {
+          var cols = cubeColours();
+          var main = cols[0],
+            acc = cols[1];
+          document.getElementById("info").style.fontFamily =
+            '"' + setting("font") + '", sans-serif';
+          var title = document.getElementById("songTitle");
+          title.style.backgroundImage =
+            "linear-gradient(100deg, " + css(main, 1) + " 0%, " + css(acc, 1) + " 100%)";
+          title.style.filter = "drop-shadow(0 0 26px " + css(cols[2], 0.28) + ")";
+          document.getElementById("rule").style.background =
+            "linear-gradient(90deg, " + css(main, 1) + ", " + css(acc, 1) + ")";
+          timer.style.display = setting("showTimer") === true ? "" : "none";
+          readout.style.display = setting("showReadout") === true ? "" : "none";
+          modeText.textContent = M.behaviourLabel(setting("behaviour"));
+          modeText.style.color = css(acc, 1);
+          syncText.textContent = beatRangeLabel(setting("beatRange"));
+          powerFill.style.background =
+            "linear-gradient(90deg, " + css(main, 1) + ", " + css(acc, 1) + ")";
+          for (var c = 0; c < 3; c++) {
+            var sw = document.getElementById("sw" + c);
+            sw.style.background = css(cols[c], 1);
+            sw.style.boxShadow = "0 0 8px " + css(cols[c], 0.8);
+          }
+        }
+
+        // Fit the artist (ARTIST_SAFE wide, up to 2 lines) and the title (TITLE_SAFE wide, up to
+        // TITLE_LINES lines): each wraps between words first, then shrinks; a word too long even
+        // at the smallest size breaks between letters; and as a last resort it is scaled down,
+        // so it can never be bigger than its space (the title's gradient only paints inside its
+        // box). Measured on seeks, settings and font loads only, never in the timeline callback.
+        var TITLE_SAFE = 470;
+        var TITLE_LINES = 3;
+        var TITLE_SIZE = 96,
+          TITLE_FLOOR = 34,
+          TITLE_LH = 1.04;
+        var ARTIST_SAFE = 470,
+          ARTIST_LINES = 2,
+          ARTIST_SIZE = 24,
+          ARTIST_FLOOR = 14,
+          ARTIST_LH = 1.3;
+        var fitted = "";
+        function fitBox(el, safe, lines, start, floor, lh, pad) {
+          el.style.transform = "";
+          el.style.overflowWrap = "normal";
+          var size = start;
+          el.style.fontSize = size + "px";
+          function width() {
+            return Math.max(el.scrollWidth, el.offsetWidth);
+          }
+          function maxHeight() {
+            // the padding (pad em above and below) adds a little height
+            return lines * size * lh + 2 * pad * size + 2;
+          }
+          function tooBig() {
+            return width() > safe + 1 || el.clientHeight > maxHeight();
+          }
+          while (tooBig() && size > floor) {
+            size = Math.max(floor, Math.floor(size * 0.94));
+            el.style.fontSize = size + "px";
+          }
+          if (width() > safe + 1) el.style.overflowWrap = "anywhere";
+          var k = Math.min(1, safe / width(), maxHeight() / Math.max(el.clientHeight, 1));
+          el.style.transform = k < 1 ? "scale(" + k.toFixed(4) + ")" : "";
+        }
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var artist = document.getElementById("songArtist");
+          var title = document.getElementById("songTitle");
+          var key = [artist.textContent, title.textContent, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          artist.style.display = artist.textContent.trim() ? "" : "none";
+          title.style.display = title.textContent.trim() ? "" : "none";
+          fitBox(artist, ARTIST_SAFE, ARTIST_LINES, ARTIST_SIZE, ARTIST_FLOOR, ARTIST_LH, 0);
+          fitBox(title, TITLE_SAFE, TITLE_LINES, TITLE_SIZE, TITLE_FLOOR, TITLE_LH, 0.24);
+        }
+
+        // ---------- shaders ----------
+        var SCREEN_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+        // The room. A pixel's ray from the camera meets the glossy floor or the back wall. A
+        // haze of light hangs round the cubes (worked out from how close the ray passes to
+        // their centre); the floor reflects it (more at grazing angles) and holds a pool of
+        // coloured light under the cubes, which lights up a faint grid. A fixed dither (it
+        // never changes, so it costs nothing in the video file) hides banding in the dark.
+        var ROOM_FS = [
+          "uniform mat4 invProjView; uniform vec3 camPos;",
+          "uniform vec3 mainCol, accCol, mixCol; uniform float glow, floorY, wallZ;",
+          "varying vec2 vUv;",
+          "float haze(vec3 o, vec3 d){",
+          "  float t = max(dot(-o, d), 0.0);",
+          "  vec3 p = o + d * t;",
+          "  float r2 = dot(p, p);",
+          "  return exp(-r2 * 0.22) * 0.55 + exp(-r2 * 1.4) * 0.45;",
+          "}",
+          "float hash(vec2 p){",
+          "  return fract(sin(dot(mod(p, 256.0), vec2(12.9898, 78.233))) * 43758.5453);",
+          "}",
+          "void main(){",
+          "  vec4 w = invProjView * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);",
+          "  vec3 dir = normalize(w.xyz / w.w - camPos);",
+          "  vec3 hazeCol = mix(mainCol, accCol, 0.3);",
+          "  float tFloor = dir.y < -1e-4 ? (floorY - camPos.y) / dir.y : 1e9;",
+          "  float tWall = dir.z < -1e-4 ? (wallZ - camPos.z) / dir.z : 1e9;",
+          "  vec3 col;",
+          "  if (tFloor < tWall) {",
+          "    vec3 P = camPos + dir * tFloor;",
+          "    vec3 R = vec3(dir.x, -dir.y, dir.z);",
+          "    float F = 0.05 + 0.95 * pow(clamp(1.0 + dir.y, 0.0, 1.0), 5.0);",
+          "    float r2 = P.x * P.x + P.z * P.z;",
+          "    float pool = exp(-r2 * 0.55) * 0.75 + exp(-r2 * 0.09) * 0.25;",
+          // a faint grid on the floor, lit by the pool; fading out where it gets too fine
+          "    vec2 g = abs(fract(P.xz * 0.5 + 0.5) - 0.5) / max(fwidth(P.xz * 0.5), 1e-4);",
+          "    float fine = clamp(1.0 - max(fwidth(P.x), fwidth(P.z)) * 3.0, 0.0, 1.0);",
+          "    float grid = (1.0 - clamp(min(g.x, g.y), 0.0, 1.0)) * fine;",
+          "    col = vec3(0.007, 0.007, 0.011);",
+          "    col += hazeCol * haze(P, R) * glow * (0.15 + 0.7 * F);",
+          "    col += mix(mixCol, mainCol, 0.4) * pool * glow * 0.45;",
+          "    col += mix(mainCol, accCol, 0.5) * grid * (0.016 + pool * glow * 0.16);",
+          // where the floor meets the wall: a soft lit seam
+          "    col *= 1.0 + 0.5 * exp(-abs(P.z - wallZ) * 1.5);",
+          "  } else {",
+          "    vec3 P = camPos + dir * tWall;",
+          "    float up = clamp((P.y - floorY) / 7.0, 0.0, 1.0);",
+          "    col = vec3(0.006, 0.006, 0.01) * (1.0 - 0.6 * up);",
+          "    col += hazeCol * exp(-dot(P.xy - vec2(0.0, floorY), P.xy - vec2(0.0, floorY)) * 0.06) * glow * 0.05;",
+          "  }",
+          // the haze round the cubes, in front of everything
+          "  col += hazeCol * haze(camPos, dir) * glow * 0.25;",
+          // a dark vignette
+          "  vec2 v = (vUv - 0.5) * vec2(1.0, 0.8);",
+          "  col *= clamp(1.15 - dot(v, v) * 1.6, 0.0, 1.0);",
+          "  col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(max(col, 0.0), 1.0);",
+          "}",
+        ].join("\n");
+        // An edge: a flat strip facing the camera, a fixed number of pixels wide (a little
+        // narrower further away), with round ends. position.x picks the end (0 at A, 1 at B),
+        // position.y the side. The strip only marks where to draw: each pixel works out its own
+        // exact distance to the edge's two screen points (the same at all four corners).
+        var EDGE_VS = [
+          "attribute vec3 iA; attribute vec3 iB;",
+          "uniform vec2 res; uniform float unit, halfW, camDist;",
+          "varying vec2 vA, vB; varying float vScale, vDepth, vWorldY;",
+          "void main(){",
+          "  vec4 wa = modelMatrix * vec4(iA, 1.0);",
+          "  vec4 wb = modelMatrix * vec4(iB, 1.0);",
+          "  vec4 a = projectionMatrix * viewMatrix * wa;",
+          "  vec4 b = projectionMatrix * viewMatrix * wb;",
+          "  bool atB = position.x > 0.5;",
+          "  vec2 sa = a.xy / a.w * 0.5 * res;",
+          "  vec2 sb = b.xy / b.w * 0.5 * res;",
+          "  vec2 d = sb - sa;",
+          "  float len = length(d);",
+          "  vec2 dir = len > 1e-3 ? d / len : vec2(1.0, 0.0);",
+          "  vec2 nrm = vec2(-dir.y, dir.x);",
+          "  vec4 c = atB ? b : a;",
+          "  float persp = clamp(camDist / c.w, 0.75, 1.35);",
+          "  float hw = halfW * unit * persp;",
+          "  vec2 s = (atB ? sb : sa) + nrm * position.y * hw + dir * (atB ? hw : -hw);",
+          "  gl_Position = vec4(s / (0.5 * res), clamp(c.z / c.w, -1.0, 1.0), 1.0);",
+          "  vA = sa; vB = sb;",
+          "  vScale = unit * persp;",
+          "  vDepth = clamp((c.w - camDist) / 2.2, -1.0, 1.0);",
+          "  vWorldY = atB ? wb.y : wa.y;",
+          "}",
+        ].join("\n");
+        // glow: a soft gaussian falloff; core: a crisp anti-aliased line (its width from thin(),
+        // so it stays visible in the small preview). mirror < 0: the reflection under the floor,
+        // darker and fading with its depth below it.
+        var EDGE_FS = [
+          "uniform vec2 res;",
+          "uniform vec3 color; uniform float level, core, sigma, coreW, mirror, floorY, reflAmt;",
+          "varying vec2 vA, vB; varying float vScale, vDepth, vWorldY;",
+          "void main(){",
+          "  vec2 p = gl_FragCoord.xy - 0.5 * res;",
+          "  vec2 ab = vB - vA;",
+          "  float h = clamp(dot(p - vA, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);",
+          "  float dpx = length(p - vA - ab * h);",
+          "  float k;",
+          "  if (core > 0.5) {",
+          "    k = clamp(coreW * vScale + 0.5 - dpx, 0.0, 1.0);",
+          "  } else {",
+          "    float d = dpx / vScale;",
+          "    k = exp(-d * d / (sigma * sigma));",
+          "  }",
+          "  float depth = mix(1.15, 0.55, vDepth * 0.5 + 0.5);",
+          "  float fade = 1.0;",
+          "  if (mirror < 0.0) fade = reflAmt * exp(-max(floorY - vWorldY, 0.0) * 0.9);",
+          "  gl_FragColor = vec4(color * (k * level * depth * fade), 1.0);",
+          "}",
+        ].join("\n");
+
+        /** The 12 edges of a cube from -1 to 1, as instanced strips. */
+        function edgeGeometry() {
+          var corners = [];
+          for (var i = 0; i < 8; i++)
+            corners.push([i & 1 ? 1 : -1, i & 2 ? 1 : -1, i & 4 ? 1 : -1]);
+          var a = [],
+            b = [];
+          for (var p = 0; p < 8; p++) {
+            for (var q = p + 1; q < 8; q++) {
+              var diff = p ^ q;
+              if (diff === 1 || diff === 2 || diff === 4) {
+                a.push.apply(a, corners[p]);
+                b.push.apply(b, corners[q]);
+              }
+            }
+          }
+          var g = new THREE.InstancedBufferGeometry();
+          g.setAttribute(
+            "position",
+            new THREE.BufferAttribute(new Float32Array([0, -1, 0, 0, 1, 0, 1, 1, 0, 1, -1, 0]), 3),
+          );
+          g.setIndex([0, 1, 2, 0, 2, 3]);
+          g.setAttribute("iA", new THREE.InstancedBufferAttribute(new Float32Array(a), 3));
+          g.setAttribute("iB", new THREE.InstancedBufferAttribute(new Float32Array(b), 3));
+          g.instanceCount = 12;
+          return g;
+        }
+
+        // the scene's layout (world units): the cubes round the origin, the floor below them
+        var HALF = [0.96, 0.64, 0.39]; // each cube's half-size: outer, middle, inner
+        var FLOOR_Y = -1.82;
+        var WALL_Z = -7;
+        var CAM_DIST = 10.5;
+        var GLOW_W = 26, // px: half-width of the glow strip, and its falloff
+          GLOW_SIGMA = 8,
+          CORE_W = 1.4; // px: half-width of the core line
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials and
+         * audio (apply), and a new preview size only resizes (resize), so the live preview
+         * never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.setClearColor(0x000000, 1);
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+
+          // ----- the camera: a little above the cubes, looking slightly down -----
+          var camera = new THREE.PerspectiveCamera(30, 1920 / 1080, 0.1, 100);
+          camera.position.set(0, 0.25, CAM_DIST);
+          camera.lookAt(0, -0.3, 0);
+          camera.updateMatrixWorld();
+          camera.updateProjectionMatrix();
+          var projView = new THREE.Matrix4().multiplyMatrices(
+            camera.projectionMatrix,
+            camera.matrixWorldInverse,
+          );
+          var scene = new THREE.Scene();
+
+          // ----- 1. the room -----
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var roomMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: ROOM_FS,
+              uniforms: {
+                invProjView: { value: projView.clone().invert() },
+                camPos: { value: camera.position.clone() },
+                mainCol: { value: new THREE.Color() },
+                accCol: { value: new THREE.Color() },
+                mixCol: { value: new THREE.Color() },
+                glow: { value: 0.3 },
+                floorY: { value: FLOOR_Y },
+                wallZ: { value: WALL_Z },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var room = new THREE.Mesh(quad, roomMat);
+          room.frustumCulled = false;
+          room.renderOrder = 0;
+          scene.add(room);
+
+          // ----- 2. the cubes and their reflection -----
+          var edges = keep(edgeGeometry());
+          var res = new THREE.Vector2(1920, 1080);
+          var unit = { value: 1 };
+          function edgeMaterial(isCore, mirror) {
+            return keep(
+              new THREE.ShaderMaterial({
+                vertexShader: EDGE_VS,
+                fragmentShader: EDGE_FS,
+                uniforms: {
+                  res: { value: res },
+                  unit: unit,
+                  halfW: { value: isCore ? CORE_W + 1.5 : GLOW_W },
+                  camDist: { value: CAM_DIST },
+                  color: { value: new THREE.Color() },
+                  level: { value: 1 },
+                  core: { value: isCore ? 1 : 0 },
+                  sigma: { value: GLOW_SIGMA },
+                  coreW: { value: CORE_W },
+                  mirror: { value: mirror },
+                  floorY: { value: FLOOR_Y },
+                  reflAmt: { value: isCore ? 0.4 : 0.5 },
+                },
+                // the glow takes the brighter of itself and what is under it (overlapping
+                // glows at the corners never pile up); the core adds on top
+                blending: isCore ? THREE.AdditiveBlending : THREE.CustomBlending,
+                blendEquation: isCore ? THREE.AddEquation : THREE.MaxEquation,
+                side: THREE.DoubleSide, // the mirrored strips face the other way
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+              }),
+            );
+          }
+          // the reflection: a mirror image of the cubes under the floor (y → 2 × floor - y)
+          var reflection = new THREE.Group();
+          reflection.position.y = 2 * FLOOR_Y;
+          reflection.scale.y = -1;
+          scene.add(reflection);
+          var cubes = [];
+          for (var c = 0; c < 3; c++) {
+            var cube = { mats: [], meshes: [] };
+            [
+              [false, -1, reflection, 1],
+              [true, -1, reflection, 2],
+              [false, 1, scene, 3],
+              [true, 1, scene, 4],
+            ].forEach(function (spec) {
+              var mat = edgeMaterial(spec[0], spec[1]);
+              var mesh = new THREE.Mesh(edges, mat);
+              mesh.frustumCulled = false;
+              mesh.renderOrder = spec[3] * 10 + c;
+              spec[2].add(mesh);
+              cube.mats.push(mat);
+              cube.meshes.push(mesh);
+            });
+            cubes.push(cube);
+          }
+
+          // ----- 3. bloom; every target 8-bit (three.js defaults to a high-precision type) -----
+          var target = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, { type: THREE.UnsignedByteType, samples: 4 }),
+          );
+          var composer = new K.EffectComposer(renderer, target);
+          keep(composer);
+          composer.setPixelRatio(1);
+          composer.addPass(keep(new K.RenderPass(scene, camera)));
+          var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.55, 0.4, 0.8);
+          [bloom.renderTargetBright]
+            .concat(bloom.renderTargetsHorizontal, bloom.renderTargetsVertical)
+            .forEach(function (rt) {
+              rt.texture.type = THREE.UnsignedByteType;
+            });
+          keep(bloom);
+          composer.addPass(bloom);
+          composer.addPass(keep(new K.OutputPass()));
+
+          function resize(scale) {
+            var W = Math.round(1920 * scale),
+              H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            composer.setSize(W, H);
+            bloom.setSize(Math.round(W / 2), Math.round(H / 2));
+            res.set(W, H);
+            unit.value = scale;
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio (no new WebGL objects) -----
+          var audio, INT, BOOST, TOTAL, SHOW_TIMER, SHOW_READOUT, MODE, COLS;
+          var white = new THREE.Color(1, 1, 1);
+          function apply() {
+            COLS = cubeColours().map(function (rgb) {
+              return new THREE.Color(rgb[0], rgb[1], rgb[2]);
+            });
+            INT = Number(setting("intensity"));
+            BOOST = Number(setting("spectrumBoost"));
+            MODE = setting("behaviour");
+            SHOW_TIMER = setting("showTimer") === true;
+            SHOW_READOUT = setting("showReadout") === true;
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            TOTAL = V.formatClock(V.songClock(audio, 0).total);
+            roomMat.uniforms.mainCol.value.copy(COLS[0]);
+            roomMat.uniforms.accCol.value.copy(COLS[1]);
+            roomMat.uniforms.mixCol.value.copy(COLS[2]);
+          }
+          apply();
+
+          function render(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var state = M.cubesAt(MODE, M.beatsAt(audio, t), songTime, V.mulberry32);
+            var edge = M.edgeLevel(V.beatEnvelope(audio, t, M.EDGE_RELEASE));
+            var pw = M.power(a.loud, BOOST);
+            roomMat.uniforms.glow.value = M.roomGlow(
+              Math.min(1, pw * INT),
+              Math.min(1, state.floorFlash * INT),
+            );
+
+            // the core line: CORE_W wide each side, wider and dimmer in a small preview
+            var line = thin(2 * CORE_W);
+            var coreW = line[0] / 2;
+            for (var c = 0; c < 3; c++) {
+              var cube = cubes[c];
+              var flash = Math.min(1, state.flash[c] * INT);
+              var q = state.rot[c];
+              var size = HALF[c] * state.scale[c];
+              for (var k = 0; k < 4; k++) {
+                cube.meshes[k].quaternion.set(q[0], q[1], q[2], q[3]);
+                cube.meshes[k].scale.set(size, size, size);
+                var u = cube.mats[k].uniforms;
+                if (u.core.value > 0.5) {
+                  // the core: the colour, whiter and brighter as the edges flash
+                  u.color.value.copy(COLS[c]).lerp(white, 0.3 + 0.5 * flash);
+                  u.level.value = edge * (1 + 0.7 * flash) * line[1];
+                  u.coreW.value = coreW;
+                  u.halfW.value = coreW + 1.5 / PREVIEW_SCALE;
+                } else {
+                  // the glow: brighter with the music's power and on the flash
+                  u.color.value.copy(COLS[c]);
+                  u.level.value = edge * (0.42 + 0.25 * flash) * (0.7 + 0.5 * pw);
+                }
+              }
+            }
+            composer.render();
+
+            // the timer and the readout (setting text and styles is fine; measuring is not)
+            if (SHOW_TIMER) {
+              var clock = V.songClock(audio, t);
+              var text = V.formatClock(clock.elapsed) + " / " + TOTAL;
+              if (timer.textContent !== text) timer.textContent = text;
+            }
+            if (SHOW_READOUT) {
+              var p = M.formatPower(pw);
+              if (powerText.textContent !== p) powerText.textContent = p;
+              powerFill.style.width = (100 * pw).toFixed(1) + "%";
+              for (var r = 0; r < 3; r++) {
+                var ang = M.cubeAngles(state.rot[r]);
+                for (var j = 0; j < 3; j++) {
+                  var s = M.formatAngle(ang[j]);
+                  if (nums[r][j].textContent !== s) nums[r][j].textContent = s;
+                }
+                tags[r].style.visibility = state.active[r] ? "visible" : "hidden";
+                // the tag glows on its cube's flash
+                var glow = Math.min(1, state.flash[r]);
+                tags[r].style.boxShadow =
+                  "0 0 " +
+                  (4 + 14 * glow).toFixed(1) +
+                  "px rgba(255,46,77," +
+                  (0.35 + 0.6 * glow).toFixed(3) +
+                  ")";
+              }
+            }
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return { render: render, dispose: dispose, apply: apply, resize: resize };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale) } from setup()
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        applyPage();
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            applyPage();
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The text and the readout fade in; the whole picture fades to black over the song's
+        // last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#info",
+          { opacity: 0, x: -10 },
+          { opacity: 1, x: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.fromTo(
+          "#readout",
+          { opacity: 0, x: 10 },
+          { opacity: 1, x: 0, duration: 1.6, ease: "power2.out" },
+          0.6,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

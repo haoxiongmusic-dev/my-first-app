@@ -1,0 +1,42 @@
+{
+  "name": "Cube Core",
+  "description": "Three nested neon wireframe cubes over a glossy floor snap, glide, jump or drift to the beat, with your title on the left and a sci-fi readout on the right.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "behaviour", "showReadout", "showTimer"] },
+    { "name": "Audio", "fields": ["beatRange", "spectrumBoost"] }
+  ],
+  "basic": [
+    "mainColor",
+    "accentColor",
+    "intensity",
+    "behaviour",
+    "showReadout",
+    "showTimer",
+    "font"
+  ],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "behaviour": "snap", "mainColor": "#9a4dff", "accentColor": "#ff8a2a" }
+    },
+    {
+      "name": "Glide",
+      "thumbnail": "presets/glide.jpg",
+      "values": { "behaviour": "glide", "mainColor": "#2ad9ff", "accentColor": "#ff4fd8" }
+    },
+    {
+      "name": "Raver",
+      "thumbnail": "presets/raver.jpg",
+      "values": { "behaviour": "raver", "mainColor": "#ff2a6a", "accentColor": "#ffe62a" }
+    },
+    {
+      "name": "Drift",
+      "thumbnail": "presets/drift.jpg",
+      "values": { "behaviour": "drift", "mainColor": "#7dffb0", "accentColor": "#2a8aff" }
+    }
+  ]
+}
