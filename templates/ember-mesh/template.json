@@ -1,0 +1,38 @@
+{
+  "name": "Ember Mesh",
+  "description": "A huge waving sheet of heat-coloured dots under a swooping camera that jumps on the beat, with your cover, a boxed title and a line waveform in the middle.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["cover"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "cameraMoves", "showTimer", "dotSize"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "cameraMoves", "dotSize", "showTimer", "font"],
+  "content": ["title", "artist", "cover"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#ffd21f", "accentColor": "#7a2cff" }
+    },
+    {
+      "name": "Ocean",
+      "thumbnail": "presets/ocean.jpg",
+      "values": { "mainColor": "#7dffef", "accentColor": "#1a3cff" }
+    },
+    {
+      "name": "Toxic",
+      "thumbnail": "presets/toxic.jpg",
+      "values": { "mainColor": "#d8ff3a", "accentColor": "#0f8a4a" }
+    },
+    {
+      "name": "Candy",
+      "thumbnail": "presets/candy.jpg",
+      "values": { "mainColor": "#ffd0f0", "accentColor": "#ff2a8a" }
+    }
+  ]
+}
