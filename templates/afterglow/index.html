@@ -1,0 +1,887 @@
+<!doctype html>
+<!--
+  Afterglow: your own picture fills the frame (or, without one, a generated night city of
+  out-of-focus lights and long car-light trails), slowly pushing in. Across the middle runs a
+  crisp dotted line with thin mirrored hairline bars that dance to the music, the bass at the
+  left. Under it, "ARTIST – TITLE" and a boxed progress bar with the song's clock. Four layouts
+  move and size the parts: Classic, Big title, Big timer and a Music player card.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js,
+  and assets/background.jpg when you choose a picture (the template's own copy is a tiny
+  placeholder, which means "no picture"). The committed root duration (20 s) matches the
+  generated sample song; the job builder sets every data-song-length element to the real
+  song's length. The motion and layout maths lives in assets/afterglow-motion.js and the line
+  maths and song clock in the toolkit (both unit-tested). Everything is drawn on a 2D canvas.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ffffff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff3b4e"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"layout","type":"enum","label":"Layout","default":"classic","options":[
+      {"value":"classic","label":"Classic"},
+      {"value":"bigTitle","label":"Big title"},
+      {"value":"bigTimer","label":"Big timer"},
+      {"value":"player","label":"Music player"}]},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"backgroundDim","type":"number","label":"Background dim","default":35,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"showBackground","type":"boolean","label":"Show background","default":true},
+    {"id":"backgroundBlur","type":"number","label":"Background blur","default":0,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"8","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/afterglow-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #bgImage {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family (and the weights drawn) lets HyperFrames bundle them all
+         for the Font setting; the canvas text uses them once loaded. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      .w300 {
+        font-weight: 300;
+      }
+      .w400 {
+        font-weight: 400;
+      }
+      .w600 {
+        font-weight: 600;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="bgImage" src="assets/background.jpg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat w300">Aa1</span><span class="f-montserrat w400">Aa1</span
+      ><span class="f-montserrat w600">Aa1</span><span class="f-inter w300">Aa1</span
+      ><span class="f-inter w400">Aa1</span><span class="f-inter w600">Aa1</span
+      ><span class="f-outfit w300">Aa1</span><span class="f-outfit w400">Aa1</span
+      ><span class="f-outfit w600">Aa1</span><span class="f-poppins w300">Aa1</span
+      ><span class="f-poppins w400">Aa1</span><span class="f-poppins w600">Aa1</span
+      ><span class="f-lato w300">Aa1</span><span class="f-lato w400">Aa1</span
+      ><span class="f-lato w600">Aa1</span><span class="f-oswald w300">Aa1</span
+      ><span class="f-oswald w400">Aa1</span><span class="f-oswald w600">Aa1</span
+      ><span class="f-playfair w300">Aa1</span><span class="f-playfair w400">Aa1</span
+      ><span class="f-playfair w600">Aa1</span><span class="f-garamond w300">Aa1</span
+      ><span class="f-garamond w400">Aa1</span><span class="f-garamond w600">Aa1</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.AfterglowMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var fontEpoch = 0; // goes up when fonts finish loading, so text is measured again
+        var canvas = document.getElementById("viz");
+        // alpha: true keeps text antialiasing grey (an opaque canvas uses coloured subpixel
+        // antialiasing, which fringes in video); every frame covers the whole canvas anyway.
+        var ctx = canvas.getContext("2d", { alpha: true });
+
+        function rgba(c, alpha) {
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function mixRGB(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        var WHITE = [1, 1, 1];
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var S = PREVIEW_SCALE;
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = Number(setting("intensity")) || 1;
+          var L = M.layout(setting("layout"));
+          var SHOW_TIMER = setting("showTimer") === true;
+          var SHOW_BG = setting("showBackground") === true;
+          var BG_BLUR = Math.max(0, Math.min(100, Number(setting("backgroundBlur")) || 0));
+          var DIM = M.dimAlpha(setting("backgroundDim"));
+          var FONT = String(setting("font"));
+          var TITLE = String(setting("title") || "").toUpperCase();
+          var ARTIST = String(setting("artist") || "").toUpperCase();
+          var CAPTION = ARTIST && TITLE ? ARTIST + " – " + TITLE : ARTIST || TITLE; // "ARTIST – TITLE"
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          var spec = new Float32Array(32);
+          var COUNT = M.barCount(setting("bandCount"), L.line.right - L.line.left);
+          var BARS = M.barXs(COUNT, L.line.left, L.line.right);
+          var DOTS = M.dotXs(L.line.left, L.line.right);
+
+          var W = Math.round(1920 * S),
+            H = Math.round(1080 * S);
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          if (!ctx) throw new Error("The 2D canvas is not available in this browser");
+
+          /** A W × H canvas to draw a layer into once, in 1080p units. */
+          function layer() {
+            var c = document.createElement("canvas");
+            c.width = W;
+            c.height = H;
+            var x = c.getContext("2d");
+            x.setTransform(S, 0, 0, S, 0, 0);
+            return { canvas: c, ctx: x };
+          }
+          /** Draw one layer onto another, blurred by this many 1080p px. */
+          function blurInto(dst, src, px, mode, alpha) {
+            dst.ctx.save();
+            dst.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            dst.ctx.globalCompositeOperation = mode || "source-over";
+            dst.ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+            dst.ctx.filter = px > 0 ? "blur(" + (px * S).toFixed(2) + "px)" : "none";
+            dst.ctx.drawImage(src.canvas, 0, 0);
+            dst.ctx.restore();
+          }
+
+          // ---------- the generated night city (no picture) ----------
+          function tone(n) {
+            return n === 0
+              ? MAIN
+              : n === 1
+                ? ACC
+                : mixRGB(mixRGB(MAIN, ACC, 0.45), [1, 0.78, 0.5], 0.4);
+          }
+          function buildCity() {
+            var lights = M.cityLights(11, V.mulberry32);
+            // the dark street and sky
+            var base = layer();
+            var g = base.ctx.createLinearGradient(0, 0, 0, 1080);
+            g.addColorStop(0, "#020309");
+            g.addColorStop(0.42, "#070a14");
+            g.addColorStop(0.56, "#0e111b");
+            g.addColorStop(0.6, "#0b0d14");
+            g.addColorStop(1, "#030407");
+            base.ctx.fillStyle = g;
+            base.ctx.fillRect(0, 0, 1920, 1080);
+            // the city's haze on the horizon, in the two colours
+            var haze = base.ctx.createLinearGradient(0, 380, 0, 820);
+            haze.addColorStop(0, rgba(ACC, 0));
+            haze.addColorStop(0.5, rgba(mixRGB(ACC, MAIN, 0.3), 0.1));
+            haze.addColorStop(1, rgba(ACC, 0));
+            base.ctx.fillStyle = haze;
+            base.ctx.fillRect(0, 380, 1920, 440);
+            // out-of-focus lights: soft discs with a slightly brighter rim
+            var discs = layer();
+            discs.ctx.globalCompositeOperation = "lighter";
+            for (var i = 0; i < lights.bokeh.length; i++) {
+              var b = lights.bokeh[i];
+              var col = tone(b.tone);
+              var rg = discs.ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+              rg.addColorStop(0, rgba(col, b.alpha * 0.75));
+              rg.addColorStop(0.82, rgba(col, b.alpha));
+              rg.addColorStop(0.92, rgba(col, b.alpha * 0.9));
+              rg.addColorStop(1, rgba(col, 0));
+              discs.ctx.fillStyle = rg;
+              discs.ctx.beginPath();
+              discs.ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+              discs.ctx.fill();
+            }
+            // car-light trails: a hot core and a wide glow, fading in and out along their length
+            var cores = layer(),
+              glows = layer();
+            cores.ctx.globalCompositeOperation = "lighter";
+            glows.ctx.globalCompositeOperation = "lighter";
+            /** A colour fading in and out along a trail's length. */
+            function along(ctx2, s, colour, alpha) {
+              var lg = ctx2.createLinearGradient(s.x0, 0, s.x1, 0);
+              lg.addColorStop(0, rgba(colour, 0));
+              lg.addColorStop(0.18, rgba(colour, alpha));
+              lg.addColorStop(0.8, rgba(colour, alpha));
+              lg.addColorStop(1, rgba(colour, 0));
+              return lg;
+            }
+            for (var k = 0; k < lights.streaks.length; k++) {
+              var s = lights.streaks[k];
+              var c = tone(s.tone);
+              var hot = mixRGB(c, WHITE, 0.45);
+              cores.ctx.fillStyle = along(cores.ctx, s, hot, s.alpha);
+              cores.ctx.fillRect(s.x0, s.y - s.width / 2, s.x1 - s.x0, s.width);
+              glows.ctx.fillStyle = along(glows.ctx, s, c, s.alpha * 0.35);
+              glows.ctx.fillRect(s.x0, s.y - s.width * 2.5, s.x1 - s.x0, s.width * 5);
+            }
+            var lit = layer();
+            blurInto(lit, discs, 2.5, "lighter");
+            blurInto(lit, glows, 12, "lighter");
+            blurInto(lit, cores, 1.4, "lighter");
+            // their reflections on the wet street, faint and smeared downwards
+            lit.ctx.save();
+            lit.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            lit.ctx.globalCompositeOperation = "lighter";
+            lit.ctx.globalAlpha = 0.18;
+            lit.ctx.filter = "blur(" + (6 * S).toFixed(2) + "px)";
+            lit.ctx.translate(0, 2 * 640 * S);
+            lit.ctx.scale(1, -1);
+            lit.ctx.drawImage(discs.canvas, 0, 0);
+            lit.ctx.restore();
+            // the horizon glow, drawn per frame at a strength that follows the music
+            var glow = layer();
+            var gg = glow.ctx.createRadialGradient(960, 600, 0, 960, 600, 900);
+            gg.addColorStop(0, rgba(mixRGB(ACC, MAIN, 0.35), 1));
+            gg.addColorStop(0.5, rgba(ACC, 0.45));
+            gg.addColorStop(1, rgba(ACC, 0));
+            glow.ctx.setTransform(S, 0, 0, S * 0.45, 0, 600 * S * 0.55);
+            glow.ctx.fillStyle = gg;
+            glow.ctx.fillRect(-200, -400, 2320, 2000);
+            return { base: base.canvas, lights: lit.canvas, glow: glow.canvas };
+          }
+          var city = buildCity();
+
+          // ---------- the background picture (when there is one) ----------
+          /** The picture cover-cropped to the frame, blurred by this many 1080p px. */
+          function coverDraw(img, blurPx) {
+            var out = layer();
+            out.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            var px = blurPx * S;
+            out.ctx.filter = px > 0 ? "blur(" + px.toFixed(2) + "px)" : "none";
+            var pad = px * 2; // draw past the edges so the blur doesn't darken them
+            var k = Math.max((W + 2 * pad) / img.naturalWidth, (H + 2 * pad) / img.naturalHeight);
+            var dw = img.naturalWidth * k,
+              dh = img.naturalHeight * k;
+            out.ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+            return out.canvas;
+          }
+          var picture = null; // { sharp, glass } once the picture has loaded
+          var pictureChecked = false;
+          function loadPicture() {
+            if (picture || pictureChecked || !SHOW_BG) return;
+            var img = document.getElementById("bgImage");
+            if (!img || !img.complete) return; // still loading: try again next frame
+            pictureChecked = true;
+            if (!img.naturalWidth || !M.isPicture(img.naturalWidth, img.naturalHeight)) return;
+            var blur = (BG_BLUR / 100) * 80;
+            picture = { sharp: coverDraw(img, blur), glass: null };
+            if (L.card) picture.glass = coverDraw(img, Math.max(blur, 34));
+          }
+          // The night city's glass (behind the player card): blurred once.
+          var cityGlass = null;
+          if (L.card) {
+            var cg = layer();
+            cg.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            cg.ctx.drawImage(city.base, 0, 0);
+            cg.ctx.globalCompositeOperation = "lighter";
+            cg.ctx.globalAlpha = 0.8;
+            cg.ctx.drawImage(city.lights, 0, 0);
+            var glassLayer = layer();
+            blurInto(glassLayer, { canvas: cg.canvas }, 34);
+            cityGlass = glassLayer.canvas;
+          }
+
+          // The darkening vignette, drawn once.
+          var vignette = layer();
+          (function () {
+            var vg = vignette.ctx.createRadialGradient(960, 540, 260, 960, 540, 1180);
+            vg.addColorStop(0, "rgba(0,0,0,0)");
+            vg.addColorStop(0.55, "rgba(0,0,0,0.18)");
+            vg.addColorStop(1, "rgba(0,0,0,0.72)");
+            vignette.ctx.fillStyle = vg;
+            vignette.ctx.fillRect(0, 0, 1920, 1080);
+          })();
+
+          // ---------- text ----------
+          function fontOf(weight, size) {
+            return weight + " " + size.toFixed(2) + 'px "' + FONT + '", sans-serif';
+          }
+          function setFont(weight, size, spacingEm) {
+            ctx.font = fontOf(weight, size);
+            ctx.letterSpacing = (spacingEm * size).toFixed(2) + "px";
+          }
+          /** Text width without the spacing after its last letter. */
+          function measure(text, size, spacingEm) {
+            return Math.max(0, ctx.measureText(text).width - (text ? spacingEm * size : 0));
+          }
+          var fits = {};
+          /**
+           * The size this text is drawn at so it fits maxWidth (shrinking from `size` to
+           * `minSize`), and a horizontal squeeze for anything still too wide at the smallest
+           * size, so nothing can ever overflow its space. Measured once per text and font.
+           */
+          function fitText(text, weight, size, spacingEm, maxWidth, minSize) {
+            var key = [text, weight, size, spacingEm, maxWidth, minSize, fontEpoch].join("|");
+            if (fits[key]) return fits[key];
+            var s = size;
+            setFont(weight, s, spacingEm);
+            var w = measure(text, s, spacingEm);
+            while (w > maxWidth && s > minSize) {
+              s = Math.max(minSize, Math.floor(s * 0.95));
+              setFont(weight, s, spacingEm);
+              w = measure(text, s, spacingEm);
+            }
+            fits[key] = { size: s, squeeze: w > maxWidth ? maxWidth / w : 1 };
+            return fits[key];
+          }
+          /** One line of text centred vertically on y (cap height), in the main colour. */
+          function drawText(text, x, y, align, weight, fit, spacingEm, alpha) {
+            if (!text || alpha <= 0) return;
+            setFont(weight, fit.size, spacingEm);
+            var w = measure(text, fit.size, spacingEm) * fit.squeeze;
+            var left = align === "left" ? x : align === "right" ? x - w : x - w / 2;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = rgba(MAIN, 1);
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+            ctx.translate(left, y + 0.35 * fit.size);
+            ctx.scale(fit.squeeze, 1);
+            ctx.fillText(text, 0, 0);
+            ctx.restore();
+          }
+          /** A wide title on one line, or balanced over two lines when one would be too small. */
+          function titleLines(text, spec) {
+            var one = fitText(text, 600, spec.size, 0.04, spec.maxWidth, 26);
+            var words = text.split(" ");
+            if (one.size >= 64 || words.length < 2) return { lines: [text], fit: one };
+            setFont(600, spec.size, 0.04);
+            var best = null;
+            for (var i = 1; i < words.length; i++) {
+              var a = words.slice(0, i).join(" "),
+                b = words.slice(i).join(" ");
+              var wa = measure(a, spec.size, 0.04),
+                wb = measure(b, spec.size, 0.04);
+              if (!best || Math.max(wa, wb) < best.worst) {
+                best = { lines: [a, b], worst: Math.max(wa, wb), longer: wa >= wb ? a : b };
+              }
+            }
+            var fit = fitText(best.longer, 600, spec.size, 0.04, spec.maxWidth, 26);
+            return fit.size > one.size
+              ? { lines: best.lines, fit: fit }
+              : { lines: [text], fit: one };
+          }
+          var cells = {};
+          /**
+           * A clock (like 1:07) with every digit in a cell of the same width, so the numbers
+           * don't jiggle as they change.
+           */
+          function drawClock(text, x, y, align, weight, size, spacingEm, alpha) {
+            if (alpha <= 0) return;
+            setFont(weight, size, 0);
+            var key = [weight, size, fontEpoch].join("|");
+            if (!cells[key]) {
+              var widest = 0;
+              for (var d = 0; d <= 9; d++)
+                widest = Math.max(widest, ctx.measureText(String(d)).width);
+              cells[key] = { digit: widest, colon: ctx.measureText(":").width };
+            }
+            var cell = cells[key];
+            var gap = spacingEm * size;
+            var widths = [];
+            var total = 0;
+            for (var i = 0; i < text.length; i++) {
+              var w = (text[i] === ":" ? cell.colon : cell.digit) + (i > 0 ? gap : 0);
+              widths.push(w);
+              total += w;
+            }
+            var cx = align === "left" ? x : align === "right" ? x - total : x - total / 2;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = rgba(MAIN, 1);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "alphabetic";
+            for (var j = 0; j < text.length; j++) {
+              var cw = widths[j] - (j > 0 ? gap : 0);
+              cx += j > 0 ? gap : 0;
+              ctx.fillText(text[j], cx + cw / 2, y + 0.36 * size);
+              cx += cw;
+            }
+            ctx.restore();
+          }
+
+          // ---------- shapes ----------
+          /**
+           * A line this many 1080p px wide, never thinner than about one screen pixel: a
+           * thinner line is drawn wider and dimmer, so the preview shows what the render shows.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / S);
+            return [w, width / w];
+          }
+          function roundRect(x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+          }
+          /** The dotted line and its mirrored hairline bars. */
+          function drawLine(t, env) {
+            audio.spectrum(t, spec);
+            var lengths = M.barLengths(V.mirrorBars(spec, COUNT, false), INT, L.line.max);
+            var shares = M.spikes(COUNT, audio.songStart + t, env, V.mulberry32);
+            var y = L.line.y;
+            var dot = thin(M.DOT_SIZE);
+            ctx.fillStyle = rgba(MAIN, 0.55 * dot[1]);
+            var off = (M.DOT_SIZE - dot[0]) / 2;
+            for (var i = 0; i < DOTS.length; i++) {
+              ctx.fillRect(DOTS[i] + off, y - 1 + off, dot[0], dot[0]);
+            }
+            var bar = thin(M.BAR_WIDTH);
+            var boff = (M.BAR_WIDTH - bar[0]) / 2;
+            ctx.fillStyle = rgba(MAIN, 0.95 * bar[1]);
+            for (var k = 0; k < COUNT; k++) {
+              var len = Math.round(lengths[k] * shares[k]);
+              if (len < 1) continue;
+              ctx.fillRect(BARS[k] + boff, y - len, bar[0], 2 * len);
+            }
+          }
+          /** The boxed progress bar: a thin outline, filled left to right in the accent colour. */
+          function drawProgress(fraction, alpha) {
+            if (alpha <= 0) return;
+            var p = L.progress;
+            var line = thin(p.h >= 8 ? 1.5 : 1);
+            var inset = p.h >= 8 ? 3 : p.h >= 6 ? 2 : 1;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.strokeStyle = rgba(MAIN, 0.85 * line[1]);
+            ctx.lineWidth = line[0];
+            ctx.strokeRect(p.x + line[0] / 2, p.y + line[0] / 2, p.w - line[0], p.h - line[0]);
+            var inner = p.w - 2 * inset;
+            var fill = M.progressFill(fraction, inner);
+            if (fill > 0) {
+              ctx.fillStyle = rgba(ACC, 1);
+              ctx.fillRect(p.x + inset, p.y + inset, fill, Math.max(thin(1)[0], p.h - 2 * inset));
+            }
+            ctx.restore();
+          }
+          /** The player card: dark glass over the blurred background, a fine rim. */
+          function drawCard(push, alpha) {
+            var c = L.card;
+            ctx.save();
+            roundRect(c.x, c.y, c.w, c.h, c.r);
+            ctx.clip();
+            var glass = picture ? picture.glass : cityGlass;
+            if (glass) {
+              ctx.save();
+              ctx.setTransform(push, 0, 0, push, (W / 2) * (1 - push), (H / 2) * (1 - push));
+              ctx.drawImage(glass, 0, 0);
+              ctx.restore();
+            }
+            ctx.fillStyle = "rgba(8,10,16,0.62)";
+            ctx.fillRect(c.x, c.y, c.w, c.h);
+            // a soft sheen across the top
+            var sheen = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
+            sheen.addColorStop(0, rgba(MAIN, 0.07));
+            sheen.addColorStop(0.45, rgba(MAIN, 0.015));
+            sheen.addColorStop(1, rgba(MAIN, 0));
+            ctx.fillStyle = sheen;
+            ctx.fillRect(c.x, c.y, c.w, c.h);
+            ctx.restore();
+            var rim = thin(1);
+            ctx.strokeStyle = rgba(MAIN, 0.2 * rim[1] * alpha + 0.06);
+            ctx.lineWidth = rim[0];
+            roundRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1, c.r);
+            ctx.stroke();
+          }
+          /** Everything that reads: titles, the clock and the progress bar. */
+          /** A soft dark oval behind a line of small text, so light trails don't cross it. */
+          function scrim(cx, cy, w, h, alpha) {
+            if (alpha <= 0 || w <= 0) return;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.scale(w / 2, h / 2);
+            var g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+            g.addColorStop(0, "rgba(0,0,0," + (0.5 * alpha).toFixed(3) + ")");
+            g.addColorStop(0.6, "rgba(0,0,0," + (0.3 * alpha).toFixed(3) + ")");
+            g.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = g;
+            ctx.fillRect(-1, -1, 2, 2);
+            ctx.restore();
+          }
+          function drawInfo(t, fade) {
+            var clock = V.songClock(audio, t);
+            var elapsed = V.formatClock(clock.elapsed);
+            var total = V.formatClock(clock.total);
+            if (!L.card) {
+              // scrims behind the small lines: the caption or artist, and the progress row
+              var small = L.caption || L.artist;
+              var smallText = L.caption ? CAPTION : ARTIST;
+              var smallSpacing = L.caption ? 0.3 : 0.42;
+              var sf = fitText(smallText, 400, small.size, smallSpacing, small.maxWidth, 10);
+              setFont(400, sf.size, smallSpacing);
+              var sw = measure(smallText, sf.size, smallSpacing) * sf.squeeze;
+              scrim(small.x, small.y, sw + 6 * small.size, small.size * 3.4, fade);
+              var p0 = L.progress;
+              scrim(p0.x + p0.w / 2, p0.y + p0.h / 2, p0.w + 260, 30 + p0.h * 2, fade);
+            }
+            ctx.save();
+            ctx.shadowColor = "rgba(0,0,0,0.45)";
+            ctx.shadowBlur = 10 * S;
+            if (L.caption) {
+              var cf = fitText(CAPTION, 400, L.caption.size, 0.3, L.caption.maxWidth, 12);
+              drawText(CAPTION, L.caption.x, L.caption.y, "center", 400, cf, 0.3, 0.92 * fade);
+            }
+            if (L.title) {
+              if (L.name === "bigTitle") {
+                var tl = titleLines(TITLE, L.title);
+                var lh = tl.fit.size * 1.08;
+                for (var i = 0; i < tl.lines.length; i++) {
+                  var ly = L.title.y - (tl.lines.length - 1 - i) * lh;
+                  var lf =
+                    tl.lines.length === 1
+                      ? tl.fit
+                      : {
+                          size: tl.fit.size,
+                          squeeze: fitText(
+                            tl.lines[i],
+                            600,
+                            tl.fit.size,
+                            0.04,
+                            L.title.maxWidth,
+                            tl.fit.size,
+                          ).squeeze,
+                        };
+                  drawText(tl.lines[i], L.title.x, ly, "center", 600, lf, 0.04, fade);
+                }
+              } else {
+                var pf = fitText(TITLE, 600, L.title.size, 0.03, L.title.maxWidth, 16);
+                drawText(TITLE, L.title.x, L.title.y, L.title.align, 600, pf, 0.03, fade);
+              }
+            }
+            if (L.artist) {
+              var spacing = L.name === "bigTitle" ? 0.42 : 0.2;
+              var af = fitText(ARTIST, 400, L.artist.size, spacing, L.artist.maxWidth, 10);
+              drawText(
+                ARTIST,
+                L.artist.x,
+                L.artist.y,
+                L.artist.align,
+                400,
+                af,
+                spacing,
+                0.78 * fade,
+              );
+            }
+            if (SHOW_TIMER) {
+              var tm = L.times;
+              var p = L.progress;
+              if (L.bigTime) {
+                drawClock(
+                  elapsed,
+                  L.bigTime.x,
+                  L.bigTime.y,
+                  "center",
+                  300,
+                  L.bigTime.size,
+                  0.02,
+                  fade,
+                );
+                drawClock(total, p.x + p.w + tm.gap, tm.y, "left", 400, tm.size, 0.06, 0.7 * fade);
+              } else if (tm.under) {
+                drawClock(elapsed, p.x, tm.y, "left", 400, tm.size, 0.06, 0.75 * fade);
+                drawClock(total, p.x + p.w, tm.y, "right", 400, tm.size, 0.06, 0.75 * fade);
+              } else {
+                drawClock(elapsed, p.x - tm.gap, tm.y, "right", 400, tm.size, 0.06, 0.85 * fade);
+                drawClock(total, p.x + p.w + tm.gap, tm.y, "left", 400, tm.size, 0.06, 0.55 * fade);
+              }
+            }
+            ctx.restore();
+            drawProgress(clock.fraction, fade);
+          }
+
+          function renderAt(t) {
+            loadPicture();
+            var songTime = audio.songStart + t;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, M.BEAT_RELEASE);
+            var push = M.pushScale(songTime);
+            var fade = M.textFade(t);
+
+            ctx.save();
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+            ctx.filter = "none";
+            // 1. the background, slowly pushing in about the centre
+            ctx.setTransform(push, 0, 0, push, (W / 2) * (1 - push), (H / 2) * (1 - push));
+            if (picture) {
+              ctx.drawImage(picture.sharp, 0, 0);
+            } else {
+              ctx.drawImage(city.base, 0, 0);
+              // the lights swell with the music (past 1: a second, partial pass on top)
+              ctx.globalCompositeOperation = "lighter";
+              var level = M.lightsLevel(a.loud);
+              ctx.globalAlpha = Math.min(1, level);
+              ctx.drawImage(city.lights, 0, 0);
+              if (level > 1) {
+                ctx.globalAlpha = level - 1;
+                ctx.drawImage(city.lights, 0, 0);
+              }
+              // and the city's glow on the horizon brightens with them
+              ctx.globalAlpha = M.glowLevel(a.loud);
+              ctx.drawImage(city.glow, 0, 0);
+              ctx.globalCompositeOperation = "source-over";
+              ctx.globalAlpha = 1;
+            }
+            // 2. the dim veil (loud music lifts it a little) and the vignette
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            var dim = M.veil(DIM, a.loud);
+            if (dim > 0) {
+              ctx.fillStyle = "rgba(0,0,0," + dim.toFixed(3) + ")";
+              ctx.fillRect(0, 0, W, H);
+            }
+            ctx.drawImage(vignette.canvas, 0, 0);
+            // 3. the card, the line and its bars, the text and the progress bar (1080p units)
+            ctx.setTransform(S, 0, 0, S, 0, 0);
+            if (L.card) drawCard(push, fade);
+            drawLine(t, env);
+            drawInfo(t, fade);
+            // 4. the beat's brightness lift: the frame added onto itself, up to 5 %
+            var lift = M.brightness(env) - 1;
+            if (lift > 0.0005) {
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.globalCompositeOperation = "lighter";
+              ctx.globalAlpha = lift;
+              ctx.drawImage(canvas, 0, 0);
+            }
+            ctx.restore();
+          }
+          return { render: renderAt, dispose: function () {} };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        draw(0);
+        function fontsChanged() {
+          fontEpoch++;
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        var bgImage = document.getElementById("bgImage");
+        bgImage.addEventListener("load", function () {
+          draw(Math.max(0, lastTime));
+        });
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s (the text fades in by
+        // itself, drawn from the time).
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

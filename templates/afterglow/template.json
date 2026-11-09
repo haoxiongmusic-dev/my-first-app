@@ -1,0 +1,55 @@
+{
+  "name": "Afterglow",
+  "description": "Your own picture (or a night city), a crisp dotted line of hairline bars and a boxed progress bar, in four layouts.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    {
+      "name": "Effects",
+      "fields": [
+        "intensity",
+        "layout",
+        "showTimer",
+        "backgroundDim",
+        "showBackground",
+        "backgroundBlur"
+      ]
+    },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": [
+    "layout",
+    "mainColor",
+    "accentColor",
+    "intensity",
+    "backgroundDim",
+    "showTimer",
+    "font"
+  ],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "layout": "classic", "mainColor": "#ffffff", "accentColor": "#ff3b4e" }
+    },
+    {
+      "name": "Big Title",
+      "thumbnail": "presets/big-title.jpg",
+      "values": { "layout": "bigTitle", "mainColor": "#ffffff", "accentColor": "#ff3b4e" }
+    },
+    {
+      "name": "Big Timer",
+      "thumbnail": "presets/big-timer.jpg",
+      "values": { "layout": "bigTimer", "mainColor": "#ffffff", "accentColor": "#ff3b4e" }
+    },
+    {
+      "name": "Music Player",
+      "thumbnail": "presets/music-player.jpg",
+      "values": { "layout": "player", "mainColor": "#ffffff", "accentColor": "#ff3b4e" }
+    }
+  ]
+}
