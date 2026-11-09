@@ -1,0 +1,968 @@
+<!doctype html>
+<!--
+  Moon Tide: a calm moonlit sea. A small full moon hangs at the top of a deep navy sky and lays
+  a dashed path of light on the dark water. On the water a ring of thin bars stands up out of
+  the sea (a circle lying flat, seen in perspective as a wide ellipse), each bar mirrored dimly
+  below the waterline. The bars rise and fall with the spectrum, bunched into mountains, and
+  the whole ring slowly turns. Each strong beat sends a faint ripple spreading out from the
+  ring. Under it: the title in small spaced capitals, the artist, and a thin progress line
+  with a dot between the song's clock and its length.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/tide-motion.js and the ring and clock maths in the toolkit (all unit-tested).
+
+  Built in WebGL: the sky, moon and water are drawn once into a backdrop; each frame the
+  moonlight, ripples, reflections and bars are drawn as quads (back of the ring first, so the
+  front covers it), given a soft glow, and laid over the backdrop. The text is HTML on top.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#7fe9ff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#2f6bff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"spin","type":"number","label":"Spin","default":100,"min":0,"max":200,"step":1,"unit":"%"},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":40,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/tide-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The titles stand on a fixed line just above the progress line (TITLES_BOTTOM), so a
+         title that wraps onto a second line grows upward, toward the ring. */
+      #titles {
+        position: absolute;
+        left: 0;
+        bottom: 138px;
+        width: 1920px;
+        display: flex;
+        justify-content: center;
+        font-family: "Montserrat", sans-serif;
+        color: #d8f8ff;
+        opacity: 0;
+      }
+      #titleBlock {
+        text-align: center;
+      }
+      #songTitle,
+      #songArtist {
+        display: block;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        text-transform: uppercase;
+      }
+      #songTitle {
+        max-width: 1300px; /* TITLE_SAFE: a long title wraps onto a second line */
+        /* a word too long to wrap overflows to the right, so it is scaled from the left edge */
+        transform-origin: 0 50%;
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.3;
+        font-size: 30px;
+        font-weight: 400;
+        letter-spacing: 0.55em;
+        padding-left: 0.55em; /* balances the spacing after the last letter */
+      }
+      #songArtist {
+        white-space: nowrap;
+        margin-top: 12px;
+        font-size: 14px;
+        font-weight: 400;
+        letter-spacing: 0.5em;
+        padding-left: 0.5em;
+        opacity: 0.66;
+      }
+      /* The clock either side of the progress line (drawn in WebGL at y LINE_Y). */
+      #clock {
+        position: absolute;
+        left: 0;
+        top: 964px;
+        width: 1920px;
+        height: 20px;
+        font-family: "Montserrat", sans-serif;
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 400;
+        letter-spacing: 0.14em;
+        font-variant-numeric: tabular-nums;
+        color: #d8f8ff;
+        opacity: 0;
+      }
+      #clockNow,
+      #clockTotal {
+        position: absolute;
+        top: 0;
+        white-space: nowrap;
+        opacity: 0.72;
+      }
+      #clockNow {
+        right: 1192px; /* ends 22 px before the line's left end (LINE_X0 750) */
+        text-align: right;
+      }
+      #clockTotal {
+        left: 1192px; /* starts 22 px after the line's right end (LINE_X1 1170) */
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="titleBlock">
+          <div id="songTitle" data-var-text="title">SONG NAME</div>
+          <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+        </div>
+      </div>
+      <div
+        id="clock"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="3"
+      >
+        <span id="clockNow">0:00</span><span id="clockTotal">0:00</span>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.TideMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var clockNow = document.getElementById("clockNow");
+        var clockTotal = document.getElementById("clockTotal");
+
+        // ---------- the titles and the clock ----------
+        function mixRGB(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function css(c, alpha) {
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        // The titles stand this far above the frame's bottom: just over the progress line, or
+        // a little lower when the timer is hidden.
+        var TITLES_BOTTOM = 138,
+          TITLES_BOTTOM_NO_TIMER = 104;
+        function applyPage() {
+          var main = V.hexToRGB(setting("mainColor"));
+          var ink = css(mixRGB(main, [1, 1, 1], 0.62), 1);
+          var glow = "0 0 10px " + css(main, 0.45) + ", 0 0 28px " + css(main, 0.22);
+          var showTimer = setting("showTimer") === true;
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          titles.style.color = ink;
+          titles.style.textShadow = glow;
+          titles.style.bottom = (showTimer ? TITLES_BOTTOM : TITLES_BOTTOM_NO_TIMER) + "px";
+          var clock = document.getElementById("clock");
+          clock.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          clock.style.color = ink;
+          clock.style.textShadow = "0 0 8px " + css(main, 0.4);
+          clock.style.display = showTimer ? "block" : "none";
+        }
+        applyPage();
+
+        // Fit the titles across the frame. The song title may wrap onto two lines before it
+        // shrinks; the artist line is never bigger than 0.47 × the title, so the title always
+        // reads first; and past the smallest size a line is scaled down so nothing can ever be
+        // wider than the space. Measured on seeks, settings and font loads only, never in the
+        // timeline callback.
+        var TITLE_SAFE = 1300;
+        var TITLE_LINES = 2;
+        var ARTIST_RATIO = 0.47;
+        var TITLE_FLOOR = 14;
+        var TITLE_SIZE = 30,
+          ARTIST_SIZE = 14,
+          LINE_HEIGHT = 1.3;
+        var fitted = "";
+        /** How wide the line's text really is, including a word too long to wrap. */
+        function textWidth(line) {
+          return Math.max(line.scrollWidth, line.offsetWidth);
+        }
+        /** Scale a line down if, even at its smallest size, it is wider than the space. */
+        function clampWidth(line) {
+          var w = textWidth(line);
+          line.style.transform = w > TITLE_SAFE ? "scale(" + (TITLE_SAFE / w).toFixed(4) + ")" : "";
+        }
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            document.getElementById("songTitle").textContent,
+            document.getElementById("songArtist").textContent,
+            setting("font"),
+            loaded,
+          ].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var title = document.getElementById("songTitle");
+          var artist = document.getElementById("songArtist");
+          title.style.transform = "";
+          artist.style.transform = "";
+          var size = TITLE_SIZE;
+          function titleTooBig() {
+            var maxHeight = TITLE_LINES * size * LINE_HEIGHT + 2;
+            return textWidth(title) > TITLE_SAFE + 1 || title.offsetHeight > maxHeight;
+          }
+          title.style.fontSize = size + "px";
+          while (titleTooBig() && size > TITLE_FLOOR) {
+            size = Math.max(TITLE_FLOOR, Math.floor(size * 0.95));
+            title.style.fontSize = size + "px";
+          }
+          clampWidth(title);
+          var small = Math.min(ARTIST_SIZE, Math.max(10, Math.round(size * ARTIST_RATIO)));
+          artist.style.fontSize = small + "px";
+          while (textWidth(artist) > TITLE_SAFE && small > 8) {
+            small -= 1;
+            artist.style.fontSize = small + "px";
+          }
+          clampWidth(artist);
+        }
+
+        // ---------- shaders ----------
+        // Shapes are triangles in 1080p pixels from the frame centre, y down, so they keep their
+        // size at every preview resolution. Each vertex carries a colour, a `fall` position
+        // (lines: -1..1 across, so a line is a strip twice its width whose light falls off
+        // linearly from its middle and slanted lines come out smooth; dots: -1..1 both ways)
+        // and `mode`: how hard the edge is (1 soft, higher crisper) and how much the shape
+        // covers what was drawn before it (0: light adds on, 1: it hides what is behind it,
+        // so the front of the ring covers the back).
+        var SHAPE_VS = [
+          "attribute vec2 pos; attribute vec3 col; attribute vec2 fall; attribute vec2 mode;",
+          "varying vec3 vCol; varying vec2 vFall; varying vec2 vMode;",
+          "void main(){",
+          "  vCol = col; vFall = fall; vMode = mode;",
+          "  gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var SHAPE_FS = [
+          "precision mediump float;",
+          "varying vec3 vCol; varying vec2 vFall; varying vec2 vMode;",
+          "void main(){",
+          "  float f = clamp((1.0 - length(vFall)) * vMode.x, 0.0, 1.0);",
+          "  gl_FragColor = vec4(vCol * f, vMode.y * f);",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The backdrop, drawn once: a deep navy sky with a few faint stars and soft haze at the
+        // horizon, the full moon with its halo, and the dark sea, faintly textured, with a soft
+        // column of moonlight under the moon. A tiny fixed dither keeps gradients from banding.
+        var BACKDROP_FS = [
+          "precision highp float;",
+          "uniform vec3 mainCol, accCol; uniform vec3 moon; uniform float horizon, pxScale;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash(i), b = hash(i + vec2(1.0, 0.0));",
+          "  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int i = 0; i < 4; i++){ s += a * vnoise(p); p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; }",
+          "  return s;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  float dx = p.x - moon.x;",
+          "  vec3 moonTint = mix(vec3(1.0, 0.98, 0.94), mainCol, 0.14);",
+          "  vec3 hazeCol = mix(vec3(0.42, 0.55, 0.85), accCol, 0.4);",
+          "  vec3 c;",
+          "  if (p.y < horizon) {",
+          "    float h = p.y / horizon;",
+          "    c = mix(vec3(0.004, 0.009, 0.032), vec3(0.012, 0.030, 0.085), smoothstep(0.0, 0.8, h));",
+          "    c = mix(c, vec3(0.030, 0.062, 0.150), smoothstep(0.55, 1.0, h));",
+          // faint stars, thinning toward the horizon and around the moon
+          "    vec2 cell = floor(p / 26.0);",
+          "    float pick = hash(cell + vec2(3.0, 1.0));",
+          "    if (pick > 0.972) {",
+          "      vec2 at = (cell + vec2(0.15) + 0.7 * vec2(hash(cell + vec2(7.0, 2.0)), hash(cell + vec2(1.0, 9.0)))) * 26.0;",
+          "      float r = max(0.75, 0.6 / pxScale);",
+          "      float d2 = dot(p - at, p - at);",
+          "      float b = (0.25 + 0.75 * hash(cell + vec2(5.0, 5.0)));",
+          "      b *= b * smoothstep(horizon - 20.0, horizon - 260.0, p.y);",
+          "      b *= smoothstep(moon.z * 2.5, moon.z * 6.0, length(p - moon.xy));",
+          "      c += vec3(0.80, 0.86, 1.0) * b * 0.55 * exp(-d2 / (2.0 * r * r)) * (0.75 / r) * (0.75 / r);",
+          "    }",
+          "  } else {",
+          "    float w = (p.y - horizon) / (1080.0 - horizon);",
+          "    c = mix(vec3(0.018, 0.040, 0.100), vec3(0.002, 0.006, 0.020), smoothstep(0.0, 0.75, w));",
+          // long, low swells of the sea catching a little of the sky
+          "    float swell = fbm(vec2(p.x / 220.0, p.y / (2.5 + 16.0 * w)));",
+          "    c += hazeCol * (swell - 0.45) * 0.035 * (1.0 - 0.7 * w);",
+          // a soft column of moonlight on the water, widening toward the viewer
+          "    float colW = 16.0 + 120.0 * w;",
+          "    c += moonTint * exp(-dx * dx / (2.0 * colW * colW)) * 0.05 * (1.0 - smoothstep(0.1, 0.8, w));",
+          "  }",
+          // haze over the horizon, a little stronger under the moon
+          "  float dy = abs(p.y - horizon);",
+          "  float haze = exp(-dy / 26.0) * 0.10 + exp(-dy / 120.0) * 0.045;",
+          "  haze *= 0.7 + 0.3 * exp(-dx * dx / (2.0 * 600.0 * 600.0));",
+          "  c += hazeCol * haze;",
+          // the moon: a bright disc, a little darker at its rim, with faint seas on its face
+          "  float d = length(p - moon.xy);",
+          "  float R = moon.z;",
+          "  float edge = max(0.8, 0.8 / pxScale);",
+          "  float disc = smoothstep(R + edge, R - edge, d);",
+          "  float limb = 0.86 + 0.14 * sqrt(max(0.0, 1.0 - (d / R) * (d / R)));",
+          "  float seas = 1.0 - 0.1 * smoothstep(0.42, 0.72, fbm((p - moon.xy) / 15.0 + vec2(4.0, 2.0)));",
+          "  vec3 face = moonTint * limb * seas;",
+          "  float out_ = max(d - R, 0.0);",
+          "  vec3 halo = moonTint * (exp(-out_ / 9.0) * 0.30 + exp(-out_ / 60.0) * 0.16 + exp(-d / 300.0) * 0.07);",
+          "  c = mix(c + halo, face, disc);",
+          "  c += (hash(floor(p) + vec2(5.0, 9.0)) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // Everything combined: the backdrop, a glow on the water round the ring (brighter when
+        // loud), and everything that shines (sharp plus glow), screened over the backdrop.
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D backdrop, lines, bloomA, bloomB, bloomC;",
+          "uniform float glow, horizon; uniform vec3 mainCol, accCol; uniform vec4 ring;",
+          "varying vec2 uv;",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec3 base = texture2D(backdrop, uv).rgb;",
+          // the ring's light on the water: brightest along the ring, softly filling inside it
+          "  vec2 q = vec2((p.x - ring.x) / ring.z, (p.y - ring.y) / ring.w);",
+          "  float e = length(q);",
+          "  float band = exp(-(e - 1.0) * (e - 1.0) / (2.0 * 0.16 * 0.16));",
+          "  float inside = exp(-e * e * 1.4) * 0.6;",
+          "  vec3 light = mix(accCol, mainCol, 0.35) * (band * 0.2 + inside * 0.17) * glow;",
+          // the haze on the horizon lights up with the music, most behind the ring
+          "  float dy = abs(p.y - horizon);",
+          "  float dxc = p.x - ring.x;",
+          "  float lift = (exp(-dy / 22.0) * 0.08 + exp(-dy / 150.0) * 0.08) * (0.55 + 0.45 * exp(-dxc * dxc / (2.0 * 650.0 * 650.0)));",
+          "  light += mix(vec3(0.42, 0.55, 0.85), accCol, 0.5) * lift * glow;",
+          "  light += texture2D(lines, uv).rgb + texture2D(bloomA, uv).rgb * 0.8 + texture2D(bloomB, uv).rgb * 1.1 + texture2D(bloomC, uv).rgb * 1.8;",
+          "  light = vec3(1.0) - exp(-light * 1.3);",
+          "  vec3 c = vec3(1.0) - (vec3(1.0) - base) * (vec3(1.0) - light);",
+          "  c *= mix(0.72, 1.0, smoothstep(1.3, 0.35, length((uv - vec2(0.5, 0.48)) * vec2(1.15, 1.0))));",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = Number(setting("intensity"));
+          var SPIN = Number(setting("spin"));
+          var SHOW_TIMER = setting("showTimer") === true;
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          var spec = new Float32Array(32);
+          var COLUMN_ANGLES = V.ringAngles(M.columnCount(setting("bandCount")), 360);
+          var WEIGHTS = M.barWeights(M.BAR_COUNT, V.mulberry32);
+          var DASHES = M.buildDashes(V.mulberry32);
+          var clock = V.songClock(audio, 0);
+          clockTotal.textContent = V.formatClock(clock.total);
+
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          // What shines is drawn sharp into `lines`, then blurred at half, quarter and eighth size.
+          var lines = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4)),
+            qB = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4));
+          var eA = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8)),
+            eB = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8));
+          var backdrop = V.createTarget(gl, W, H); // static: drawn once below
+
+          var shapeProg = V.createProgram(gl, SHAPE_VS, SHAPE_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var backdropProg = V.createProgram(gl, QUAD_VS, BACKDROP_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+          var shapeBuf = gl.createBuffer();
+
+          // Triangles for the frame's shapes: x, y, r, g, b, fall x, fall y, hardness, cover.
+          var STRIDE = 9;
+          var verts = new Float32Array(STRIDE * 6 * 4096);
+          var nv = 0;
+          function vert(x, y, c, k, fx, fy, hard, cover) {
+            if (STRIDE * (nv + 1) > verts.length) {
+              var bigger = new Float32Array(verts.length * 2);
+              bigger.set(verts);
+              verts = bigger;
+            }
+            var o = STRIDE * nv++;
+            verts[o] = x - 960;
+            verts[o + 1] = y - 540;
+            verts[o + 2] = c[0] * k;
+            verts[o + 3] = c[1] * k;
+            verts[o + 4] = c[2] * k;
+            verts[o + 5] = fx;
+            verts[o + 6] = fy;
+            verts[o + 7] = hard;
+            verts[o + 8] = cover;
+          }
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel:
+           * a thinner line is drawn wider and dimmer, so the preview shows what the render
+           * shows when scaled down.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+            return [w, width / w];
+          }
+          /**
+           * A stroke from (x0, y0) to (x1, y1) in frame pixels, coloured cA → cB (brightness
+           * kA → kB), covering what is behind it by `cover` (0: light that adds on).
+           */
+          function stroke(x0, y0, x1, y1, width, cA, kA, cB, kB, cover) {
+            var t = thin(width);
+            var dx = x1 - x0,
+              dy = y1 - y0;
+            var len = Math.sqrt(dx * dx + dy * dy) || 1;
+            // twice as wide, fading to its edges: the same light as a sharp line this wide
+            var nx = (-dy / len) * t[0],
+              ny = (dx / len) * t[0];
+            var ka = kA * t[1],
+              kb = kB * t[1],
+              cv = cover || 0;
+            vert(x0 + nx, y0 + ny, cA, ka, 1, 0, 1, cv);
+            vert(x0 - nx, y0 - ny, cA, ka, -1, 0, 1, cv);
+            vert(x1 - nx, y1 - ny, cB, kb, -1, 0, 1, cv);
+            vert(x0 + nx, y0 + ny, cA, ka, 1, 0, 1, cv);
+            vert(x1 - nx, y1 - ny, cB, kb, -1, 0, 1, cv);
+            vert(x1 + nx, y1 + ny, cB, kb, 1, 0, 1, cv);
+          }
+          /** A round dot of this radius (1080p pixels), soft-edged. */
+          function dot(x, y, radius, c, k, cover) {
+            var r = Math.max(radius, 1.2 / PREVIEW_SCALE);
+            var kk = k * Math.min(1, (radius * radius) / (r * r));
+            var cv = cover || 0;
+            vert(x - r, y - r, c, kk, -1, -1, 2.5, cv);
+            vert(x + r, y - r, c, kk, 1, -1, 2.5, cv);
+            vert(x + r, y + r, c, kk, 1, 1, 2.5, cv);
+            vert(x - r, y - r, c, kk, -1, -1, 2.5, cv);
+            vert(x + r, y + r, c, kk, 1, 1, 2.5, cv);
+            vert(x - r, y + r, c, kk, -1, 1, 2.5, cv);
+          }
+          var WHITE = [1, 1, 1];
+          var MOON_TINT = mixRGB([1, 0.98, 0.94], MAIN, 0.14);
+          var RIPPLE_COL = mixRGB(MAIN, ACC, 0.45);
+          var RIM_COL = mixRGB(ACC, MAIN, 0.4);
+          var FOOT_COL = mixRGB(MAIN, ACC, 0.4);
+          var TOP_COL = mixRGB(MAIN, WHITE, 0.2);
+          var TIP_COL = mixRGB(MAIN, WHITE, 0.6);
+          var REFLECT_COL = mixRGB(MAIN, ACC, 0.5);
+          var RIPPLE_SEGMENTS = 120;
+
+          /** An ellipse on the water round the ring's centre, brighter toward the viewer. */
+          function ellipse(rx, ry, width, col, k) {
+            var px = M.RING_CX,
+              py = M.RING_CY - ry;
+            for (var s = 1; s <= RIPPLE_SEGMENTS; s++) {
+              var a = (2 * Math.PI * s) / RIPPLE_SEGMENTS;
+              var x = M.RING_CX + rx * Math.sin(a),
+                y = M.RING_CY - ry * Math.cos(a);
+              var near = 0.45 + 0.55 * (1 - Math.cos(a - Math.PI / RIPPLE_SEGMENTS)) * 0.5;
+              if (y < M.HORIZON_Y + 2 || py < M.HORIZON_Y + 2) {
+                px = x;
+                py = y;
+                continue; // never above the horizon
+              }
+              stroke(px, py, x, y, width * (0.7 + 0.3 * near), col, k * near, col, k * near, 0);
+              px = x;
+              py = y;
+            }
+          }
+
+          /** Everything that shines for time t, into the shape buffer, in drawing order. */
+          function buildShapes(t, songTime) {
+            nv = 0;
+            var a = audio.sample(t);
+            var glowK = M.glowLevel(a.loud);
+            // 1. the moonlight path: dashes brightest in the middle, fading to their ends
+            var dashes = M.moonDashes(DASHES, songTime);
+            for (var d = 0; d < DASHES.count; d++) {
+              var o = d * M.DASH_STRIDE;
+              var lv = dashes[o + 4];
+              if (lv < 0.01) continue;
+              var dxp = dashes[o],
+                dy = dashes[o + 1],
+                half = dashes[o + 2],
+                thick = dashes[o + 3];
+              var k = 0.55 * lv * (0.6 + 0.6 * glowK);
+              stroke(dxp - half, dy, dxp, dy, thick, MOON_TINT, 0, MOON_TINT, k, 0);
+              stroke(dxp, dy, dxp + half, dy, thick, MOON_TINT, k, MOON_TINT, 0, 0);
+            }
+            // 2. ripples on the water: the faint drifting ones and one for each strong beat
+            var drift = M.driftRipples(songTime);
+            for (var r = 0; r < drift.length; r++) {
+              ellipse(drift[r].rx, drift[r].ry, 1.2, RIPPLE_COL, 0.5 * drift[r].alpha);
+            }
+            var beats = M.ripples(audio.recentHits(t, M.RIPPLE_HITS), songTime, V.mulberry32);
+            for (var b = 0; b < beats.length; b++) {
+              ellipse(beats[b].rx, beats[b].ry, 1.6, RIPPLE_COL, 0.75 * beats[b].alpha);
+            }
+            // 3. the ring's waterline
+            ellipse(M.RING_R, M.RING_B, 1.1, RIM_COL, 0.12 + 0.12 * glowK);
+
+            // 4. the bars: their reflections first (light on the water), then the bars
+            // themselves, back of the ring to the front, each covering what is behind it
+            audio.spectrum(t, spec);
+            var shaped = M.shapeSpectrum(V.smoothSpectrum(spec, M.SMOOTH));
+            var columns = V.ringValues(shaped, COLUMN_ANGLES, 360);
+            var values = M.columnsToBars(columns, M.BAR_COUNT);
+            var bars = M.ringBars(values, WEIGHTS, M.spinAngle(songTime, SPIN), INT);
+            for (var i = 0; i < bars.length; i++) {
+              var bar = bars[i];
+              var fade = 0.5 + 0.5 * bar.depth; // farther bars sit in the haze
+              var len = bar.height * 0.6;
+              var segs = 5;
+              for (var s = 0; s < segs; s++) {
+                var y0 = bar.y + 3 + (len * s) / segs,
+                  y1 = bar.y + 3 + (len * (s + 0.62)) / segs;
+                var sway = 1.6 * Math.sin(0.09 * y0 + 1.7 * songTime + bar.angle * 7);
+                var kr = 0.55 * fade * (1 - s / segs);
+                stroke(
+                  bar.x + sway,
+                  y0,
+                  bar.x + sway,
+                  y1,
+                  2.2 * bar.scale,
+                  REFLECT_COL,
+                  kr,
+                  REFLECT_COL,
+                  kr * 0.75,
+                  0,
+                );
+              }
+            }
+            for (var j = 0; j < bars.length; j++) {
+              var br = bars[j];
+              var near = 0.5 + 0.5 * br.depth;
+              var tall = Math.min(1, br.height / (M.BAR_MAX * br.scale));
+              var kTop = (0.95 + 0.55 * tall) * near;
+              var top = br.y - br.height;
+              stroke(
+                br.x,
+                br.y + 1,
+                br.x,
+                top,
+                2.4 * br.scale,
+                FOOT_COL,
+                0.55 * near,
+                TOP_COL,
+                kTop,
+                1,
+              );
+              dot(br.x, top, 1.9 * br.scale, TIP_COL, (0.6 + 0.8 * tall) * near, 0);
+            }
+
+            // 5. the progress line and its dot
+            if (SHOW_TIMER) {
+              var c = V.songClock(audio, t);
+              var px = M.progressX(c.fraction);
+              stroke(M.LINE_X0, M.LINE_Y, M.LINE_X1, M.LINE_Y, 1.1, MAIN, 0.22, MAIN, 0.22, 0);
+              if (px > M.LINE_X0 + 0.5) {
+                stroke(M.LINE_X0, M.LINE_Y, px, M.LINE_Y, 1.3, MAIN, 0.5, TOP_COL, 0.95, 0);
+              }
+              dot(px, M.LINE_Y, 4.2, TIP_COL, 1.25, 0);
+            }
+            return a;
+          }
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+          function drawShapes() {
+            if (nv === 0) return;
+            gl.useProgram(shapeProg);
+            gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, verts.subarray(0, STRIDE * nv), gl.DYNAMIC_DRAW);
+            var layout = [
+              ["pos", 2],
+              ["col", 3],
+              ["fall", 2],
+              ["mode", 2],
+            ];
+            var locs = [],
+              offset = 0;
+            for (var j = 0; j < layout.length; j++) {
+              var loc = gl.getAttribLocation(shapeProg, layout[j][0]);
+              gl.enableVertexAttribArray(loc);
+              gl.vertexAttribPointer(loc, layout[j][1], gl.FLOAT, false, STRIDE * 4, offset * 4);
+              offset += layout[j][1];
+              locs.push(loc);
+            }
+            gl.drawArrays(gl.TRIANGLES, 0, nv);
+            for (var k = 0; k < locs.length; k++) gl.disableVertexAttribArray(locs[k]);
+          }
+
+          // The sky, the moon and the sea never change, so they are drawn once.
+          (function drawBackdrop() {
+            bindTarget(backdrop);
+            gl.useProgram(backdropProg);
+            gl.uniform3fv(backdropProg.u.mainCol, MAIN);
+            gl.uniform3fv(backdropProg.u.accCol, ACC);
+            gl.uniform3fv(backdropProg.u.moon, [M.MOON_X, M.MOON_Y, M.MOON_R]);
+            gl.uniform1f(backdropProg.u.horizon, M.HORIZON_Y);
+            gl.uniform1f(backdropProg.u.pxScale, PREVIEW_SCALE);
+            V.drawQuad(gl, backdropProg);
+          })();
+
+          function renderAt(t) {
+            var songTime = t + audio.songStart;
+            var a = buildShapes(t, songTime);
+            if (SHOW_TIMER) {
+              // setting text is fine here (measuring is not)
+              var now = V.formatClock(V.songClock(audio, t).elapsed);
+              if (clockNow.textContent !== now) clockNow.textContent = now;
+            }
+
+            // 1. what shines: light adds on; the bars cover what is behind them
+            bindTarget(lines);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            drawShapes();
+            gl.disable(gl.BLEND);
+
+            // 2. glow: half-size medium, quarter-size wide, eighth-size very wide (radii kept
+            // in 1080p terms)
+            copy(lines, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, hA, hB, 3.0 * PREVIEW_SCALE);
+            copy(hA, qA);
+            V.blur(gl, blurProg, qA, qB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, qA, qB, 3.0 * PREVIEW_SCALE);
+            copy(qA, eA);
+            V.blur(gl, blurProg, eA, eB, 2.0 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, eA, eB, 4.0 * PREVIEW_SCALE);
+
+            // 3. the whole picture onto the screen
+            bindTarget(null);
+            gl.useProgram(compProg);
+            var units = [
+              ["backdrop", backdrop.tex],
+              ["lines", lines.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", qA.tex],
+              ["bloomC", eA.tex],
+            ];
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(compProg.u[units[u][0]], u);
+            }
+            gl.uniform1f(compProg.u.glow, M.glowLevel(a.loud));
+            gl.uniform1f(compProg.u.horizon, M.HORIZON_Y);
+            gl.uniform3fv(compProg.u.mainCol, MAIN);
+            gl.uniform3fv(compProg.u.accCol, ACC);
+            gl.uniform4fv(compProg.u.ring, [M.RING_CX, M.RING_CY, M.RING_R, M.RING_B]);
+            V.drawQuad(gl, compProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles and the clock fade in; the whole picture fades to black over the song's last
+        // 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 1.8, ease: "power2.out" },
+          0.4,
+        );
+        tl.fromTo("#clock", { opacity: 0 }, { opacity: 1, duration: 1.8, ease: "power2.out" }, 0.8);
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

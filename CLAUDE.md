@@ -51,7 +51,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       plan `docs/superpowers/plans/2026-11-10-m8-ten-templates.md`), one branch and pull request
       each, built overnight 2026-11-10 for the owner to review:
   - [x] Song clock and line kit (toolkit)
-  - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [ ] Moon Tide ·
+  - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [x] Moon Tide ·
         [ ] Neon Coil · [ ] World Orbit · [ ] Ember Mesh · [ ] Black Crown · [ ] Cube Core
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
@@ -180,6 +180,8 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   smoke are most of it).
 - Signal Dish (WebGL sky + 2D-canvas silhouettes): a 30 s Final section of T-REX took 3 min 21 s in
   total with the phone copy (frame capture 1 min 27 s ≈ 2.9×), 6.8 MB per 30 s.
+- Moon Tide (WebGL backdrop + bars as quads): a 30 s Final section of T-REX took 3 min 46 s in
+  total with the phone copy (frame capture 1 min 27 s ≈ 2.9×), 12.5 MB per 30 s.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).
