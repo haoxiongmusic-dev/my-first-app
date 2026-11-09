@@ -1,0 +1,690 @@
+<!doctype html>
+<!--
+  Red Letter: scratched black-and-white film. A charcoal film texture (grey mottling, drifting
+  smoke, a few scratches and dust specks that change six times a second, fine grain and a dark
+  vignette) behind a title in wide-spaced condensed capitals across the centre, each letter
+  with a faint ghost streak rising above it. One letter is red; on every beat the red jumps to
+  another letter, and the letters flash toward white. On strong beats a few letters glitch
+  sideways for two frames. An oscilloscope line runs in from both screen edges to the title's
+  ends: flat when the music is quiet, spiky when it is loud. The artist sits small under it.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion and layout maths lives
+  in assets/letter-motion.js and the line maths in the toolkit (both unit-tested). The text is
+  drawn on 2D canvases and the film, with the text laid into it, in WebGL.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Oswald","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#e8e8e8"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff2a2a"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"glitchOnBeat","type":"boolean","label":"Glitch on beat","default":true},
+    {"id":"grain","type":"number","label":"Film grain","default":50,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"8","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/letter-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family (and the weights drawn) lets HyperFrames bundle them all
+         for the Font setting; the canvas text uses them once loaded. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      .w300 {
+        font-weight: 300;
+      }
+      .w400 {
+        font-weight: 400;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat w300">Aa1</span><span class="f-montserrat w400">Aa1</span
+      ><span class="f-inter w300">Aa1</span><span class="f-inter w400">Aa1</span
+      ><span class="f-outfit w300">Aa1</span><span class="f-outfit w400">Aa1</span
+      ><span class="f-poppins w300">Aa1</span><span class="f-poppins w400">Aa1</span
+      ><span class="f-lato w300">Aa1</span><span class="f-lato w400">Aa1</span
+      ><span class="f-oswald w300">Aa1</span><span class="f-oswald w400">Aa1</span
+      ><span class="f-playfair w300">Aa1</span><span class="f-playfair w400">Aa1</span
+      ><span class="f-garamond w300">Aa1</span><span class="f-garamond w400">Aa1</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.LetterMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var fontEpoch = 0; // goes up when fonts finish loading, so text is measured again
+        var SCOPE_SEEDS = [11, 29]; // the left and right halves of the scope line
+        var TITLE_WEIGHT = 400;
+        var ARTIST_WEIGHT = 300;
+        var ARTIST_SPACING = 0.6; // em
+
+        function rgba(c, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, c[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+
+        // ---------- shaders ----------
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        // The whole frame: the charcoal film (mottling, smoke, a haze behind the title), the
+        // title's ghost streaks, the title and the scope line laid in, then the film's wear
+        // (scratches, dust, grain) over everything and the vignette. Positions are 1080p
+        // pixels, y down.
+        var FILM_FS = [
+          "precision highp float;",
+          "uniform sampler2D titleTex, overlayTex;",
+          "uniform float time, expo, loud, env, ghostAmt, ghostStep, ghostTop, ghostBottom;",
+          "uniform float grainAmt, grainSeed, flicker, px;",
+          "uniform vec3 tint;",
+          "uniform vec4 scratch[4];", // x, top, bottom, width (+ light, - dark, 0 none)
+          "uniform vec4 speck[12];", // x, y, radius, light (1) or dark (-1); radius 0 none
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash(i), b = hash(i + vec2(1.0, 0.0));",
+          "  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int i = 0; i < 4; i++){ s += a * vnoise(p); p = p * 2.03 + vec2(17.3, 9.1); a *= 0.5; }",
+          "  return s;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          // the film: charcoal mottling, large and small, drifting very slowly
+          "  float big = fbm(p / 420.0 + vec2(time * 0.008, time * 0.003));",
+          "  float fine = vnoise(p / 46.0 + vec2(time * 0.02, 0.0));",
+          "  float film = 0.070 + 0.070 * big + 0.020 * fine;",
+          // hairline scuffs in the film's surface at a few angles (fixed: they never flicker)
+          "  float scuff = 0.0;",
+          "  for (int i = 0; i < 3; i++){",
+          "    float a = 0.31 + 1.37 * float(i);",
+          "    vec2 r = vec2(cos(a) * p.x + sin(a) * p.y, -sin(a) * p.x + cos(a) * p.y);",
+          "    float n = vnoise(vec2(r.x / 640.0 + float(i) * 7.1, r.y / (1.1 * px) + float(i) * 3.3));",
+          "    scuff += smoothstep(0.955, 0.995, n) * (0.4 + 0.6 * vnoise(r / 210.0));",
+          "  }",
+          "  film += 0.035 * scuff;",
+          // the print's own fine texture: static, so it adds grit without per-frame noise
+          "  film += 0.022 * (vnoise(p / (2.2 * max(px, 1.0))) - 0.5) + 0.018 * (vnoise(p / 9.0 + 31.0) - 0.5);",
+          // smoke: soft patches drifting up and across, lit by the music
+          "  vec2 q = p / 560.0 + vec2(time * 0.016, -time * 0.022);",
+          "  float warp = fbm(q * 1.6 + vec2(-time * 0.01, time * 0.006));",
+          "  float smoke = smoothstep(0.42, 0.86, fbm(q + 1.8 * warp));",
+          "  film += smoke * (0.045 + 0.085 * loud);",
+          // a haze behind the title: light spilling from the letters, brighter when loud
+          "  float dy = (p.y - 540.0) / 190.0, dx = (p.x - 960.0) / 820.0;",
+          "  float haze = exp(-dy * dy - dx * dx);",
+          "  film += haze * (0.025 + 0.075 * loud + 0.05 * env);",
+          "  vec3 c = vec3(film) * tint * expo * flicker;",
+          // ghost streaks rising above the title's letters: the letters smeared upward, fading
+          "  if (p.y > ghostTop && p.y < ghostBottom){",
+          "    vec3 ghost = vec3(0.0);",
+          "    for (int k = 1; k <= 32; k++){",
+          "      float w = 1.0 - float(k) / 33.0;",
+          "      ghost += texture2D(titleTex, uv - vec2(0.0, float(k) * ghostStep / 1080.0)).rgb * w * w;",
+          "    }",
+          "    c += ghost * 0.04 * ghostAmt;",
+          "  }",
+          // the title over the film, then the scope line and artist
+          "  vec4 tt = texture2D(titleTex, uv);",
+          "  c = c * (1.0 - tt.a) + tt.rgb;",
+          "  vec4 ov = texture2D(overlayTex, uv);",
+          "  c = c * (1.0 - ov.a) + ov.rgb;",
+          // scratches: thin vertical lines with a slight wobble, light or dark, soft ends
+          "  for (int i = 0; i < 4; i++){",
+          "    vec4 s = scratch[i];",
+          "    if (s.w == 0.0) continue;",
+          "    float wob = 1.6 * sin(p.y * 0.011 + s.x) + 0.8 * sin(p.y * 0.037 + s.y);",
+          "    float hw = max(abs(s.w) * 0.5, 0.6 * px);",
+          "    float a = 1.0 - smoothstep(hw - 0.5 * px, hw + 0.7 * px, abs(p.x - s.x - wob));",
+          "    a *= smoothstep(s.y, s.y + 60.0, p.y) * smoothstep(s.z, s.z - 60.0, p.y);",
+          "    a *= 0.55 + 0.45 * vnoise(vec2(s.x, p.y / 23.0));",
+          "    a *= min(1.0, abs(s.w) / hw);",
+          "    if (s.w > 0.0) c += vec3(0.20) * a * tint; else c *= 1.0 - 0.55 * a;",
+          "  }",
+          // dust: specks and tiny hairs, light or dark
+          "  for (int i = 0; i < 12; i++){",
+          "    vec4 s = speck[i];",
+          "    if (s.z <= 0.0) continue;",
+          "    vec2 d = p - s.xy;",
+          "    float r = max(s.z, 0.7 * px);",
+          "    float a = 1.0 - smoothstep(r - 0.6 * px, r + 0.6 * px, length(d * vec2(1.0, 0.8)));",
+          "    a *= min(1.0, s.z / r);",
+          "    if (s.w > 0.0) c += vec3(0.30) * a * tint; else c *= 1.0 - 0.75 * a;",
+          "  }",
+          // fine grain (changes 6 times a second), then the dark vignette
+          "  c += (hash(floor(p * 0.5) + grainSeed * 17.0) - 0.5) * 2.0 * grainAmt;",
+          "  float v = length((uv - 0.5) * vec2(1.45, 1.05));",
+          "  c *= mix(0.16, 1.0, smoothstep(0.98, 0.22, v));",
+          "  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var S = PREVIEW_SCALE;
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = Number(setting("intensity")) || 1;
+          var GLITCH_ON = setting("glitchOnBeat") === true;
+          var GRAIN = Math.max(0, Math.min(100, Number(setting("grain")) || 0));
+          var FONT = String(setting("font") || "Oswald");
+          var TITLE = String(setting("title") || "").toUpperCase();
+          var ARTIST = String(setting("artist") || "")
+            .trim()
+            .toUpperCase();
+          var POINTS = M.scopeCount(setting("bandCount"));
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          // The film's tint: the main colour's hue, so a warm main colour gives warm film.
+          var top = Math.max(MAIN[0], MAIN[1], MAIN[2], 0.001);
+          var TINT = [
+            0.35 + (0.65 * MAIN[0]) / top,
+            0.35 + (0.65 * MAIN[1]) / top,
+            0.35 + (0.65 * MAIN[2]) / top,
+          ];
+
+          var W = Math.round(1920 * S),
+            H = Math.round(1080 * S);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+
+          // The text is drawn on two 2D canvases (the title, which gets ghost streaks, and the
+          // scope line with the artist), then laid into the film by the shader. alpha: true
+          // keeps text antialiasing grey (no coloured fringes in video).
+          function layer() {
+            var cv = document.createElement("canvas");
+            cv.width = W;
+            cv.height = H;
+            return { canvas: cv, ctx: cv.getContext("2d", { alpha: true }) };
+          }
+          var titleLayer = layer();
+          var overLayer = layer();
+
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+          var filmProg = V.createProgram(gl, QUAD_VS, FILM_FS);
+          function texture() {
+            var tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return tex;
+          }
+          var titleTex = texture();
+          var overTex = texture();
+
+          // ---------- the title's layout (measured only when the text or fonts change) ----------
+          var placed = null;
+          var placedKey = "";
+          function fontOf(weight, size) {
+            return weight + " " + size.toFixed(2) + 'px "' + FONT + '", sans-serif';
+          }
+          function layout() {
+            var key = fontEpoch + "|" + TITLE + "|" + ARTIST;
+            if (placed && key === placedKey) return placed;
+            var ctx = titleLayer.ctx;
+            ctx.save();
+            ctx.letterSpacing = "0px";
+            ctx.font = fontOf(TITLE_WEIGHT, 100);
+            var widths = {};
+            var charWidth = function (ch) {
+              if (!(ch in widths)) widths[ch] = ctx.measureText(ch).width;
+              return widths[ch];
+            };
+            var cap = ctx.measureText("H").actualBoundingBoxAscent || 72;
+            var title = M.placeTitle(TITLE, charWidth, cap);
+            // the artist: one spaced line, measured at 100 px without its trailing spacing
+            ctx.font = fontOf(ARTIST_WEIGHT, 100);
+            ctx.letterSpacing = (ARTIST_SPACING * 100).toFixed(2) + "px";
+            var artist100 = ARTIST
+              ? Math.max(0, ctx.measureText(ARTIST).width - ARTIST_SPACING * 100)
+              : 0;
+            ctx.restore();
+            var artistSize = M.artistSize(title.size, artist100);
+            placed = {
+              title: title,
+              cap: (cap * title.size) / 100,
+              slots: M.letterSlots(title.lines.join(" ")).length,
+              artistSize: artistSize,
+              artistWidth: (artist100 * artistSize) / 100,
+              artistY: title.bottom + Math.max(46, 0.62 * title.size),
+              gap: Math.max(18, 0.42 * title.size),
+            };
+            placedKey = key;
+            return placed;
+          }
+
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel: a
+           * thinner line is drawn wider and dimmer, so the preview shows what the render shows.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / S);
+            return [w, width / w];
+          }
+
+          // ---------- the title ----------
+          function drawTitle(t, L, env, fade) {
+            var ctx = titleLayer.ctx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            if (fade <= 0 || L.title.chars.length === 0) return;
+            ctx.setTransform(S, 0, 0, S, 0, 0);
+            ctx.font = fontOf(TITLE_WEIGHT, L.title.size);
+            ctx.letterSpacing = "0px";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+            var flash = M.letterFlash(env, INT);
+            var red = M.redSlot(audio, t, L.slots, V.mulberry32);
+            var jumps = M.glitchOffsets(audio, t, L.slots, GLITCH_ON, V.mulberry32);
+            var grey = M.letterColor(MAIN, flash);
+            var redCol = M.redColor(ACC, flash);
+            ctx.globalAlpha = fade;
+            for (var i = 0; i < L.title.chars.length; i++) {
+              var c = L.title.chars[i];
+              if (c.ch === " ") continue;
+              var isRed = c.slot === red;
+              var jump = c.slot >= 0 ? jumps[c.slot] : 0;
+              ctx.shadowColor = isRed ? rgba(ACC, 0.85) : rgba(grey, 0.22 + 0.4 * flash);
+              ctx.shadowBlur = (isRed ? 0.22 : 0.1) * L.title.size * S;
+              ctx.fillStyle = rgba(isRed ? redCol : grey, 1);
+              if (jump === 0) {
+                ctx.fillText(c.ch, c.x, c.y);
+                continue;
+              }
+              // a glitching letter tears: its top jumps the full way, its foot a third as far
+              var split = c.y - 0.42 * L.cap;
+              var span = 2 * L.title.size;
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(c.x - span, split - span, 3 * span, span);
+              ctx.clip();
+              ctx.fillText(c.ch, c.x + jump, c.y);
+              ctx.restore();
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(c.x - span, split, 3 * span, span);
+              ctx.clip();
+              ctx.fillText(c.ch, c.x + jump / 3, c.y);
+              ctx.restore();
+            }
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1;
+          }
+
+          // ---------- the scope line and the artist ----------
+          function scopePath(ctx, songTime, t, side, L, y) {
+            var values = V.scopeLine(audio, t, POINTS, SCOPE_SEEDS[side]);
+            var h = M.scopeHeights(values, songTime, INT, SCOPE_SEEDS[side], V.mulberry32);
+            var inner = side === 0 ? L.title.left - L.gap : L.title.right + L.gap;
+            var outer = side === 0 ? -4 : 1924;
+            ctx.beginPath();
+            for (var k = 0; k < POINTS; k++) {
+              var u = POINTS > 1 ? k / (POINTS - 1) : 0;
+              var x = inner + (outer - inner) * u;
+              if (k === 0) ctx.moveTo(x, y - h[k]);
+              else ctx.lineTo(x, y - h[k]);
+            }
+          }
+          function drawOverlay(t, L, env, fade) {
+            var ctx = overLayer.ctx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            if (fade <= 0) return;
+            ctx.setTransform(S, 0, 0, S, 0, 0);
+            var songTime = audio.songStart + t;
+            var y = M.CENTRE_Y;
+            var line = thin(1.6);
+            ctx.lineJoin = "miter";
+            ctx.miterLimit = 6;
+            ctx.lineCap = "round";
+            ctx.lineWidth = line[0];
+            for (var side = 0; side < 2; side++) {
+              // a faint afterglow of the frame before, like a phosphor screen
+              ctx.shadowBlur = 0;
+              ctx.strokeStyle = rgba(MAIN, 0.22 * line[1] * fade);
+              scopePath(ctx, songTime - 1 / 30, t - 1 / 30, side, L, y);
+              ctx.stroke();
+              ctx.shadowColor = rgba(MAIN, 0.7);
+              ctx.shadowBlur = 7 * S;
+              ctx.strokeStyle = rgba(
+                MAIN,
+                (0.78 + 0.22 * M.letterFlash(env, INT)) * line[1] * fade,
+              );
+              scopePath(ctx, songTime, t, side, L, y);
+              ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
+            // small bright caps where the line meets the title
+            ctx.fillStyle = rgba(MAIN, 0.9 * fade);
+            ctx.fillRect(L.title.left - L.gap - 1.5, y - 1.5, 3, 3);
+            ctx.fillRect(L.title.right + L.gap - 1.5, y - 1.5, 3, 3);
+            if (ARTIST) {
+              ctx.font = fontOf(ARTIST_WEIGHT, L.artistSize);
+              ctx.letterSpacing = (ARTIST_SPACING * L.artistSize).toFixed(2) + "px";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "middle";
+              ctx.fillStyle = rgba(MAIN, 0.62 * fade);
+              ctx.fillText(ARTIST, 960 - L.artistWidth / 2, L.artistY);
+              ctx.letterSpacing = "0px";
+            }
+          }
+
+          function upload(tex, layerCanvas, unit) {
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layerCanvas);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+          }
+
+          var scratchData = new Float32Array(16);
+          var speckData = new Float32Array(48);
+          function renderAt(t) {
+            var L = layout();
+            var songTime = audio.songStart + t;
+            var a = audio.sample(t);
+            var loud = Math.max(0, Math.min(1, a.loud));
+            var env = V.beatEnvelope(audio, t, M.BEAT_RELEASE);
+            var fade = M.textFade(t);
+            drawTitle(t, L, env, fade);
+            drawOverlay(t, L, env, fade);
+
+            var epoch = M.wearEpoch(songTime);
+            var wear = M.filmWear(epoch, GRAIN, V.mulberry32);
+            scratchData.fill(0);
+            speckData.fill(0);
+            for (var i = 0; i < wear.scratches.length; i++) {
+              var s = wear.scratches[i];
+              scratchData.set([s.x, s.y0, s.y1, s.light ? s.width : -s.width], 4 * i);
+            }
+            for (var j = 0; j < wear.specks.length; j++) {
+              var d = wear.specks[j];
+              speckData.set([d.x, d.y, d.r, d.light ? 1 : -1], 4 * j);
+            }
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, W, H);
+            gl.useProgram(filmProg);
+            upload(titleTex, titleLayer.canvas, 0);
+            upload(overTex, overLayer.canvas, 1);
+            gl.uniform1i(filmProg.u.titleTex, 0);
+            gl.uniform1i(filmProg.u.overlayTex, 1);
+            gl.uniform1f(filmProg.u.time, songTime);
+            gl.uniform1f(filmProg.u.expo, M.exposure(loud, INT));
+            gl.uniform1f(filmProg.u.loud, loud);
+            gl.uniform1f(filmProg.u.env, env);
+            gl.uniform1f(filmProg.u.ghostAmt, 0.75 + 0.6 * M.letterFlash(env, INT));
+            // the streaks reach about one letter height above the title
+            var streak = 1.05 * L.title.size;
+            gl.uniform1f(filmProg.u.ghostStep, streak / 32);
+            gl.uniform1f(filmProg.u.ghostTop, L.title.top - streak - 4);
+            gl.uniform1f(filmProg.u.ghostBottom, L.title.bottom);
+            gl.uniform1f(filmProg.u.grainAmt, M.grainAmount(GRAIN));
+            gl.uniform1f(filmProg.u.grainSeed, epoch % 997);
+            gl.uniform1f(filmProg.u.flicker, wear.flicker);
+            gl.uniform1f(filmProg.u.px, 1 / S);
+            gl.uniform3fv(filmProg.u.tint, TINT);
+            gl.uniform4fv(filmProg.u.scratch, scratchData);
+            gl.uniform4fv(filmProg.u.speck, speckData);
+            V.drawQuad(gl, filmProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        draw(0);
+        function fontsChanged() {
+          fontEpoch++;
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s (the text fades in by
+        // itself, drawn from the time).
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

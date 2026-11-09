@@ -1,0 +1,37 @@
+{
+  "name": "Red Letter",
+  "description": "Scratched black-and-white film, a wide-spaced title with one red letter that jumps on the beat, and an oscilloscope line.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "glitchOnBeat", "grain"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "grain", "glitchOnBeat", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#e8e8e8", "accentColor": "#ff2a2a" }
+    },
+    {
+      "name": "Cyan",
+      "thumbnail": "presets/cyan.jpg",
+      "values": { "mainColor": "#e8e8e8", "accentColor": "#2ad9ff" }
+    },
+    {
+      "name": "Toxic",
+      "thumbnail": "presets/toxic.jpg",
+      "values": { "mainColor": "#e8e8e8", "accentColor": "#9dff2a" }
+    },
+    {
+      "name": "Amber",
+      "thumbnail": "presets/amber.jpg",
+      "values": { "mainColor": "#f0e6d0", "accentColor": "#ffa31a" }
+    }
+  ]
+}
