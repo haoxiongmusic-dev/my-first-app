@@ -47,12 +47,13 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/superpowers/plans/2026-11-07-m7-polish.md`): Presets panel, undo/redo, the deferred
       minors from PRs #7–#12, except Iron Wraith's exact tower colour (spec §5.4.3: needs a look
       change; the owner decides)
-- [ ] M8 ten more templates (spec `docs/superpowers/specs/2026-11-10-m8-ten-templates-design.md`,
+- [x] M8 ten more templates (spec `docs/superpowers/specs/2026-11-10-m8-ten-templates-design.md`,
       plan `docs/superpowers/plans/2026-11-10-m8-ten-templates.md`), one branch and pull request
-      each, built overnight 2026-11-10 for the owner to review:
+      each, built overnight 2026-11-10 for the owner to review (all ten built; awaiting the
+      owner's review, not merged):
   - [x] Song clock and line kit (toolkit)
   - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [x] Moon Tide ·
-        [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [x] Black Crown · [ ] Cube Core
+        [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [x] Black Crown · [x] Cube Core
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -195,6 +196,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - Black Crown (three.js: sky and liquid as full-screen shaders, instanced spikes, a mirrored
   reflection pass, 8-bit bloom): a 30 s Final section of T-REX took 4 min 46 s in total with the
   phone copy (frame capture 1 min 54 s ≈ 3.8×), 32.9 MB per 30 s (the phone copy 15.1 MB).
+- Cube Core (three.js: the room as one full-screen shader, edges as camera-facing strips with a
+  glow copy and a mirrored reflection, 8-bit bloom): a 30 s Final section of T-REX took 4 min 24 s
+  in total with the phone copy (frame capture 1 min 54 s ≈ 3.8×), 10.1 MB per 30 s (the phone
+  copy 15.3 MB).
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).
