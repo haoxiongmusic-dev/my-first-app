@@ -30,9 +30,8 @@ passwords are never in it.
 2. Open **my-first-app**, then **Package settings** (bottom of the right-hand side).
 3. Under **Danger Zone**, choose **Change visibility** → **Public**, and confirm.
 
-The image name is `ghcr.io/haoxiongmusic-dev/my-first-app:latest`. The `latest` tag appears once
-this work is merged into `main`. Before that, use the `sha-…` tag Claude gives you (also listed
-on the package page).
+The image name is `ghcr.io/haoxiongmusic-dev/my-first-app:latest`. GitHub updates it each time
+`main` changes. (Already done: the package was made public before the first session.)
 
 ### 0.2 RunPod account
 
@@ -49,7 +48,11 @@ npm run add-user -- yourname
 
 - It asks for a password twice: at least 12 characters (a short sentence works well). The
   password isn't shown, stored, or printed.
-- It prints a line like `yourname:scrypt$…`.
+- It prints the line twice. Copy the one under **"Add this to ACCOUNTS"**, like
+  `yourname:scrypt$…`. The second one, with `\$`, is only for a `.env` file on your PC: pasted
+  into RunPod it gives "ACCOUNTS entry 1 is not username:scrypt$…".
+- Your username is the name you typed after `--` (always lower case). Save the password in your
+  password manager: it can't be looked up later, only replaced by running `add-user` again.
 - Do the same for each friend (their own username and password), and send them their password
   privately.
 - Join the lines with commas: `you:scrypt$…,friend:scrypt$…`. That whole thing is your
@@ -150,7 +153,8 @@ The next session starts again at step 1, with the same volume.
 |---|---|
 | A page saying `This server needs SESSION_SECRET (32+ characters) because ACCOUNTS is set.` | Add `SESSION_SECRET` (step 0.3) to the pod's environment variables and restart the pod |
 | A page saying `This server needs ACCOUNTS (the invited logins) because REQUIRE_LOGIN is set.` | The `ACCOUNTS` setting is empty or missing: paste your accounts line (step 0.3) and restart the pod. The app never runs online without logins |
-| `ACCOUNTS entry N is not username:scrypt$…` | Entry number N of ACCOUNTS was pasted wrongly: make that line again with `npm run add-user` |
+| `ACCOUNTS entry N is not username:scrypt$…` | Entry number N of ACCOUNTS was pasted wrongly (often the `\$` version, quote marks, or `ACCOUNTS=` in front): paste the line under "Add this to ACCOUNTS", or make it again with `npm run add-user`. Fix it under ⋮ → **Edit Pod** |
+| Forgotten username or password | Run `npm run add-user` again, put the new line in ACCOUNTS (⋮ → **Edit Pod**) |
 | `Wrong username or password.` | Check the username (lower case) and password; after 10 wrong tries, wait 10 minutes |
 | 502 for more than 5 minutes | Open the pod's **Logs** and send the last lines to Claude |
 | The upload fails for a long song | Use a shorter song or an MP3 (see "Good to know") |
