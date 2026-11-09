@@ -1,0 +1,955 @@
+<!doctype html>
+<!--
+  Signal Dish: a starry night sky over a sunset horizon. A radio telescope dish stands in
+  silhouette in the middle of the horizon and slowly turns to scan the sky; a faint fan of thin
+  rays behind it and glowing hairline spectra along the horizon either side dance to the music.
+  Now and then a shooting star crosses the sky. The title floats at 40 % height in spaced thin
+  capitals over a horizontal lens streak.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/dish-motion.js and the ring and line maths in the toolkit (all unit-tested).
+
+  Built in two layers: WebGL for the sky, the sunset glow and everything that shines (rays,
+  hairlines, stars, the streak), with a 2D canvas on top for the black silhouettes (the land's
+  ridge and the dish) so their edges stay crisp.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#cfe6ff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff8a1f"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"shootingStars","type":"boolean","label":"Shooting stars","default":true},
+    {"id":"scaleOnBeat","type":"boolean","label":"Pulse on beat","default":false},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/dish-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz,
+      #land {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The title's first line sits just above the lens streak at y 430 (a second line just
+         below it); fitTitles() sets the exact top for the fitted size. */
+      #titles {
+        position: absolute;
+        left: 0;
+        top: 370px;
+        width: 1920px;
+        display: flex;
+        justify-content: center;
+        font-family: "Montserrat", sans-serif;
+        color: #cfe6ff;
+        opacity: 0;
+      }
+      #titleBlock {
+        text-align: center;
+      }
+      #songTitle,
+      #songArtist {
+        display: block;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        text-transform: uppercase;
+      }
+      #songTitle {
+        max-width: 1400px; /* TITLE_SAFE: a long title wraps onto a second line */
+        /* a word too long to wrap overflows to the right, so it is scaled from the left edge */
+        transform-origin: 0 50%;
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.25;
+        font-size: 46px;
+        font-weight: 300;
+        letter-spacing: 0.62em;
+        padding-left: 0.62em; /* balances the spacing after the last letter */
+      }
+      #songArtist {
+        white-space: nowrap;
+        margin-top: 20px;
+        font-size: 16px;
+        font-weight: 400;
+        letter-spacing: 0.7em;
+        padding-left: 0.7em;
+        opacity: 0.72;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <canvas id="land" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="titleBlock">
+          <div id="songTitle" data-var-text="title">SONG NAME</div>
+          <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.DishMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var titleBlock = document.getElementById("titleBlock");
+
+        // ---------- the titles ----------
+        function rgba(hex, alpha) {
+          var c = V.hexToRGB(hex);
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function applyPage() {
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          titles.style.color = setting("mainColor");
+          titles.style.textShadow =
+            "0 0 8px " +
+            rgba(setting("mainColor"), 0.55) +
+            ", 0 0 26px " +
+            rgba(setting("mainColor"), 0.3);
+        }
+        applyPage();
+
+        // Fit the titles across the frame, the first line resting on the lens streak. The song title may wrap onto two lines before it
+        // shrinks; the artist line is never bigger than 0.4 × the title, so the title always
+        // reads first; and past the smallest size a line is scaled down so nothing can ever be
+        // wider than the space. Measured on seeks, settings and font loads only, never in the
+        // timeline callback.
+        var TITLE_SAFE = 1400;
+        var TITLE_LINES = 2;
+        var ARTIST_RATIO = 0.4;
+        var TITLE_FLOOR = 14;
+        var TITLE_SIZE = 46,
+          ARTIST_SIZE = 16,
+          LINE_HEIGHT = 1.25;
+        var fitted = "";
+        /** How wide the line's text really is, including a word too long to wrap. */
+        function textWidth(line) {
+          return Math.max(line.scrollWidth, line.offsetWidth);
+        }
+        /** Scale a line down if, even at its smallest size, it is wider than the space. */
+        function clampWidth(line) {
+          var w = textWidth(line);
+          line.style.transform = w > TITLE_SAFE ? "scale(" + (TITLE_SAFE / w).toFixed(4) + ")" : "";
+        }
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            document.getElementById("songTitle").textContent,
+            document.getElementById("songArtist").textContent,
+            setting("font"),
+            loaded,
+          ].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var title = document.getElementById("songTitle");
+          var artist = document.getElementById("songArtist");
+          title.style.transform = "";
+          artist.style.transform = "";
+          var size = TITLE_SIZE;
+          function titleTooBig() {
+            var maxHeight = TITLE_LINES * size * LINE_HEIGHT + 2;
+            return textWidth(title) > TITLE_SAFE + 1 || title.offsetHeight > maxHeight;
+          }
+          title.style.fontSize = size + "px";
+          while (titleTooBig() && size > TITLE_FLOOR) {
+            size = Math.max(TITLE_FLOOR, Math.floor(size * 0.95));
+            title.style.fontSize = size + "px";
+          }
+          clampWidth(title);
+          var small = Math.min(ARTIST_SIZE, Math.max(10, Math.round(size * ARTIST_RATIO)));
+          artist.style.fontSize = small + "px";
+          while (textWidth(artist) > TITLE_SAFE && small > 8) {
+            small -= 1;
+            artist.style.fontSize = small + "px";
+          }
+          clampWidth(artist);
+          // the streak runs just under the first line, between the lines of a two-line title
+          document.getElementById("titles").style.top =
+            Math.round(M.TITLE_Y - 2 - size * LINE_HEIGHT) + "px";
+        }
+
+        // ---------- shaders ----------
+        // Shapes (rays, hairlines, the shooting star) are triangles in 1080p pixels from the
+        // frame centre, y down, so they keep their size at every preview resolution. Each line
+        // is a strip twice its width whose brightness falls off linearly from its middle
+        // (`across` runs -1..1), so thin slanted lines come out smooth, not stair-stepped.
+        var SHAPE_VS = [
+          "attribute vec2 pos; attribute vec4 col; varying vec4 vCol;",
+          "void main(){ vCol = col; gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0); }",
+        ].join("\n");
+        var SHAPE_FS = [
+          "precision mediump float; varying vec4 vCol;",
+          "void main(){ gl_FragColor = vec4(vCol.rgb * max(0.0, 1.0 - abs(vCol.a)), 1.0); }",
+        ].join("\n");
+        // Stars: points in 1080p pixels from the top-left corner: [x, y, size, brightness].
+        // A star smaller than about a screen pixel is drawn one pixel wide and dimmer.
+        var STAR_VS = [
+          "attribute vec4 star; uniform float pxScale; varying float vB;",
+          "void main(){",
+          "  float size = star.z * 2.0 * pxScale;",
+          "  float shown = max(size, 1.6);",
+          "  vB = star.w * (size / shown) * (size / shown);",
+          "  gl_PointSize = shown;",
+          "  gl_Position = vec4(star.x / 960.0 - 1.0, 1.0 - star.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var STAR_FS = [
+          "precision mediump float; varying float vB; uniform vec3 tint;",
+          "void main(){",
+          "  vec2 d = gl_PointCoord - 0.5;",
+          "  gl_FragColor = vec4(tint * exp(-dot(d, d) * 10.0) * vB, 1.0);",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The night sky, drawn once: a deep blue gradient down to the horizon with a hint of
+        // the sunset in it, and the faint Milky Way: a hazy band of noise with a darker dust
+        // lane. A tiny fixed dither keeps the gradient from banding.
+        var SKY_FS = [
+          "precision highp float;",
+          "uniform vec3 accCol; uniform vec4 band; uniform float bandHalf, horizon;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash(i), b = hash(i + vec2(1.0, 0.0));",
+          "  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int i = 0; i < 5; i++){ s += a * vnoise(p); p = p * 2.07 + vec2(13.1, 7.7); a *= 0.5; }",
+          "  return s;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  float h = clamp(p.y / horizon, 0.0, 1.0);",
+          "  vec3 top = vec3(0.004, 0.010, 0.040);",
+          "  vec3 mid = vec3(0.012, 0.042, 0.140);",
+          "  vec3 low = vec3(0.030, 0.100, 0.270);",
+          "  vec3 c = mix(top, mid, smoothstep(0.0, 0.7, h));",
+          "  c = mix(c, low, smoothstep(0.55, 1.0, h) * 0.9);",
+          "  c += accCol * 0.05 * smoothstep(0.7, 1.0, h);",
+          // the Milky Way
+          "  vec2 a = band.xy; vec2 d = band.zw - band.xy; float len = length(d); vec2 dir = d / len;",
+          "  vec2 q = p - a; float along = dot(q, dir) / len; float across = dot(q, vec2(-dir.y, dir.x));",
+          "  float wob = (fbm(vec2(along * 6.0, 1.7)) - 0.5) * bandHalf * 0.8;",
+          "  float x = (across - wob) / bandHalf;",
+          "  float core = exp(-x * x * 1.6);",
+          "  float n = fbm(p / 150.0 + vec2(3.1, 8.4));",
+          "  float fine = fbm(p / 38.0 + vec2(1.3, 2.9));",
+          "  float haze = core * (0.35 + 0.9 * n * n) * (0.6 + 0.6 * fine);",
+          "  float lane = exp(-(x - 0.12) * (x - 0.12) * 18.0) * smoothstep(0.35, 0.65, fbm(p / 90.0 + vec2(9.0, 4.0)));",
+          "  haze *= 1.0 - 0.6 * lane;",
+          "  haze *= smoothstep(0.0, 0.25, along) * smoothstep(1.0, 0.7, along) * (1.0 - 0.6 * h * h);",
+          "  c += vec3(0.42, 0.50, 0.72) * haze * 0.15;",
+          "  c += (hash(floor(p) + vec2(5.0, 9.0)) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // Everything combined: the sky, the sunset glow on the horizon (brighter when loud),
+        // the lens streak behind the title and everything that shines (sharp plus glow),
+        // screened over the sky. Positions are 1080p pixels, y down.
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D sky, lines, bloomA, bloomB, bloomC;",
+          "uniform float glow, streak, pxScale, horizon, titleY;",
+          "uniform vec3 mainCol, accCol;",
+          "varying vec2 uv;",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec3 base = texture2D(sky, uv).rgb;",
+          "  float dx = p.x - 960.0;",
+          "  float up = max(horizon - p.y, 0.0);",
+          // the sunset: a wide warm haze, a bright band on the horizon and a hot heart behind the dish
+          "  vec3 hot = mix(accCol, vec3(1.0, 0.94, 0.80), 0.55);",
+          "  vec3 light = accCol * exp(-dx * dx / (2.0 * 800.0 * 800.0)) * exp(-up / 210.0) * 0.10;",
+          "  light += accCol * exp(-dx * dx / (2.0 * 470.0 * 470.0)) * exp(-up / 80.0) * 0.55;",
+          "  light += hot * exp(-dx * dx / (2.0 * 210.0 * 210.0)) * exp(-up / 24.0) * 0.75;",
+          "  light *= glow;",
+          // the rays, hairlines, stars and shooting stars: sharp plus a medium, a wide and a
+          // very wide glow (the hairlines light the haze over the horizon)
+          "  light += texture2D(lines, uv).rgb + texture2D(bloomA, uv).rgb * 0.9 + texture2D(bloomB, uv).rgb * 1.3 + texture2D(bloomC, uv).rgb * 2.6;",
+          // the lens streak through the title: a hairline core and a soft halo
+          "  float sy = p.y - titleY;",
+          "  float sw = max(1.0, 0.8 / pxScale);",
+          "  float core = exp(-sy * sy / (2.0 * sw * sw)) / sw * exp(-abs(dx) / 520.0);",
+          "  float halo = exp(-sy * sy / (2.0 * 7.0 * 7.0)) * exp(-dx * dx / (2.0 * 380.0 * 380.0));",
+          "  float wide = exp(-sy * sy / (2.0 * 40.0 * 40.0)) * exp(-dx * dx / (2.0 * 600.0 * 600.0));",
+          "  light += (mix(mainCol, vec3(1.0), 0.5) * core * 0.7 + mainCol * halo * 0.16 + mainCol * wide * 0.035) * streak;",
+          "  light = vec3(1.0) - exp(-light * 1.25);",
+          "  vec3 c = vec3(1.0) - (vec3(1.0) - base) * (vec3(1.0) - light);",
+          "  c *= mix(0.7, 1.0, smoothstep(1.25, 0.35, length((uv - vec2(0.5, 0.42)) * vec2(1.2, 1.0))));",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = Number(setting("intensity"));
+          var SCALE_ON = setting("scaleOnBeat") === true;
+          var SHOOT_ON = setting("shootingStars") === true;
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          var spec = new Float32Array(32);
+          var RAYS = M.rayCount(setting("bandCount"));
+          var RAY_ANGLES = V.ringAngles(RAYS, 180);
+          var RAY_W = M.rayWeights(RAYS, V.mulberry32);
+          var RAY_DIRS = [];
+          for (var r = 0; r < RAYS; r++) RAY_DIRS.push(V.ringPoint(RAY_ANGLES[r], "circle"));
+          var HAIRS = M.hairCount(setting("bandCount"));
+          var HAIR_X = M.hairOffsets(HAIRS);
+          var HAIR_W = M.hairWeights(HAIRS, V.mulberry32);
+          var SKY = M.buildSky(V.mulberry32);
+          // where each hairline meets the land (it rises from behind the ridge)
+          var HAIR_FOOT = [];
+          function ridgeAt(x) {
+            var f = Math.max(0, Math.min(SKY.ridge.length - 1.001, x / M.RIDGE_STEP));
+            var i = Math.floor(f);
+            return SKY.ridge[i] + (SKY.ridge[i + 1] - SKY.ridge[i]) * (f - i);
+          }
+          for (var h = 0; h < HAIRS; h++) {
+            HAIR_FOOT.push([ridgeAt(960 - HAIR_X[h]), ridgeAt(960 + HAIR_X[h])]);
+          }
+
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var landCanvas = document.getElementById("land");
+          if (landCanvas.width !== W) landCanvas.width = W;
+          if (landCanvas.height !== H) landCanvas.height = H;
+          var ctx = landCanvas.getContext("2d");
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          // What shines is drawn sharp into `lines`, then blurred at half and quarter size.
+          var lines = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4)),
+            qB = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4));
+          var eA = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8)),
+            eB = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8));
+          var sky = V.createTarget(gl, W, H); // the night sky: static, drawn once below
+
+          var shapeProg = V.createProgram(gl, SHAPE_VS, SHAPE_FS);
+          var starProg = V.createProgram(gl, STAR_VS, STAR_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var skyProg = V.createProgram(gl, QUAD_VS, SKY_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+          var shapeBuf = gl.createBuffer();
+          var starBuf = gl.createBuffer();
+
+          // The stars as points: the steady ones go into the sky once; the few that twinkle
+          // are drawn each frame at their brightness for the moment.
+          var steady = [],
+            twinkling = [];
+          for (var s = 0; s < M.STAR_COUNT; s++) {
+            var so = s * M.STAR_STRIDE;
+            (SKY.stars[so + 4] > 0 ? twinkling : steady).push(s);
+          }
+          var steadyPts = new Float32Array(4 * steady.length);
+          for (var i = 0; i < steady.length; i++) {
+            var o = steady[i] * M.STAR_STRIDE;
+            steadyPts.set(
+              [SKY.stars[o], SKY.stars[o + 1], SKY.stars[o + 2], SKY.stars[o + 3]],
+              4 * i,
+            );
+          }
+          var twinklePts = new Float32Array(4 * twinkling.length);
+
+          // Triangles for the frame's shapes: x, y, r, g, b, across per vertex.
+          var verts = new Float32Array(6 * 6 * 4096);
+          var nv = 0;
+          function vert(x, y, c, k, e) {
+            if (6 * (nv + 1) > verts.length) {
+              var bigger = new Float32Array(verts.length * 2);
+              bigger.set(verts);
+              verts = bigger;
+            }
+            var o = 6 * nv++;
+            verts[o] = x;
+            verts[o + 1] = y;
+            verts[o + 2] = c[0] * k;
+            verts[o + 3] = c[1] * k;
+            verts[o + 4] = c[2] * k;
+            verts[o + 5] = e;
+          }
+          /** A quad a-b-c-d (corners in order, a/d on one edge), coloured cA at a/b, cB at c/d. */
+          function quad(ax, ay, bx, by, cx, cy, dx, dy, cA, kA, cB, kB) {
+            vert(ax, ay, cA, kA, 1);
+            vert(bx, by, cA, kA, -1);
+            vert(cx, cy, cB, kB, -1);
+            vert(ax, ay, cA, kA, 1);
+            vert(cx, cy, cB, kB, -1);
+            vert(dx, dy, cB, kB, 1);
+          }
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel:
+           * a thinner line is drawn wider and dimmer, so the preview shows what the render
+           * shows when scaled down.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+            return [w, width / w];
+          }
+          /** A stroke from (x0, y0) to (x1, y1) in frame pixels, coloured cA → cB. */
+          function stroke(x0, y0, x1, y1, width, cA, kA, cB, kB) {
+            var t = thin(width);
+            var dx = x1 - x0,
+              dy = y1 - y0;
+            var len = Math.sqrt(dx * dx + dy * dy) || 1;
+            // twice as wide, fading to its edges: the same light as a sharp line this wide
+            var nx = (-dy / len) * t[0],
+              ny = (dx / len) * t[0];
+            x0 -= 960;
+            x1 -= 960;
+            y0 -= 540;
+            y1 -= 540;
+            quad(
+              x0 + nx,
+              y0 + ny,
+              x0 - nx,
+              y0 - ny,
+              x1 - nx,
+              y1 - ny,
+              x1 + nx,
+              y1 + ny,
+              cA,
+              kA * t[1],
+              cB,
+              kB * t[1],
+            );
+          }
+          function mixRGB(a, b, f) {
+            return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+          }
+          var WHITE = [1, 1, 1];
+          var RAY_COL = mixRGB(ACC, WHITE, 0.15);
+          var HAIR_FOOT_COL = mixRGB(mixRGB(MAIN, ACC, 0.45), WHITE, 0.35);
+          var HAIR_TOP_COL = MAIN;
+          var SHOOT_COL = mixRGB(MAIN, WHITE, 0.6);
+
+          /** The rays, hairlines and shooting star for time t, into the shape buffer. */
+          function buildShapes(t, songTime) {
+            nv = 0;
+            audio.spectrum(t, spec);
+            // the fan of rays behind the dish: bass at the top, mirrored to both sides
+            var rays = M.rayLengths(V.ringValues(spec, RAY_ANGLES, 180), INT, RAY_W);
+            for (var r = 0; r < RAYS; r++) {
+              var len = rays[r];
+              if (len < 0.5) continue;
+              var d = RAY_DIRS[r];
+              var x0 = 960 + d[0] * M.RAY_INNER,
+                y0 = M.RAY_CY + d[1] * M.RAY_INNER;
+              var fade = 0.35 + 0.65 * (len / M.RAY_MAX);
+              var mx = x0 + d[0] * len * 0.3,
+                my = y0 + d[1] * len * 0.3;
+              stroke(x0, y0, mx, my, 1.3, ACC, 0.06, RAY_COL, 0.8 * fade);
+              stroke(mx, my, x0 + d[0] * len, y0 + d[1] * len, 1.3, RAY_COL, 0.8 * fade, ACC, 0.03);
+            }
+            // the hairlines on the horizon, mirrored, the bass nearest the dish
+            var hairs = M.hairHeights(V.mirrorBars(spec, HAIRS, false), HAIR_W, INT);
+            for (var h = 0; h < HAIRS; h++) {
+              var ht = hairs[h];
+              if (ht < 0.5) continue;
+              for (var side = 0; side < 2; side++) {
+                var x = side ? 960 + HAIR_X[h] : 960 - HAIR_X[h];
+                var foot = HAIR_FOOT[h][side] + 2;
+                var k = 0.85 + 0.35 * (ht / M.HAIR_MAX);
+                stroke(x, foot, x, foot - ht, M.HAIR_WIDTH, HAIR_FOOT_COL, k, HAIR_TOP_COL, 0.05);
+              }
+            }
+            // a shooting star, now and then
+            if (SHOOT_ON) {
+              var st = M.shootingStar(songTime, V.mulberry32);
+              if (st && st.alpha > 0.01) {
+                stroke(st.x0, st.y0, st.x1, st.y1, 1.6, MAIN, 0, SHOOT_COL, 0.95 * st.alpha);
+                stroke(st.x1 - 2, st.y1, st.x1 + 2, st.y1, 2.4, WHITE, st.alpha, WHITE, st.alpha);
+              }
+            }
+          }
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+          function drawArrays(prog, buffer, data, count, mode, layout) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+            var stride = 0;
+            for (var i = 0; i < layout.length; i++) stride += layout[i][1];
+            var locs = [],
+              offset = 0;
+            for (var j = 0; j < layout.length; j++) {
+              var loc = gl.getAttribLocation(prog, layout[j][0]);
+              gl.enableVertexAttribArray(loc);
+              gl.vertexAttribPointer(loc, layout[j][1], gl.FLOAT, false, stride * 4, offset * 4);
+              offset += layout[j][1];
+              locs.push(loc);
+            }
+            gl.drawArrays(mode, 0, count);
+            for (var k = 0; k < locs.length; k++) gl.disableVertexAttribArray(locs[k]);
+          }
+          function drawStars(points, count) {
+            if (count === 0) return;
+            gl.useProgram(starProg);
+            gl.uniform1f(starProg.u.pxScale, PREVIEW_SCALE);
+            gl.uniform3fv(starProg.u.tint, [0.86, 0.91, 1.0]);
+            drawArrays(starProg, starBuf, points, count, gl.POINTS, [["star", 4]]);
+          }
+
+          // The night sky never changes, so it is drawn once: gradient, Milky Way, then the
+          // steady stars added on top.
+          (function drawSky() {
+            bindTarget(sky);
+            gl.useProgram(skyProg);
+            gl.uniform3fv(skyProg.u.accCol, ACC);
+            gl.uniform4fv(skyProg.u.band, M.MILKY.slice(0, 4));
+            gl.uniform1f(skyProg.u.bandHalf, M.MILKY[4]);
+            gl.uniform1f(skyProg.u.horizon, M.HORIZON_Y);
+            V.drawQuad(gl, skyProg);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            drawStars(steadyPts, steady.length);
+            gl.disable(gl.BLEND);
+          })();
+
+          // ---------- the silhouettes (2D, on top) ----------
+          var INK = "#020308";
+          function path(points) {
+            ctx.beginPath();
+            for (var i = 0; i < points.length; i++) {
+              if (i === 0) ctx.moveTo(points[i][0], points[i][1]);
+              else ctx.lineTo(points[i][0], points[i][1]);
+            }
+            ctx.closePath();
+          }
+          /**
+           * The land and the dish, black against the sky. The dish is backlit by the sunset:
+           * a soft halo of the accent colour round its edges; the ridge's top edge catches a
+           * little of the glow near the middle.
+           */
+          function drawSilhouettes(aim, turn, glowK) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            ctx.setTransform(PREVIEW_SCALE, 0, 0, PREVIEW_SCALE, 0, 0);
+            var shape = M.dishShape(aim, turn);
+            var strutW = Math.max(1.8, 1.2 / PREVIEW_SCALE);
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.fillStyle = INK;
+            ctx.strokeStyle = INK;
+            // the dish, with its halo
+            ctx.shadowColor = rgba(setting("accentColor"), Math.min(1, 0.8 * glowK));
+            ctx.shadowBlur = 9 * PREVIEW_SCALE;
+            var parts = [shape.mount, shape.hub, shape.back, shape.rim];
+            for (var q = 0; q < parts.length; q++) {
+              path(parts[q]);
+              ctx.fill();
+            }
+            ctx.lineWidth = strutW;
+            for (var u = 0; u < shape.struts.length; u++) {
+              var su = shape.struts[u];
+              ctx.beginPath();
+              ctx.moveTo(su[0], su[1]);
+              ctx.lineTo(su[2], su[3]);
+              ctx.stroke();
+            }
+            ctx.beginPath();
+            ctx.arc(shape.feed[0], shape.feed[1], shape.feed[2], 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(M.DISH_X, M.PIVOT_Y, 6, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.shadowColor = "rgba(0,0,0,0)";
+            ctx.shadowBlur = 0;
+            // the ridge: its top edge catches the glow, then the land fills to the bottom
+            var rim = ctx.createLinearGradient(160, 0, 1760, 0);
+            rim.addColorStop(0, rgba(setting("accentColor"), 0));
+            rim.addColorStop(0.5, rgba(setting("accentColor"), Math.min(1, 0.45 * glowK)));
+            rim.addColorStop(1, rgba(setting("accentColor"), 0));
+            ctx.beginPath();
+            ctx.moveTo(0, SKY.ridge[0]);
+            for (var i = 1; i < SKY.ridge.length; i++) ctx.lineTo(i * M.RIDGE_STEP, SKY.ridge[i]);
+            ctx.strokeStyle = rim;
+            ctx.lineWidth = Math.max(1.6, 1.2 / PREVIEW_SCALE);
+            ctx.stroke();
+            ctx.lineTo(1920, 1080);
+            ctx.lineTo(0, 1080);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          function renderAt(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, M.PULSE_RELEASE);
+            var glowK = M.glowLevel(a.loud);
+            buildShapes(t, songTime);
+            // the title pulses on the beat (setting a style is fine here; measuring is not)
+            titleBlock.style.transform = "scale(" + M.titleScale(env, SCALE_ON).toFixed(4) + ")";
+
+            // 1. what shines: rays, hairlines, the shooting star and the twinkling stars
+            bindTarget(lines);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            if (nv > 0) {
+              gl.useProgram(shapeProg);
+              drawArrays(shapeProg, shapeBuf, verts.subarray(0, 6 * nv), nv, gl.TRIANGLES, [
+                ["pos", 2],
+                ["col", 4],
+              ]);
+            }
+            for (var i = 0; i < twinkling.length; i++) {
+              var o = twinkling[i] * M.STAR_STRIDE;
+              twinklePts[4 * i] = SKY.stars[o];
+              twinklePts[4 * i + 1] = SKY.stars[o + 1];
+              twinklePts[4 * i + 2] = SKY.stars[o + 2] + 0.4;
+              twinklePts[4 * i + 3] = M.starLevel(SKY, twinkling[i], songTime);
+            }
+            drawStars(twinklePts, twinkling.length);
+            gl.disable(gl.BLEND);
+
+            // 2. glow: half-size medium, quarter-size wide (radii kept in 1080p terms)
+            copy(lines, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, hA, hB, 3.0 * PREVIEW_SCALE);
+            copy(hA, qA);
+            V.blur(gl, blurProg, qA, qB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, qA, qB, 3.0 * PREVIEW_SCALE);
+            copy(qA, eA);
+            V.blur(gl, blurProg, eA, eB, 2.0 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, eA, eB, 4.0 * PREVIEW_SCALE);
+
+            // 3. the whole picture onto the screen
+            bindTarget(null);
+            gl.useProgram(compProg);
+            var units = [
+              ["sky", sky.tex],
+              ["lines", lines.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", qA.tex],
+              ["bloomC", eA.tex],
+            ];
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(compProg.u[units[u][0]], u);
+            }
+            gl.uniform1f(compProg.u.glow, glowK);
+            gl.uniform1f(compProg.u.streak, M.streakLevel(a.loud));
+            gl.uniform1f(compProg.u.pxScale, PREVIEW_SCALE);
+            gl.uniform1f(compProg.u.horizon, M.HORIZON_Y);
+            gl.uniform1f(compProg.u.titleY, M.TITLE_Y);
+            gl.uniform3fv(compProg.u.mainCol, MAIN);
+            gl.uniform3fv(compProg.u.accCol, ACC);
+            V.drawQuad(gl, compProg);
+            gl.activeTexture(gl.TEXTURE0);
+
+            // 4. the land and the dish on top
+            drawSilhouettes(M.dishAim(songTime), M.dishTurn(songTime), glowK);
+          }
+          return { render: renderAt, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 1.8, ease: "power2.out" },
+          0.4,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
