@@ -47,6 +47,12 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/superpowers/plans/2026-11-07-m7-polish.md`): Presets panel, undo/redo, the deferred
       minors from PRs #7–#12, except Iron Wraith's exact tower colour (spec §5.4.3: needs a look
       change; the owner decides)
+- [ ] M8 ten more templates (spec `docs/superpowers/specs/2026-11-10-m8-ten-templates-design.md`,
+      plan `docs/superpowers/plans/2026-11-10-m8-ten-templates.md`), one branch and pull request
+      each, built overnight 2026-11-10 for the owner to review:
+  - [x] Song clock and line kit (toolkit)
+  - [ ] Sky Pillar · [ ] Afterglow · [ ] Red Letter · [ ] Signal Dish · [ ] Moon Tide ·
+        [ ] Neon Coil · [ ] World Orbit · [ ] Ember Mesh · [ ] Black Crown · [ ] Cube Core
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -105,6 +111,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   left/right), `beatEnvelope(audio, t, release)`, `bandsToRingCount(pct, full)`. Analyzer
   band values sit around 0.5–1 in loud music: shape bar lengths (Halo Rings squares them) or
   every bar looks full.
+- **Song clock and line kit** (toolkit): `songClock(audio, t)` → `{elapsed, total, fraction}` in
+  whole-song seconds (a section's analysis carries `songDuration`), `formatClock(s)`;
+  `mirrorBars(spectrum, count, fromCentre)`, `smoothSpectrum(spectrum, radius)`,
+  `scopeLine(audio, t, count, seed)` (seeded by the song frame, so sections match).
 - **three.js templates** load `assets/three-kit.js` (`npm run build:three`, then
   `npm run sync:toolkit`, which copies it only into templates that reference it). The bundle
   swaps three.js's own `Math.random`/frame loop for a seeded generator so `hyperframes check`
