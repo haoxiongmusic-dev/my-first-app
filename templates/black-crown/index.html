@@ -1,0 +1,1006 @@
+<!doctype html>
+<!--
+  Black Crown: a dark glossy liquid under a fiery sky. In the middle of the liquid, a crown of
+  black ferrofluid spikes (tallest in the middle, fanning outwards) bursts up with the bass and
+  sinks back when it fades; every strong beat, and a slow constant pulse, sends rings out across
+  the liquid. Small at the top centre: a thin white bar spectrum, "ARTIST – TITLE", a progress
+  line and the timer.
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials).
+    1. The sky (domain-warped noise in the two colours, slowly churning, flaring with the
+       loudness) is drawn into an 8-bit texture. It is the sky itself, and what the liquid and
+       the spikes reflect.
+    2. The crown, mirrored under the liquid, is drawn into a second texture: its reflection.
+    3. The picture: the sky above the horizon and, below it, the liquid (worked out per pixel
+       from the camera: ripples tilt its surface, which reflects the sky and the crown's
+       reflection); then the spikes, one draw call (cones on one shared geometry, shaped and
+       lit in the shader: glossy black reflecting the sky, with sharp hot highlights); a glow
+       on the brightest parts.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The crown, ripple and layout maths
+  live in assets/crown-motion.js (unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ff8a1f"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#8a1a0a"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"spikeCount","type":"number","label":"Spikes","default":24,"min":12,"max":40,"step":1},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":150,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":50,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/crown-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* Small at the top centre, stacked: the bar spectrum, "ARTIST – TITLE" (which may wrap onto
+         a second line and pushes the rest down), the progress line and the timer. */
+      #hud {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        font-family: "Montserrat", sans-serif;
+        color: #fff;
+        opacity: 0;
+      }
+      #hudInner {
+        position: absolute;
+        left: 0;
+        top: 30px;
+        width: 1920px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #hudBars {
+        width: 560px;
+        height: 44px;
+      }
+      #hudText {
+        margin-top: 12px;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
+        max-width: 1000px; /* TEXT_SAFE: a long name wraps onto a second line */
+        white-space: normal;
+        text-wrap: balance;
+        text-align: center;
+        text-transform: uppercase;
+        font-size: 22px;
+        line-height: 1.28;
+        font-weight: 600;
+        letter-spacing: 0.24em;
+        margin-right: -0.24em; /* the last letter's spacing would push the text off-centre */
+        text-shadow: 0 1px 10px rgba(0, 0, 0, 0.65);
+      }
+      #progress {
+        position: relative;
+        margin-top: 14px;
+        width: 380px;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.24);
+      }
+      #progressFill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 100%;
+        background: #fff;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
+      }
+      #timer {
+        margin-top: 9px;
+        font-size: 14px;
+        line-height: 18px;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        margin-right: -0.18em;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        opacity: 0.85;
+        text-shadow: 0 1px 8px rgba(0, 0, 0, 0.65);
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="hud"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="hudInner">
+          <canvas id="hudBars" width="560" height="44"></canvas>
+          <div id="hudText">
+            <span id="songArtist" data-var-text="artist">ARTIST NAME</span
+            ><span id="titleDash"> – </span
+            ><span id="songTitle" data-var-text="title">SONG NAME</span>
+          </div>
+          <div id="progress"><div id="progressFill"></div></div>
+          <div id="timer">0:00 / 0:00</div>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.CrownMotion;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // ---------- the text at the top ----------
+        var timer = document.getElementById("timer");
+        var progressFill = document.getElementById("progressFill");
+        var PROGRESS_W = 380;
+        function applyPage() {
+          document.getElementById("hud").style.fontFamily = '"' + setting("font") + '", sans-serif';
+          timer.style.display = setting("showTimer") === true ? "" : "none";
+          // the progress line stays about one screen pixel thick in the small preview
+          var line = thin(2);
+          var bar = document.getElementById("progress");
+          bar.style.height = line[0].toFixed(2) + "px";
+          bar.style.opacity = line[1].toFixed(3);
+        }
+
+        // Fit "ARTIST – TITLE" (TEXT_SAFE wide): it may wrap onto two lines before it shrinks,
+        // and past the smallest size it is scaled down so it can never be wider than the space.
+        // Measured on seeks, settings and font loads only, never in the timeline callback.
+        var TEXT_SAFE = 1000;
+        var TEXT_LINES = 2;
+        var TEXT_SIZE = 22,
+          TEXT_FLOOR = 12,
+          TEXT_LH = 1.28;
+        var fitted = "";
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var artist = document.getElementById("songArtist").textContent.trim();
+          var title = document.getElementById("songTitle").textContent.trim();
+          var key = [artist, title, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          // the dash only between two names; with neither, no text at all
+          document.getElementById("titleDash").style.display = artist && title ? "" : "none";
+          var line = document.getElementById("hudText");
+          line.style.display = artist || title ? "" : "none";
+          line.style.transform = "";
+          var size = TEXT_SIZE;
+          line.style.fontSize = size + "px";
+          function textWidth() {
+            return Math.max(line.scrollWidth, line.offsetWidth);
+          }
+          function tooBig() {
+            var maxHeight = TEXT_LINES * size * TEXT_LH + 2;
+            return textWidth() > TEXT_SAFE + 1 || line.offsetHeight > maxHeight;
+          }
+          while (tooBig() && size > TEXT_FLOOR) {
+            size = Math.max(TEXT_FLOOR, Math.floor(size * 0.95));
+            line.style.fontSize = size + "px";
+          }
+          var w = textWidth();
+          line.style.transform = w > TEXT_SAFE ? "scale(" + (TEXT_SAFE / w).toFixed(4) + ")" : "";
+        }
+
+        /**
+         * A line this many 1080p pixels wide, never thinner than about one screen pixel: a
+         * thinner line is drawn wider and dimmer, so the preview shows what the render shows
+         * when scaled down. Returns [width, brightness].
+         */
+        function thin(width) {
+          var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+          return [w, width / w];
+        }
+
+        // ---------- the thin white bar spectrum ----------
+        var barsCanvas = document.getElementById("hudBars");
+        var barsCtx = barsCanvas.getContext("2d");
+        var BAR_HALF = 20; // px: a full bar reaches this far above and below the middle
+        function drawBars(heights) {
+          var Wc = barsCanvas.width,
+            Hc = barsCanvas.height,
+            mid = Hc / 2,
+            n = heights.length;
+          barsCtx.clearRect(0, 0, Wc, Hc);
+          var pitch = (Wc - 20) / n;
+          var style = thin(2);
+          barsCtx.fillStyle = "rgba(255,255,255," + (0.92 * style[1]).toFixed(3) + ")";
+          barsCtx.shadowColor = "rgba(255,255,255,0.55)";
+          barsCtx.shadowBlur = 5;
+          for (var i = 0; i < n; i++) {
+            var half = 1 + (BAR_HALF - 1) * heights[i];
+            var x = 10 + pitch * (i + 0.5) - style[0] / 2;
+            barsCtx.fillRect(x, mid - half, style[0], 2 * half);
+          }
+        }
+
+        /** A setting's colour as a three.js colour (plain display values). */
+        function color(hex) {
+          var rgb = V.hexToRGB(hex);
+          return new THREE.Color(rgb[0], rgb[1], rgb[2]);
+        }
+
+        // ---------- shaders ----------
+        var SCREEN_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+        // Smooth value noise from a seeded texture: each texel holds its own random value and
+        // its three neighbours' (right, up, up-right), so one lookup gives all four corners.
+        var NOISE_GLSL = [
+          "uniform sampler2D noiseTex;",
+          "float noise(vec2 x){",
+          "  vec2 p = floor(x); vec2 f = fract(x);",
+          "  f = f * f * (3.0 - 2.0 * f);",
+          "  vec4 c = texture2D(noiseTex, (mod(p, 256.0) + 0.5) / 256.0);",
+          "  return mix(mix(c.x, c.y, f.x), mix(c.z, c.w, f.x), f.y);",
+          "}",
+        ].join("\n");
+        // The fiery sky, drawn over the whole frame into a texture (only the part above the
+        // horizon is seen directly; the liquid and the spikes reflect it). Clouds of
+        // domain-warped noise on a high ceiling, so they stretch and crowd toward the horizon,
+        // which glows; darker toward the top, where the titles sit.
+        var SKY_FS = [
+          NOISE_GLSL,
+          "uniform vec3 mainCol, accCol; uniform float time, flare, horizonV, aspect, glow;",
+          "varying vec2 vUv;",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int i = 0; i < 5; i++) {",
+          "    s += a * noise(p);",
+          "    p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(3.1, 7.7);",
+          "    a *= 0.5;",
+          "  }",
+          "  return s / 0.97;",
+          "}",
+          "void main(){",
+          "  float h = abs(vUv.y - horizonV) / (1.0 - horizonV);",
+          "  float depth = 1.0 / (h + 0.28);",
+          "  vec2 p = vec2((vUv.x - 0.5) * aspect * depth * 1.1, depth * 1.6 + time * 0.045);",
+          "  p.x += time * 0.012;",
+          "  vec2 q = vec2(fbm(p + vec2(0.0, 0.0) + time * 0.02), fbm(p + vec2(5.2, 1.3) - time * 0.017));",
+          "  vec2 r = vec2(fbm(p + 3.4 * q + vec2(1.7, 9.2) + time * 0.035),",
+          "                fbm(p + 3.4 * q + vec2(8.3, 2.8) - time * 0.03));",
+          "  float f = fbm(p + 3.2 * r);",
+          "  float heat = f + 0.35 * (r.x - 0.5);",
+          "  vec3 col = accCol * smoothstep(0.28, 0.7, heat) * 1.1;",
+          "  col = mix(col, mainCol, smoothstep(0.52, 0.9, heat));",
+          "  vec3 hot = mix(mainCol, vec3(1.0, 0.94, 0.82), 0.55);",
+          "  col += hot * smoothstep(0.8, 1.04, heat + 0.25 * q.y - 0.1) * 0.9;",
+          // black voids between the fiery clouds
+          "  float lit = smoothstep(0.3, 0.72, q.x + 0.4 * r.y - 0.08);",
+          "  col *= 0.05 + 0.95 * lit * lit;",
+          // light falls off toward the top of the sky; the horizon itself glows
+          "  col *= mix(1.15, 0.3, smoothstep(0.0, 1.0, h));",
+          "  col += mainCol * exp(-h * 10.0) * 0.5 + accCol * exp(-h * 3.0) * 0.3;",
+          // the horizon behind the crown burns hotter as the crown rises
+          "  vec2 gc = (vUv - vec2(0.5, horizonV)) * vec2(aspect * 0.9, 2.4);",
+          "  col += mix(mainCol, vec3(1.0, 0.92, 0.8), 0.35) * glow * 0.38 * exp(-dot(gc, gc) * 4.5);",
+          "  gl_FragColor = vec4(col * flare, 1.0);",
+          "}",
+        ].join("\n");
+        // The sky (above the horizon) and the liquid (below it). For a liquid pixel: where its
+        // ray from the camera meets the plane, the ripples' slope there tilts the surface, the
+        // tilted surface reflects the sky (more at grazing angles) and the crown's reflection
+        // (wobbling with the ripples); the ripples' crests catch a little of the fire.
+        var WATER_FS = [
+          NOISE_GLSL,
+          "uniform sampler2D sky, refl;",
+          "uniform mat4 projView, invProjView; uniform vec3 camPos; uniform vec2 crown;",
+          "uniform vec3 rings[20]; uniform int ringCount;",
+          "uniform vec3 mainCol, accCol; uniform float time, horizonV, domeR, level;",
+          "varying vec2 vUv;",
+          "vec3 skyDir(vec3 d){",
+          "  vec4 c = projView * vec4(d, 0.0);",
+          "  vec2 uv = c.xy / max(c.w, 1e-4) * 0.5 + 0.5;",
+          "  uv = clamp(uv, vec2(0.002, horizonV + 0.003), vec2(0.998, 0.998));",
+          "  return texture2D(sky, uv).rgb;",
+          "}",
+          "void main(){",
+          "  vec4 w = invProjView * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);",
+          "  vec3 dir = normalize(w.xyz / w.w - camPos);",
+          "  if (dir.y >= -1e-4) { gl_FragColor = vec4(texture2D(sky, vUv).rgb, 1.0); return; }",
+          "  float dist = camPos.y / -dir.y;",
+          "  vec3 P = camPos + dir * dist;",
+          "  vec2 d = P.xz - crown;",
+          "  float r = length(d) + 1e-4;",
+          "  vec2 rd = d / r;",
+          "  float fw = max(fwidth(r), 1e-4);",
+          "  float slope = 0.0, crest = 0.0;",
+          "  for (int i = 0; i < 20; i++) {",
+          "    if (i >= ringCount) break;",
+          "    vec3 R = rings[i];",
+          "    float x = (r - R.x) / R.z;",
+          "    if (abs(x) > 3.0) continue;",
+          "    float g = exp(-x * x);",
+          "    float s = sin(x * 3.0), c = cos(x * 3.0);",
+          // rings thinner than a few pixels (far away) fade out instead of flickering
+          "    float aa = clamp(R.z / (fw * 4.0) - 0.25, 0.0, 1.0);",
+          "    slope += R.y * aa * (3.0 * c - 2.0 * x * s) * g / R.z;",
+          "    crest += R.y * aa * s * g;",
+          "  }",
+          // small slow waves all over the liquid, fading out with distance
+          "  vec2 wp = P.xz * vec2(1.1, 1.6) + vec2(time * 0.13, -time * 0.09);",
+          "  float e = 0.35;",
+          "  vec2 wave = vec2(noise(wp + vec2(e, 0.0)) - noise(wp - vec2(e, 0.0)),",
+          "                   noise(wp + vec2(0.0, e)) - noise(wp - vec2(0.0, e)));",
+          "  wave *= 0.11 * clamp(1.0 - fw * 6.0, 0.0, 1.0);",
+          "  vec3 n = normalize(vec3(-slope * rd.x - wave.x, 1.0, -slope * rd.y - wave.y));",
+          "  vec3 R = reflect(dir, n);",
+          "  R.y = max(R.y, 0.002);",
+          "  float cosT = clamp(dot(n, -dir), 0.0, 1.0);",
+          "  float F = 0.04 + 0.96 * pow(clamp(1.0 - cosT, 0.0, 1.0), 5.0);",
+          "  vec3 col = vec3(0.006, 0.005, 0.007) + skyDir(R) * F * 0.95;",
+          // the crown's reflection, rippled with the surface
+          "  vec4 cr = texture2D(refl, vUv + vec2(n.x, n.z) * vec2(0.05, 0.08));",
+          "  col = mix(col, cr.rgb * (0.35 + 0.6 * F), cr.a);",
+          // the crests catch the fire; the liquid darkens round the crown's foot
+          "  col += mix(mainCol, vec3(1.0), 0.25) * clamp(crest * 9.0, 0.0, 1.0) * (0.12 + 0.5 * F);",
+          "  float foot = smoothstep(domeR * 0.6, domeR * 1.5, r);",
+          "  col *= mix(1.0, mix(0.5, 1.0, foot), clamp(level * 4.0, 0.0, 1.0));",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+        // The spikes and the mound under them: one shared lathe (position.x is the angle round
+        // it, position.y the height fraction), shaped per instance in the shader. A spike's
+        // radius at height fraction s is radius × (1 - s)^sharp, leaning outwards with its
+        // tilt; the mound is a bell. Normals are worked out from the shape.
+        var SPIKE_VS = [
+          "attribute vec4 iBase; attribute vec4 iShape;",
+          "uniform float sharp, mirror;",
+          "varying vec3 vN; varying vec3 vW; varying float vS; varying float vKind;",
+          "float prof(float s, float kind){",
+          "  s = clamp(s, 0.0, 1.0);",
+          "  if (kind > 0.5) return sqrt(max(-log(max(s, 0.03)), 0.0)) / " +
+            M.DOME_FOOT.toFixed(6) +
+            ";",
+          "  return pow(max(1.0 - s, 0.0), sharp);",
+          "}",
+          "void main(){",
+          "  float phi = position.x, s = position.y;",
+          "  float H = iShape.x, Rad = iShape.y;",
+          "  vec3 radial = vec3(cos(phi), 0.0, sin(phi));",
+          "  vec3 lean = vec3(iShape.z * H, H, iShape.w * H);",
+          "  vec3 p = iBase.xyz + radial * Rad * prof(s, iBase.w) + lean * s;",
+          "  float ds = 0.004;",
+          "  float s0 = max(s - ds, 0.0), s1 = min(s + ds, 1.0);",
+          "  float dr = (prof(s1, iBase.w) - prof(s0, iBase.w)) / (s1 - s0);",
+          "  vec3 c = cross(radial * Rad * dr + lean, vec3(-sin(phi), 0.0, cos(phi)));",
+          "  vec3 n = length(c) > 1e-9 ? normalize(c) : vec3(0.0, 1.0, 0.0);",
+          "  if (mirror < 0.0) { p.y = -p.y; n.y = -n.y; }",
+          "  vW = p; vN = n; vS = s; vKind = iBase.w;",
+          "  gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);",
+          "}",
+        ].join("\n");
+        // Glossy black: almost no colour of its own, the sky reflected (strongly at grazing
+        // angles), and sharp hot highlights from two bright patches of the fiery sky.
+        var SPIKE_FS = [
+          "uniform sampler2D sky; uniform mat4 projView; uniform float horizonV;",
+          "uniform vec3 mainCol, hotCol; uniform float glint, mirror;",
+          "varying vec3 vN; varying vec3 vW; varying float vS; varying float vKind;",
+          "vec3 env(vec3 d){",
+          "  vec3 e = d;",
+          "  float below = e.y < 0.0 ? 1.0 : 0.0;",
+          "  e.y = abs(e.y);",
+          // the sky behind the viewer is the same fiery sky as ahead
+          "  e.z = -abs(e.z) - 0.2;",
+          "  e = normalize(e);",
+          "  vec4 c = projView * vec4(e, 0.0);",
+          "  vec2 uv = c.xy / max(c.w, 1e-3) * 0.5 + 0.5;",
+          "  uv = clamp(uv, vec2(0.002, horizonV + 0.003), vec2(0.998, 0.998));",
+          "  vec3 col = texture2D(sky, uv).rgb;",
+          "  return mix(col, col * 0.22, below);",
+          "}",
+          "void main(){",
+          "  vec3 N = normalize(vN);",
+          "  vec3 Vd = normalize(cameraPosition - vW);",
+          "  float ndv = clamp(dot(N, Vd), 0.0, 1.0);",
+          "  vec3 R = reflect(-Vd, N);",
+          "  float fres = 0.025 + 0.975 * pow(clamp(1.0 - ndv, 0.0, 1.0), 5.0);",
+          "  vec3 col = vec3(0.003, 0.0025, 0.004) + env(R) * fres * 1.15;",
+          "  float g1 = pow(max(dot(R, normalize(vec3(-0.45, 0.55, 0.7))), 0.0), 110.0);",
+          "  float g2 = pow(max(dot(R, normalize(vec3(0.35, 0.3, -0.9))), 0.0), 14.0);",
+          "  float g3 = pow(max(dot(R, normalize(vec3(0.6, 0.45, 0.65))), 0.0), 60.0);",
+          "  col += hotCol * (g1 * 2.6 + g3 * 0.9) * glint + mainCol * g2 * 0.45 * fres;",
+          "  if (vKind < 0.5) col *= mix(0.45, 1.0, smoothstep(0.0, 0.25, vS));",
+          // only what is above the liquid (or, mirrored, below it) is seen
+          "  if (vW.y * mirror < 0.0) discard;",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        /** The seeded noise texture: each texel holds its value and its three neighbours'. */
+        function noiseTexture() {
+          var N = 256;
+          var rand = V.mulberry32(9090);
+          var v = new Uint8Array(N * N);
+          for (var i = 0; i < N * N; i++) v[i] = Math.floor(rand() * 256);
+          var data = new Uint8Array(N * N * 4);
+          for (var y = 0; y < N; y++) {
+            for (var x = 0; x < N; x++) {
+              var x1 = (x + 1) % N,
+                y1 = (y + 1) % N,
+                o = 4 * (y * N + x);
+              data[o] = v[y * N + x];
+              data[o + 1] = v[y * N + x1];
+              data[o + 2] = v[y1 * N + x];
+              data[o + 3] = v[y1 * N + x1];
+            }
+          }
+          var tex = new THREE.DataTexture(data, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+          tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+          tex.magFilter = tex.minFilter = THREE.NearestFilter;
+          tex.generateMipmaps = false;
+          tex.needsUpdate = true;
+          return tex;
+        }
+
+        /** The shared lathe: NPHI steps round, NS steps up (closer together near the tip). */
+        function latheGeometry(instances) {
+          var NPHI = 28,
+            NS = 30;
+          var pos = new Float32Array((NPHI + 1) * (NS + 1) * 3);
+          var index = [];
+          for (var j = 0; j <= NS; j++) {
+            var s = 1 - Math.pow(1 - j / NS, 1.4);
+            for (var i = 0; i <= NPHI; i++) {
+              var o = 3 * (j * (NPHI + 1) + i);
+              pos[o] = (2 * Math.PI * i) / NPHI;
+              pos[o + 1] = s;
+              pos[o + 2] = 0;
+            }
+          }
+          for (var jj = 0; jj < NS; jj++) {
+            for (var ii = 0; ii < NPHI; ii++) {
+              var a = jj * (NPHI + 1) + ii,
+                b = a + 1,
+                c = a + NPHI + 1,
+                d = c + 1;
+              index.push(a, c, b, b, c, d);
+            }
+          }
+          var g = new THREE.InstancedBufferGeometry();
+          g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+          g.setIndex(index);
+          var base = new THREE.InstancedBufferAttribute(new Float32Array(instances * 4), 4);
+          var shape = new THREE.InstancedBufferAttribute(new Float32Array(instances * 4), 4);
+          base.setUsage(THREE.DynamicDrawUsage);
+          shape.setUsage(THREE.DynamicDrawUsage);
+          g.setAttribute("iBase", base);
+          g.setAttribute("iShape", shape);
+          g.instanceCount = 0;
+          return g;
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials, audio
+         * and the crown's layout (apply), and a new preview size only resizes (resize), so the
+         * live preview never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.autoClear = true;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var noise = keep(noiseTexture());
+
+          // ----- the camera: level, CAM_H above the liquid, the horizon at HORIZON_Y -----
+          // The frustum is twice HORIZON_Y tall with the horizon in its middle; we draw its top
+          // 1080 rows, so the horizon lands 65 % down the frame and upright spikes stay upright.
+          var FULL_H = 2 * M.HORIZON_Y;
+          var camera = new THREE.PerspectiveCamera(M.FOV, 1920 / FULL_H, 0.05, 400);
+          camera.setViewOffset(1920, FULL_H, 0, 0, 1920, 1080);
+          camera.position.set(0, M.CAM_H, 0);
+          camera.lookAt(0, M.CAM_H, -1);
+          camera.updateMatrixWorld();
+          camera.updateProjectionMatrix();
+          var projView = new THREE.Matrix4().multiplyMatrices(
+            camera.projectionMatrix,
+            camera.matrixWorldInverse,
+          );
+          var invProjView = projView.clone().invert();
+          var HORIZON_V = 1 - M.HORIZON_Y / 1080; // the horizon in texture terms (y up)
+
+          // ----- 1. the sky, into an 8-bit texture -----
+          var skyRT = keep(
+            new THREE.WebGLRenderTarget(960, 540, {
+              type: THREE.UnsignedByteType,
+              depthBuffer: false,
+            }),
+          );
+          var skyMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: SKY_FS,
+              uniforms: {
+                noiseTex: { value: noise },
+                mainCol: { value: new THREE.Color() },
+                accCol: { value: new THREE.Color() },
+                time: { value: 0 },
+                flare: { value: 1 },
+                horizonV: { value: HORIZON_V },
+                aspect: { value: 1920 / 1080 },
+                glow: { value: 0 },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var skyScene = new THREE.Scene();
+          skyScene.add(new THREE.Mesh(quad, skyMat));
+          var flatCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+          // ----- 2. the spikes (and, mirrored under the liquid, their reflection) -----
+          var INSTANCES = M.MAX_SPIKES + 1; // the mound, then the spikes
+          var spikeGeo = keep(latheGeometry(INSTANCES));
+          var iBase = spikeGeo.attributes.iBase,
+            iShape = spikeGeo.attributes.iShape;
+          var spikeUniforms = {
+            sky: { value: skyRT.texture },
+            projView: { value: projView },
+            horizonV: { value: HORIZON_V },
+            mainCol: { value: new THREE.Color() },
+            hotCol: { value: new THREE.Color() },
+            glint: { value: 1 },
+            sharp: { value: 1.5 },
+          };
+          function spikeMaterial(mirror) {
+            return keep(
+              new THREE.ShaderMaterial({
+                vertexShader: SPIKE_VS,
+                fragmentShader: SPIKE_FS,
+                uniforms: Object.assign({}, spikeUniforms, { mirror: { value: mirror } }),
+                side: THREE.DoubleSide,
+              }),
+            );
+          }
+          var spikes = new THREE.Mesh(spikeGeo, spikeMaterial(1));
+          spikes.frustumCulled = false;
+          spikes.renderOrder = 1;
+          var mirrored = new THREE.Mesh(spikeGeo, spikeMaterial(-1));
+          mirrored.frustumCulled = false;
+          var reflScene = new THREE.Scene();
+          reflScene.add(mirrored);
+          var reflRT = keep(
+            new THREE.WebGLRenderTarget(960, 540, { type: THREE.UnsignedByteType }),
+          );
+
+          // ----- 3. the picture: sky and liquid behind, the spikes in front -----
+          var rings = [];
+          for (var k = 0; k < M.MAX_RINGS; k++) rings.push(new THREE.Vector3(1, 0, 1));
+          var waterMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: WATER_FS,
+              uniforms: {
+                noiseTex: { value: noise },
+                sky: { value: skyRT.texture },
+                refl: { value: reflRT.texture },
+                projView: { value: projView },
+                invProjView: { value: invProjView },
+                camPos: { value: camera.position.clone() },
+                crown: { value: new THREE.Vector2(0, -M.CROWN_DIST) },
+                rings: { value: rings },
+                ringCount: { value: 0 },
+                mainCol: { value: new THREE.Color() },
+                accCol: { value: new THREE.Color() },
+                time: { value: 0 },
+                horizonV: { value: HORIZON_V },
+                domeR: { value: 1 },
+                level: { value: 0 },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var water = new THREE.Mesh(quad, waterMat);
+          water.frustumCulled = false;
+          water.renderOrder = 0;
+          var scene = new THREE.Scene();
+          scene.add(water, spikes);
+
+          // ----- glow; every target 8-bit (three.js defaults to a high-precision type) -----
+          var target = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, { type: THREE.UnsignedByteType, samples: 4 }),
+          );
+          var composer = new K.EffectComposer(renderer, target);
+          keep(composer);
+          composer.setPixelRatio(1);
+          composer.addPass(keep(new K.RenderPass(scene, camera)));
+          var bloom = new K.UnrealBloomPass(new THREE.Vector2(960, 540), 0.45, 0.45, 0.86);
+          [bloom.renderTargetBright]
+            .concat(bloom.renderTargetsHorizontal, bloom.renderTargetsVertical)
+            .forEach(function (rt) {
+              rt.texture.type = THREE.UnsignedByteType;
+            });
+          keep(bloom);
+          composer.addPass(bloom);
+          composer.addPass(keep(new K.OutputPass()));
+
+          function resize(scale) {
+            var W = Math.round(1920 * scale),
+              H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            composer.setSize(W, H);
+            bloom.setSize(Math.round(W / 2), Math.round(H / 2));
+            skyRT.setSize(Math.round(W / 2), Math.round(H / 2));
+            reflRT.setSize(Math.round(W / 2), Math.round(H / 2));
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio, the crown's layout (no new WebGL objects) -----
+          var audio, hudAudio, INT, crown, BARS, TOTAL, SHOW_TIMER;
+          var bassSpec = new Float32Array(M.BASS_COLUMNS);
+          var hudSpec = new Float32Array(32);
+          function apply() {
+            var MAIN = color(setting("mainColor"));
+            var ACC = color(setting("accentColor"));
+            INT = Number(setting("intensity"));
+            SHOW_TIMER = setting("showTimer") === true;
+            var opts = {
+              beatRange: setting("beatRange"),
+              spectrumLow: setting("spectrumLow"),
+              spectrumHigh: setting("spectrumHigh"),
+              spectrumBoost: Number(setting("spectrumBoost")),
+              spectrumCount: M.BASS_COLUMNS,
+            };
+            audio = V.createAudio(window.AUDIO_DATA, opts);
+            // the top spectrum shows the whole song's range; the spectrum settings set the bass
+            // the crown follows
+            hudAudio = V.createAudio(window.AUDIO_DATA, {
+              beatRange: setting("beatRange"),
+              spectrumLow: 30,
+              spectrumHigh: 8000,
+              spectrumBoost: Number(setting("spectrumBoost")),
+              spectrumCount: 32,
+            });
+            crown = M.buildCrown(setting("spikeCount"), V.mulberry32);
+            BARS = M.hudBarCount(setting("bandCount"));
+            TOTAL = V.formatClock(V.songClock(audio, 0).total);
+            skyMat.uniforms.mainCol.value.copy(MAIN);
+            skyMat.uniforms.accCol.value.copy(ACC);
+            waterMat.uniforms.mainCol.value.copy(MAIN);
+            waterMat.uniforms.accCol.value.copy(ACC);
+            spikeUniforms.mainCol.value.copy(MAIN);
+            spikeUniforms.hotCol.value.copy(MAIN).lerp(new THREE.Color(1, 0.95, 0.85), 0.55);
+          }
+          apply();
+
+          function render(t) {
+            var a = audio.sample(t);
+            var songTime = t + audio.songStart;
+
+            // the crown's height from the released bass
+            var level = M.crownLevel(audio, t, bassSpec);
+
+            // 1. the sky
+            skyMat.uniforms.time.value = songTime;
+            skyMat.uniforms.flare.value = M.skyFlare(a.loud);
+            skyMat.uniforms.glow.value = level;
+            renderer.setRenderTarget(skyRT);
+            renderer.render(skyScene, flatCamera);
+
+            // the crown: each spike wobbling on its own
+            var list = M.spikesAt(crown, level, songTime, INT);
+            var dome = M.domeAt(level, INT);
+            var S = M.SPIKE_STRIDE;
+            // the mound's lowest rim (its last 3 %) sinks under the liquid
+            iBase.setXYZW(0, 0, -0.03 * dome.height, -M.CROWN_DIST, 1);
+            iShape.setXYZW(0, dome.height, dome.radius, 0, 0);
+            for (var i = 0; i < crown.count; i++) {
+              var o = i * S;
+              iBase.setXYZW(i + 1, list[o], list[o + 1], list[o + 2] - M.CROWN_DIST, 0);
+              iShape.setXYZW(i + 1, list[o + 3], list[o + 4], list[o + 5], list[o + 6]);
+            }
+            iBase.needsUpdate = true;
+            iShape.needsUpdate = true;
+            spikeGeo.instanceCount = crown.count + 1;
+            var standing = level > 0.002;
+            spikes.visible = mirrored.visible = standing;
+            spikeUniforms.sharp.value = M.sharpness(level);
+            spikeUniforms.glint.value = 0.8 + 0.4 * a.loud;
+
+            // 2. the crown's reflection
+            renderer.setRenderTarget(reflRT);
+            renderer.setClearColor(0x000000, 0);
+            renderer.clear();
+            if (standing) renderer.render(reflScene, camera);
+            renderer.setClearColor(0x000000, 1);
+            renderer.setRenderTarget(null);
+
+            // 3. the liquid's rings: one per strong beat, and the slow constant ones
+            var all = M.ripples(audio.recentHits(t, M.RIPPLE_HITS), songTime, V.mulberry32).concat(
+              M.calmRipples(songTime),
+            );
+            var count = Math.min(all.length, M.MAX_RINGS);
+            for (var r = 0; r < count; r++) rings[r].set(all[r].radius, all[r].amp, all[r].width);
+            var u = waterMat.uniforms;
+            u.ringCount.value = count;
+            u.time.value = songTime;
+            u.domeR.value = dome.radius;
+            u.level.value = level;
+            composer.render();
+
+            // the top: bar spectrum, progress line, timer (setting styles is fine; measuring is not)
+            var line = V.mirrorBars(V.smoothSpectrum(hudAudio.spectrum(t, hudSpec), 1), BARS, true);
+            drawBars(M.barHeights(line));
+            var clock = V.songClock(audio, t);
+            progressFill.style.width = (PROGRESS_W * clock.fraction).toFixed(1) + "px";
+            if (SHOW_TIMER) {
+              var text = V.formatClock(clock.elapsed) + " / " + TOTAL;
+              if (timer.textContent !== text) timer.textContent = text;
+            }
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return { render: render, dispose: dispose, apply: apply, resize: resize };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale) } from setup()
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        applyPage();
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            applyPage();
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The top text fades in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#hud",
+          { opacity: 0, y: -8 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

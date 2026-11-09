@@ -52,7 +52,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       each, built overnight 2026-11-10 for the owner to review:
   - [x] Song clock and line kit (toolkit)
   - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [x] Moon Tide ·
-        [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [ ] Black Crown · [ ] Cube Core
+        [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [x] Black Crown · [ ] Cube Core
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -192,6 +192,9 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   of T-REX with a cover took 4 min 22 s in total with the phone copy (frame capture 1 min 41 s
   ≈ 3.4×), but its files are the biggest so far: 55.5 MB per 30 s (the phone copy 15.9 MB), as
   thousands of small moving dots are hard to compress.
+- Black Crown (three.js: sky and liquid as full-screen shaders, instanced spikes, a mirrored
+  reflection pass, 8-bit bloom): a 30 s Final section of T-REX took 4 min 46 s in total with the
+  phone copy (frame capture 1 min 54 s ≈ 3.8×), 32.9 MB per 30 s (the phone copy 15.1 MB).
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).

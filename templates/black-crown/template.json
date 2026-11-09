@@ -1,0 +1,37 @@
+{
+  "name": "Black Crown",
+  "description": "A dark glossy liquid under a fiery sky; a crown of black magnetic spikes bursts out of it on the bass and sends ripples across it.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "spikeCount", "showTimer"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "spikeCount", "showTimer", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#ff8a1f", "accentColor": "#8a1a0a" }
+    },
+    {
+      "name": "Toxic",
+      "thumbnail": "presets/toxic.jpg",
+      "values": { "mainColor": "#9dff3a", "accentColor": "#0a5a2a" }
+    },
+    {
+      "name": "Cobalt",
+      "thumbnail": "presets/cobalt.jpg",
+      "values": { "mainColor": "#3ad1ff", "accentColor": "#0a2a8a" }
+    },
+    {
+      "name": "Amethyst",
+      "thumbnail": "presets/amethyst.jpg",
+      "values": { "mainColor": "#d07aff", "accentColor": "#3a0a6a" }
+    }
+  ]
+}
