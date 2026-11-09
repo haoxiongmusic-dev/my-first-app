@@ -235,8 +235,9 @@ describe("sliceAnalysis", () => {
     ]);
   });
 
-  it("records where the section starts in the whole song", () => {
+  it("records where the section starts in the whole song, and the song's length", () => {
     expect(sliceAnalysis(full, 7, 9).sectionStart).toBe(7);
+    expect(sliceAnalysis(full, 7, 9).songDuration).toBe(10);
     expect(sliceAnalysis(full, 2.5, 5).sectionStart).toBe(2.5);
   });
 

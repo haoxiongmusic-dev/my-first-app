@@ -282,6 +282,8 @@
       // A section's time 0 is this far into the whole song, so effects seeded by song time
       // (a beat's exact moment) look the same in a section as in the full render.
       songStart: data.sectionStart || 0,
+      // The whole song's length, also in a section (whose duration is just the section's).
+      songDuration: data.songDuration || data.duration,
       sample: sample,
       spectrum: spectrum,
       recentHits: recentHits,
@@ -355,6 +357,83 @@
   /** The Bands setting (10..100 %) as a point count: a fifth of `full` up to all of it. */
   function bandsToRingCount(pct, full) {
     return Math.round(full * (0.2 + (0.8 * (pct - 10)) / 90));
+  }
+
+  // ---------- the song clock: timers and progress bars ----------
+
+  /** Song time for a timer: { elapsed, total, fraction } in seconds of the whole song. */
+  function songClock(audio, t) {
+    var total = Math.max(0, audio.songDuration || 0);
+    var elapsed = Math.max(0, Math.min(total, (audio.songStart || 0) + t));
+    return { elapsed: elapsed, total: total, fraction: total > 0 ? elapsed / total : 0 };
+  }
+
+  /** m:ss, or h:mm:ss from one hour (the same text as the editor's clock). */
+  function formatClock(seconds) {
+    var total = Math.max(0, Math.floor(seconds));
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = String(total % 60).padStart(2, "0");
+    return h > 0 ? h + ":" + String(m).padStart(2, "0") + ":" + s : m + ":" + s;
+  }
+
+  // ---------- the line kit: spectra along a line ----------
+
+  /** Reads the spectrum at fractional band position x (0 = bass, 1 = last band). */
+  function spectrumAt(spectrum, x) {
+    var n = spectrum.length;
+    var p = Math.max(0, Math.min(1, x)) * (n - 1);
+    var i0 = Math.floor(p),
+      i1 = Math.min(n - 1, i0 + 1);
+    return spectrum[i0] + (spectrum[i1] - spectrum[i0]) * (p - i0);
+  }
+
+  /**
+   * `count` values for bars along a line. fromCentre: the bass in the middle, mirrored out to
+   * both ends; otherwise the bass at the left end.
+   */
+  function mirrorBars(spectrum, count, fromCentre) {
+    var out = new Float32Array(count);
+    for (var k = 0; k < count; k++) {
+      var u = count > 1 ? k / (count - 1) : 0;
+      out[k] = spectrumAt(spectrum, fromCentre ? Math.abs(u * 2 - 1) : u);
+    }
+    return out;
+  }
+
+  /** A box-blurred copy of a spectrum (radius in bands), the same length. */
+  function smoothSpectrum(spectrum, radius) {
+    var n = spectrum.length;
+    var out = new Float32Array(n);
+    for (var i = 0; i < n; i++) {
+      var sum = 0,
+        cnt = 0;
+      for (var k = i - radius; k <= i + radius; k++) {
+        if (k >= 0 && k < n) {
+          sum += spectrum[k];
+          cnt++;
+        }
+      }
+      out[i] = sum / cnt;
+    }
+    return out;
+  }
+
+  /**
+   * `count` values in -1..1 for an oscilloscope-style line: spikes whose height follows the
+   * spectrum (bass at index 0), with signs and jitter seeded by the song frame (30 per second),
+   * so a section matches the full render. Silence gives all zeros.
+   */
+  function scopeLine(audio, t, count, seed) {
+    var heights = mirrorBars(audio.spectrum(t), count, false);
+    var rnd = mulberry32(seed + Math.floor((audio.songStart + t) * 30));
+    var out = new Float32Array(count);
+    for (var k = 0; k < count; k++) {
+      var jitter = 0.35 + 0.65 * rnd();
+      var sign = rnd() < 0.5 ? -1 : 1;
+      out[k] = Math.max(-1, Math.min(1, sign * heights[k] * jitter));
+    }
+    return out;
   }
 
   // ---------- WebGL helpers ----------
@@ -556,5 +635,10 @@
     ringValues: ringValues,
     beatEnvelope: beatEnvelope,
     bandsToRingCount: bandsToRingCount,
+    songClock: songClock,
+    formatClock: formatClock,
+    mirrorBars: mirrorBars,
+    smoothSpectrum: smoothSpectrum,
+    scopeLine: scopeLine,
   };
 });

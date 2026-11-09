@@ -1,0 +1,814 @@
+<!doctype html>
+<!--
+  Sky Pillar: a smoky beam of light comes down from the top of the frame to a point above a
+  small lone figure standing on a dark, wet floor. At the beam's tip a stack of thin light lines
+  dances to the music and a flare streaks sideways on each beat; the title waits in the lower
+  third in widely spaced serif capitals.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/pillar-motion.js and the line maths in the toolkit (both unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"EB Garamond","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#7fb8ff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#2a5cff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"scaleOnBeat","type":"boolean","label":"Pulse on beat","default":true},
+    {"id":"showFigure","type":"boolean","label":"Show figure","default":true},
+    {"id":"fogAmount","type":"number","label":"Fog","default":60,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":55,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/pillar-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The titles sit in the lower third, centred about 820 px from the top. */
+      #titles {
+        position: absolute;
+        left: 0;
+        top: 720px;
+        width: 1920px;
+        height: 200px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "EB Garamond", serif;
+        color: #f1f6ff;
+        opacity: 0;
+      }
+      #titleBlock {
+        text-align: center;
+      }
+      #songTitle,
+      #songArtist {
+        display: block;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        text-transform: uppercase;
+      }
+      #songTitle {
+        max-width: 1400px; /* TITLE_SAFE: a long title wraps onto a second line */
+        /* a word too long to wrap overflows to the right, so it is scaled from the left edge */
+        transform-origin: 0 50%;
+        white-space: normal;
+        text-wrap: balance;
+        line-height: 1.2;
+        font-size: 50px;
+        font-weight: 500;
+        letter-spacing: 0.5em;
+        padding-left: 0.5em; /* balances the spacing after the last letter */
+      }
+      #songArtist {
+        white-space: nowrap;
+        margin-top: 18px;
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: 0.62em;
+        padding-left: 0.62em;
+        opacity: 0.7;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="titles"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="titleBlock">
+          <div id="songTitle" data-var-text="title">SONG NAME</div>
+          <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.PillarMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var titleBlock = document.getElementById("titleBlock");
+
+        // ---------- the titles ----------
+        function rgba(hex, alpha) {
+          var c = V.hexToRGB(hex);
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function applyPage() {
+          var titles = document.getElementById("titles");
+          titles.style.fontFamily = '"' + setting("font") + '", serif';
+          titles.style.textShadow =
+            "0 0 10px " +
+            rgba(setting("mainColor"), 0.75) +
+            ", 0 0 32px " +
+            rgba(setting("mainColor"), 0.4);
+        }
+        applyPage();
+
+        // Fit the titles across the lower third. The song title may wrap onto two lines before
+        // it shrinks; the artist line is never bigger than 0.45 × the title, so the title always
+        // reads first; and past the smallest size a line is scaled down so nothing can ever be
+        // wider than the space. Measured on seeks, settings and font loads only, never in the
+        // timeline callback.
+        var TITLE_SAFE = 1400;
+        var TITLE_LINES = 2;
+        var ARTIST_RATIO = 0.45;
+        var TITLE_FLOOR = 14;
+        var TITLE_SIZE = 50,
+          ARTIST_SIZE = 18,
+          LINE_HEIGHT = 1.2;
+        var fitted = "";
+        /** How wide the line's text really is, including a word too long to wrap. */
+        function textWidth(line) {
+          return Math.max(line.scrollWidth, line.offsetWidth);
+        }
+        /** Scale a line down if, even at its smallest size, it is wider than the space. */
+        function clampWidth(line) {
+          var w = textWidth(line);
+          line.style.transform = w > TITLE_SAFE ? "scale(" + (TITLE_SAFE / w).toFixed(4) + ")" : "";
+        }
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [
+            document.getElementById("songTitle").textContent,
+            document.getElementById("songArtist").textContent,
+            setting("font"),
+            loaded,
+          ].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var title = document.getElementById("songTitle");
+          var artist = document.getElementById("songArtist");
+          title.style.transform = "";
+          artist.style.transform = "";
+          var size = TITLE_SIZE;
+          function titleTooBig() {
+            var maxHeight = TITLE_LINES * size * LINE_HEIGHT + 2;
+            return textWidth(title) > TITLE_SAFE + 1 || title.offsetHeight > maxHeight;
+          }
+          title.style.fontSize = size + "px";
+          while (titleTooBig() && size > TITLE_FLOOR) {
+            size = Math.max(TITLE_FLOOR, Math.floor(size * 0.95));
+            title.style.fontSize = size + "px";
+          }
+          clampWidth(title);
+          var small = Math.min(ARTIST_SIZE, Math.max(10, Math.round(size * ARTIST_RATIO)));
+          artist.style.fontSize = small + "px";
+          while (textWidth(artist) > TITLE_SAFE && small > 8) {
+            small -= 1;
+            artist.style.fontSize = small + "px";
+          }
+          clampWidth(artist);
+        }
+
+        // ---------- shaders ----------
+        // Lines and flares are triangles in 1080p pixels from the frame centre, y down, so they
+        // keep their size at every preview resolution.
+        var SHAPE_VS = [
+          "attribute vec2 pos; attribute vec3 col; varying vec3 vCol;",
+          "void main(){ vCol = col; gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0); }",
+        ].join("\n");
+        var SHAPE_FS = [
+          "precision mediump float; varying vec3 vCol;",
+          "void main(){ gl_FragColor = vec4(vCol, 1.0); }",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The whole picture in one pass: the charcoal backdrop and its fog, the beam with its
+        // smoky edges, the wet floor with its reflections, the tip lines' light (sharp plus
+        // glow) and the figure. Positions are 1080p pixels, y down.
+        var SCENE_FS = [
+          "precision highp float;",
+          "uniform sampler2D lines, bloomA, bloomB, figure;",
+          "uniform float time, smoke, beam, loud, fog, flash, figureOn;",
+          "uniform vec3 mainCol, accCol;",
+          "varying vec2 uv;",
+          "const float TIP = 470.0;",
+          "const float FLOOR = 600.0;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash(i), b = hash(i + vec2(1.0, 0.0));",
+          "  float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int i = 0; i < 4; i++){ s += a * vnoise(p); p = p * 2.03 + vec2(17.3, 9.1); a *= 0.5; }",
+          "  return s;",
+          "}",
+          // the figure's mask (1 inside), from its texture: a 40 x 80 px box over its feet
+          "float figMask(vec2 p){",
+          "  vec2 f = vec2((p.x - 940.0) / 40.0, (p.y - 524.0) / 80.0);",
+          "  if (f.x < 0.0 || f.x > 1.0 || f.y < 0.0 || f.y > 1.0) return 0.0;",
+          "  return texture2D(figure, f).a * figureOn;",
+          "}",
+          // the beam's light at p (no smoke): white core plus a soft sheath, ending at the tip
+          "vec3 beamCore(vec2 p){",
+          "  float dx = p.x - 960.0;",
+          "  float v = clamp(p.y / TIP, 0.0, 1.0);",
+          "  float end = smoothstep(TIP + 4.0, TIP - 6.0, p.y);",
+          "  float shimmer = 0.88 + 0.24 * vnoise(vec2(p.y / 34.0 - smoke * 9.0, 3.7));",
+          "  float coreHalf = max(0.8, mix(22.0, 0.9, pow(clamp(v, 0.0, 1.0), 0.75)) * beam * shimmer);",
+          "  float sheathHalf = mix(70.0, 5.0, pow(clamp(v, 0.0, 1.0), 0.8)) * beam;",
+          "  float core = exp(-dx * dx / (coreHalf * coreHalf));",
+          "  float sheath = exp(-dx * dx / (sheathHalf * sheathHalf));",
+          "  return (vec3(1.0) * core * 1.15 + mainCol * sheath * 0.55) * end * beam;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  float dx = p.x - 960.0;",
+          "  float ax = abs(dx);",
+          // backdrop: charcoal, a little lighter around the beam, with drifting fog
+          "  vec3 base = vec3(0.040, 0.043, 0.050);",
+          "  base += mainCol * 0.035 * exp(-dx * dx / (2.0 * 520.0 * 520.0)) * smoothstep(1080.0, 200.0, p.y);",
+          "  vec2 fp = p / 430.0;",
+          "  float f1 = fbm(fp * vec2(0.8, 1.5) + vec2(time * 0.011, -time * 0.004));",
+          "  float f2 = fbm(fp * 1.9 + vec2(-time * 0.007, time * 0.005) + 2.0 * f1);",
+          "  float fogD = smoothstep(0.32, 0.9, 0.55 * f1 + 0.6 * f2) * fog;",
+          "  vec3 fogCol = mix(vec3(0.10, 0.11, 0.13), mainCol, 0.35);",
+          "  base += fogCol * fogD * 0.16;",
+          // light: everything that glows, screened over the base at the end
+          "  vec3 light = vec3(0.0);",
+          // the beam's wide scatter in the air, stronger when loud
+          "  float scatter = exp(-dx * dx / (2.0 * 300.0 * 300.0)) * smoothstep(TIP + 330.0, 0.0, p.y);",
+          "  light += mix(accCol, mainCol, 0.5) * scatter * (0.05 + 0.16 * loud) * beam;",
+          // fog catching the beam's light
+          "  light += mainCol * fogD * 0.5 * exp(-dx * dx / (2.0 * 230.0 * 230.0)) * smoothstep(FLOOR + 40.0, 0.0, p.y) * beam;",
+          // the source above the frame
+          "  light += mix(mainCol, vec3(1.0), 0.4) * exp(-p.y / 90.0) * exp(-dx * dx / (2.0 * 160.0 * 160.0)) * 0.35 * beam;",
+          // the beam: core and sheath
+          "  light += beamCore(p);",
+          // the smoke: domain-warped noise drifting up, round the beam, thinning to the tip
+          "  float v = clamp(p.y / TIP, 0.0, 1.0);",
+          "  float smokeHalf = mix(165.0, 16.0, pow(clamp(v, 0.0, 1.0), 0.85)) * (0.75 + 0.3 * beam);",
+          "  if (ax < smokeHalf * 2.2 && p.y < TIP + 60.0){",
+          "    vec2 q = vec2(dx / 85.0, p.y / 95.0 + smoke * 6.0);",
+          "    vec2 w = vec2(fbm(q + vec2(0.0, smoke * 2.0)), fbm(q + vec2(5.2, 1.3) - smoke * 1.5));",
+          "    float n = fbm(q * 1.15 + 2.4 * w);",
+          "    float spread = smokeHalf * (0.45 + 1.0 * n);",
+          "    float body = exp(-dx * dx / (spread * spread));",
+          "    float wisps = smoothstep(0.32, 0.78, n);",
+          "    float ends = smoothstep(TIP + 60.0, TIP - 20.0, p.y);",
+          "    float inner = exp(-dx * dx / (2.0 * 18.0 * 18.0 * beam * beam));",
+          "    vec3 smokeCol = mix(mix(mainCol, accCol, 0.3 * (1.0 - inner)), vec3(1.0), 0.35 * inner);",
+          "    light += smokeCol * body * wisps * ends * 0.75 * beam;",
+          "  }",
+          // the hot point at the tip
+          "  vec2 tp = p - vec2(960.0, TIP);",
+          "  float tr2 = dot(tp, tp);",
+          "  light += vec3(1.0) * exp(-tr2 / (2.0 * 7.0 * 7.0)) * 0.9 * beam;",
+          "  light += mainCol * exp(-sqrt(tr2) / 45.0) * 0.35 * beam;",
+          "  light += mainCol * exp(-tp.y * tp.y / 40.0) * exp(-tp.x * tp.x / (2.0 * 170.0 * 170.0)) * 0.25 * flash;",
+          // a faint cone of light from the tip down to the floor, and the pool round the feet
+          "  if (p.y > TIP && p.y < FLOOR + 4.0){",
+          "    float k = (p.y - TIP) / (FLOOR - TIP);",
+          "    float hw = mix(3.0, 46.0, k);",
+          "    light += mainCol * exp(-dx * dx / (hw * hw)) * (0.10 + 0.05 * (1.0 - k)) * beam;",
+          "  }",
+          "  float gy = p.y - FLOOR;",
+          "  float pool = exp(-(dx * dx) / (2.0 * 150.0 * 150.0) - gy * gy / (2.0 * (gy > 0.0 ? 30.0 * 30.0 : 46.0 * 46.0)));",
+          "  light += mix(mainCol, accCol, 0.35) * pool * 0.38 * beam;",
+          // the floor: dark and wet below the horizon, with ripple lines and reflections
+          "  if (gy > 0.0){",
+          "    float hor = smoothstep(0.0, 26.0, gy);",
+          "    base = mix(base, vec3(0.018, 0.020, 0.026) + fogCol * fogD * 0.05, hor);",
+          "    float depth = 2600.0 / (gy + 24.0);",
+          "    float phase = depth + time * 0.5 + 0.5 * vnoise(vec2(dx / 220.0, depth * 0.25));",
+          "    float broken = smoothstep(0.35, 0.75, vnoise(vec2(dx / (30.0 + gy * 0.5), depth * 1.7)));",
+          "    float ripple = pow(abs(sin(phase)), 40.0) * broken * exp(-gy / 260.0);",
+          "    float lit = exp(-dx * dx / (2.0 * 420.0 * 420.0));",
+          "    light += mainCol * ripple * lit * 0.07 * smoothstep(0.0, 40.0, gy) * beam;",
+          "    float wob = 3.0 * sin(depth * 0.9 - time * 1.3) * smoothstep(0.0, 120.0, gy);",
+          "    float fadeR = exp(-gy / 230.0);",
+          "    float rw = 14.0 + gy * 0.2;",
+          "    float shimmerR = 0.7 + 0.3 * sin(depth * 1.3 - time * 1.1);",
+          "    vec3 streakCol = mix(mainCol, vec3(1.0), 0.25);",
+          "    light += streakCol * exp(-(dx + wob) * (dx + wob) / (rw * rw)) * fadeR * shimmerR * 0.24 * beam;",
+          "    light += mainCol * exp(-(dx + wob) * (dx + wob) / (9.0 * rw * rw)) * fadeR * 0.08 * beam;",
+          "    light += mainCol * exp(-gy / 2.5) * exp(-dx * dx / (2.0 * 480.0 * 480.0)) * 0.14 * beam;",
+          "  }",
+          // the tip lines and flare: sharp plus a medium and a wide glow
+          "  light += texture2D(lines, uv).rgb + texture2D(bloomA, uv).rgb * 0.9 + texture2D(bloomB, uv).rgb * 1.2;",
+          "  light = vec3(1.0) - exp(-light * 1.3);",
+          "  vec3 c = vec3(1.0) - (vec3(1.0) - base) * (vec3(1.0) - light);",
+          // the figure's reflection darkens the lit floor under it; the figure stands in front
+          "  if (gy > 0.0) c *= 1.0 - 0.6 * figMask(vec2(p.x, 2.0 * FLOOR - p.y)) * exp(-gy / 30.0);",
+          "  float m = figMask(p);",
+          "  float rim = clamp(m - figMask(p - vec2(0.0, 1.6)), 0.0, 1.0) + 0.5 * clamp(m - figMask(p + vec2(1.4, 0.0)), 0.0, 1.0) + 0.5 * clamp(m - figMask(p - vec2(1.4, 0.0)), 0.0, 1.0);",
+          "  vec3 figCol = vec3(0.010, 0.011, 0.014) + mix(mainCol, vec3(1.0), 0.3) * rim * 0.55 * beam;",
+          "  c = mix(c, figCol, m);",
+          // vignette
+          "  c *= mix(0.62, 1.0, smoothstep(1.25, 0.35, length((uv - 0.5) * vec2(1.25, 1.0))));",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = setting("intensity");
+          var SCALE_ON = setting("scaleOnBeat") === true;
+          var FIGURE_ON = setting("showFigure") === true;
+          var FOG = Math.max(0, Math.min(100, Number(setting("fogAmount")))) / 100;
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 16,
+          });
+          var spec = new Float32Array(16);
+          var LINES = M.lineCount(setting("bandCount"));
+          var OFFSETS = M.lineOffsets(LINES);
+
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          // Lines are drawn sharp into `lines`, then blurred at half and quarter size for glow.
+          var lines = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4)),
+            qB = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4));
+
+          // The figure: its outline filled once on a 2D canvas (smooth edges), as a texture
+          // covering a 40 x 80 px box whose bottom is 4 px below the feet.
+          var figTex = gl.createTexture();
+          (function drawFigure() {
+            var res = 3 * PREVIEW_SCALE;
+            var c2 = document.createElement("canvas");
+            c2.width = Math.max(8, Math.round(40 * res));
+            c2.height = Math.max(16, Math.round(80 * res));
+            var ctx = c2.getContext("2d");
+            var outline = M.figureOutline();
+            ctx.fillStyle = "#fff";
+            ctx.beginPath();
+            for (var i = 0; i < outline.length; i++) {
+              var x = (outline[i][0] + 20) * (c2.width / 40);
+              var y = (outline[i][1] + 76) * (c2.height / 80);
+              if (i === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            gl.bindTexture(gl.TEXTURE_2D, figTex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c2);
+          })();
+
+          var shapeProg = V.createProgram(gl, SHAPE_VS, SHAPE_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var sceneProg = V.createProgram(gl, QUAD_VS, SCENE_FS);
+          var shapeBuf = gl.createBuffer();
+
+          // Triangles for the frame's shapes: x, y, r, g, b per vertex.
+          var verts = new Float32Array(5 * 6 * 1024);
+          var nv = 0;
+          function vert(x, y, c, k) {
+            if (5 * (nv + 1) > verts.length) {
+              var bigger = new Float32Array(verts.length * 2);
+              bigger.set(verts);
+              verts = bigger;
+            }
+            var o = 5 * nv++;
+            verts[o] = x;
+            verts[o + 1] = y;
+            verts[o + 2] = c[0] * k;
+            verts[o + 3] = c[1] * k;
+            verts[o + 4] = c[2] * k;
+          }
+          /** A quad a-b-c-d (corners in order), coloured cA at a/b and cB at c/d. */
+          function quad(ax, ay, bx, by, cx, cy, dx, dy, cA, kA, cB, kB) {
+            vert(ax, ay, cA, kA);
+            vert(bx, by, cA, kA);
+            vert(cx, cy, cB, kB);
+            vert(ax, ay, cA, kA);
+            vert(cx, cy, cB, kB);
+            vert(dx, dy, cB, kB);
+          }
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel:
+           * a thinner line is drawn wider and dimmer, so the preview shows what the render
+           * shows when scaled down.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+            return [w, width / w];
+          }
+          function mixRGB(a, b, f) {
+            return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+          }
+          var WHITE = [1, 1, 1];
+          var SEGMENTS = 10;
+          /**
+           * A horizontal line through x = 0 at height y, reaching `half` px each way, this
+           * wide: white-hot in the middle, turning to `col` and fading out at the ends.
+           */
+          function hLine(y, half, width, col, k) {
+            if (half < 0.5 || k <= 0) return;
+            var tw = thin(width);
+            var h = tw[0] / 2;
+            for (var side = -1; side <= 1; side += 2) {
+              for (var s = 0; s < SEGMENTS; s++) {
+                var u0 = s / SEGMENTS,
+                  u1 = (s + 1) / SEGMENTS;
+                var x0 = side * half * u0,
+                  x1 = side * half * u1;
+                var k0 = k * tw[1] * Math.pow(1 - u0, 1.6),
+                  k1 = k * tw[1] * Math.pow(1 - u1, 1.6);
+                var c0 = mixRGB(col, WHITE, 0.8 * (1 - u0) * (1 - u0)),
+                  c1 = mixRGB(col, WHITE, 0.8 * (1 - u1) * (1 - u1));
+                quad(x0, y - h, x0, y + h, x1, y + h, x1, y - h, c0, k0, c1, k1);
+              }
+            }
+          }
+
+          /** The tip lines and the beat flare for time t, into the shape buffer. */
+          function buildLines(t, env) {
+            nv = 0;
+            audio.spectrum(t, spec);
+            var halves = M.lineHalfWidths(V.mirrorBars(spec, LINES, true), INT);
+            var tipY = M.TIP_Y - 540;
+            for (var i = 0; i < LINES; i++) {
+              var middle = 1 - Math.abs(OFFSETS[i]) / (M.LINE_GAP * LINES);
+              hLine(tipY + OFFSETS[i], halves[i], 1.6, MAIN, 0.75 + 0.45 * middle);
+            }
+            var fl = M.flare(env, INT);
+            if (fl.strength > 0.01) {
+              hLine(tipY, fl.halfWidth, 2, MAIN, 1.1 * fl.strength);
+              hLine(tipY, fl.halfWidth * 0.55, 7, MAIN, 0.25 * fl.strength);
+            }
+          }
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+          function drawShapes() {
+            gl.useProgram(shapeProg);
+            gl.bindBuffer(gl.ARRAY_BUFFER, shapeBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, verts.subarray(0, 5 * nv), gl.DYNAMIC_DRAW);
+            var pos = gl.getAttribLocation(shapeProg, "pos");
+            var col = gl.getAttribLocation(shapeProg, "col");
+            gl.enableVertexAttribArray(pos);
+            gl.enableVertexAttribArray(col);
+            gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 20, 0);
+            gl.vertexAttribPointer(col, 3, gl.FLOAT, false, 20, 8);
+            gl.drawArrays(gl.TRIANGLES, 0, nv);
+            gl.disableVertexAttribArray(pos);
+            gl.disableVertexAttribArray(col);
+          }
+
+          function renderAt(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, M.FLARE_RELEASE);
+            buildLines(t, env);
+            // the title pulses on the beat (setting a style is fine here; measuring is not)
+            titleBlock.style.transform = "scale(" + M.titleScale(env, SCALE_ON).toFixed(4) + ")";
+
+            // 1. the tip lines and flare, added together
+            bindTarget(lines);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            if (nv > 0) {
+              gl.enable(gl.BLEND);
+              gl.blendFunc(gl.ONE, gl.ONE);
+              drawShapes();
+              gl.disable(gl.BLEND);
+            }
+
+            // 2. glow: half-size medium, quarter-size wide (radii kept in 1080p terms)
+            copy(lines, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, hA, hB, 3.0 * PREVIEW_SCALE);
+            copy(hA, qA);
+            V.blur(gl, blurProg, qA, qB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, qA, qB, 3.0 * PREVIEW_SCALE);
+
+            // 3. the whole picture onto the screen
+            bindTarget(null);
+            gl.useProgram(sceneProg);
+            var units = [
+              ["lines", lines.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", qA.tex],
+              ["figure", figTex],
+            ];
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(sceneProg.u[units[u][0]], u);
+            }
+            gl.uniform1f(sceneProg.u.time, songTime);
+            gl.uniform1f(sceneProg.u.smoke, M.smokeTime(audio, t));
+            gl.uniform1f(sceneProg.u.beam, M.beamLevel(a.loud, INT));
+            gl.uniform1f(sceneProg.u.loud, Math.max(0, Math.min(1, a.loud)));
+            gl.uniform1f(sceneProg.u.fog, FOG);
+            gl.uniform1f(sceneProg.u.flash, M.flare(env, INT).strength);
+            gl.uniform1f(sceneProg.u.figureOn, FIGURE_ON ? 1 : 0);
+            gl.uniform3fv(sceneProg.u.mainCol, MAIN);
+            gl.uniform3fv(sceneProg.u.accCol, ACC);
+            V.drawQuad(gl, sceneProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // Titles fade in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#titles",
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,37 @@
+{
+  "name": "Sky Pillar",
+  "description": "A smoky beam of light comes down to a lone figure; a stack of light lines flares at its tip.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "scaleOnBeat", "showFigure", "fogAmount"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "fogAmount", "showFigure", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#7fb8ff", "accentColor": "#2a5cff" }
+    },
+    {
+      "name": "Crimson",
+      "thumbnail": "presets/crimson.jpg",
+      "values": { "mainColor": "#ff7a7a", "accentColor": "#c0182a" }
+    },
+    {
+      "name": "Verdant",
+      "thumbnail": "presets/verdant.jpg",
+      "values": { "mainColor": "#8dffb0", "accentColor": "#18a04a" }
+    },
+    {
+      "name": "Gold",
+      "thumbnail": "presets/gold.jpg",
+      "values": { "mainColor": "#ffd28a", "accentColor": "#d0821c" }
+    }
+  ]
+}
