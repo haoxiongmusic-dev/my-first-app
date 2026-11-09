@@ -48,6 +48,8 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       minors from PRs #7–#12, except Iron Wraith's exact tower colour (spec §5.4.3: needs a look
       change; the owner decides)
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
+  **Project paused (2026-11-09).** Full online version options and the open questions:
+  `docs/research/2026-11-09-full-online-version-options.md`.
 
 Each milestone gets its own plan in `docs/superpowers/plans/` before any code is written.
 
