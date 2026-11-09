@@ -1,0 +1,1237 @@
+<!doctype html>
+<!--
+  World Orbit: a planet turns slowly in deep space (stars, a blue nebula haze, a slow camera
+  drift), lit from the upper left with a bright rim of light round its edge. Very fine spectrum
+  rays stick out from its rim, faint, brighter when the music is loud. The title, in big bold
+  gold capitals, orbits the planet like a ring: the letters pass in front of it, turn edge-on
+  round the sides and are hidden behind it, bigger and brighter at the front. A short title is
+  repeated round the ring ("T-REX • T-REX • ..."); a long one goes round once, smaller. Now and
+  then a warm diagonal light-leak streak sweeps across the right side. The artist sits small
+  under the planet, and the planet pulses slightly on the beat.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/orbit-motion.js and the beat maths in the toolkit (all unit-tested).
+
+  The planet is drawn in code: by default a world of its own (oceans tinted by the accent
+  colour, seeded noise continents, ice caps and clouds), never a photo. With a cover picture
+  the cover is wrapped round the globe instead. The cover arrives as a picture location (the
+  export's images folder, or the image route in the preview) or "" for none: it is set at
+  startup and the frame is drawn again when it loads; a picture that fails to load is simply
+  left out.
+
+  Built in WebGL: the starfield and nebula are drawn once into a picture a little bigger than
+  the frame, which slides with the camera drift. Each frame: the letters behind the planet, the
+  rays, the planet (a ray-sphere shader on a square round it), the letters in front, a soft
+  glow from the brightest parts, then the light leak and a vignette. The letters come from an
+  atlas of the title's characters drawn once on a 2D canvas (bevelled gold). The artist is HTML.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"cover","type":"image","label":"Cover art","default":"","fit":"square"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ffcc66"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#2a6cff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"orbitSeconds","type":"number","label":"Orbit time","default":12,"min":6,"max":30,"step":1,"unit":"s"},
+    {"id":"scaleOnBeat","type":"boolean","label":"Scale on beat","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"8","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/orbit-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      /* The artist: small, centred under the planet. */
+      #artistBlock {
+        position: absolute;
+        left: 0;
+        width: 1920px;
+        top: 826px;
+        height: 60px;
+        text-align: center;
+        font-family: "Montserrat", sans-serif;
+        opacity: 0;
+      }
+      #songArtist {
+        display: table; /* as wide as its text, so it can be measured and shrunk to fit */
+        margin-left: auto;
+        margin-right: auto;
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 600;
+        letter-spacing: 0.5em;
+        padding-left: 0.5em; /* balances the spacing after the last letter */
+        text-transform: uppercase;
+        white-space: nowrap;
+        transform-origin: 50% 50%;
+      }
+      #coverImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family (and the bold weight the title is drawn in) lets
+         HyperFrames bundle them all for the Font setting; the canvas letters use them once
+         loaded. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      .w800 {
+        font-weight: 800;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="artistBlock"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <div id="songArtist" data-var-text="artist">ARTIST NAME</div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="coverImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-montserrat w800">Aa•</span
+      ><span class="f-inter">Aa</span><span class="f-inter w800">Aa•</span
+      ><span class="f-outfit">Aa</span><span class="f-outfit w800">Aa•</span
+      ><span class="f-poppins">Aa</span><span class="f-poppins w800">Aa•</span
+      ><span class="f-lato">Aa</span><span class="f-lato w800">Aa•</span
+      ><span class="f-oswald">Aa</span><span class="f-oswald w800">Aa•</span
+      ><span class="f-playfair">Aa</span><span class="f-playfair w800">Aa•</span
+      ><span class="f-garamond">Aa</span><span class="f-garamond w800">Aa•</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.OrbitMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), uploadCover(), dispose() } from setup()
+        var lastTime = -1;
+        var fontEpoch = 0; // goes up when fonts finish loading, so the letters are drawn again
+        var SEPARATOR = "•";
+
+        // ---------- the cover picture ----------
+        // The location is set at once, so the page's own loading waits for it; the frame is
+        // drawn again when it arrives. A picture that fails to load is simply left out.
+        var coverImg = document.getElementById("coverImg");
+        var coverSrc = "";
+        var coverLoaded = false;
+        coverImg.addEventListener("load", function () {
+          coverLoaded = true;
+          if (drawing) drawing.uploadCover();
+          draw(Math.max(0, lastTime));
+        });
+        coverImg.addEventListener("error", function () {
+          coverLoaded = false;
+          draw(Math.max(0, lastTime));
+        });
+        function setCover(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === coverSrc) return;
+          coverSrc = src;
+          coverLoaded = false;
+          if (src) coverImg.src = src;
+          else coverImg.removeAttribute("src");
+        }
+        setCover(setting("cover"));
+
+        // ---------- the artist ----------
+        function mixRGB(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function css(c, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, c[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        function applyPage() {
+          var main = V.hexToRGB(setting("mainColor"));
+          var acc = V.hexToRGB(setting("accentColor"));
+          var block = document.getElementById("artistBlock");
+          block.style.fontFamily = '"' + setting("font") + '", sans-serif';
+          var artist = document.getElementById("songArtist");
+          artist.style.color = css(mixRGB(main, [1, 1, 1], 0.55), 0.92);
+          artist.style.textShadow =
+            "0 0 10px " +
+            css(mixRGB(acc, [0.6, 0.8, 1], 0.4), 0.55) +
+            ", 0 0 26px " +
+            css(acc, 0.35) +
+            ", 0 1px 2px rgba(0,0,0,0.8)";
+        }
+        applyPage();
+
+        // Fit the artist on one line, at most TEXT_SAFE wide: it shrinks to its smallest size,
+        // then is scaled down so nothing can ever be wider. Measured on seeks, settings and
+        // font loads only, never in the timeline callback.
+        var TEXT_SAFE = 1300;
+        var ARTIST_SIZE = 28,
+          ARTIST_FLOOR = 15;
+        var fitted = "";
+        function fitArtist() {
+          var line = document.getElementById("songArtist");
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var key = [line.textContent, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          var size = ARTIST_SIZE;
+          line.style.transform = "";
+          line.style.fontSize = size + "px";
+          while (line.offsetWidth > TEXT_SAFE && size > ARTIST_FLOOR) {
+            size = Math.max(ARTIST_FLOOR, Math.floor(size * 0.94));
+            line.style.fontSize = size + "px";
+          }
+          var w = line.offsetWidth;
+          line.style.transform = w > TEXT_SAFE ? "scale(" + (TEXT_SAFE / w).toFixed(4) + ")" : "";
+        }
+
+        // ---------- shaders ----------
+        // Rays: triangles in 1080p pixels from the frame centre, y down, so they keep their size
+        // at every preview resolution. Each vertex carries a colour and a `fall` position (-1..1
+        // across the line: its light falls off from its middle). Light adds on.
+        var SHAPE_VS = [
+          "attribute vec2 pos; attribute vec3 col; attribute vec2 fall;",
+          "varying vec3 vCol; varying vec2 vFall;",
+          "void main(){",
+          "  vCol = col; vFall = fall;",
+          "  gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var SHAPE_FS = [
+          "precision mediump float;",
+          "varying vec3 vCol; varying vec2 vFall;",
+          "void main(){",
+          "  float f = clamp(1.0 - length(vFall), 0.0, 1.0);",
+          "  gl_FragColor = vec4(vCol * f, 0.0);",
+          "}",
+        ].join("\n");
+        // Letters: textured quads from the atlas (premultiplied), dimmed by depth.
+        var LETTER_VS = [
+          "attribute vec2 pos; attribute vec2 tc; attribute float lit;",
+          "varying vec2 vTc; varying float vLit;",
+          "void main(){",
+          "  vTc = tc; vLit = lit;",
+          "  gl_Position = vec4(pos.x / 960.0, -pos.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var LETTER_FS = [
+          "precision mediump float;",
+          "uniform sampler2D atlas; uniform float fade;",
+          "varying vec2 vTc; varying float vLit;",
+          "void main(){",
+          "  vec4 t = texture2D(atlas, vTc);",
+          "  gl_FragColor = vec4(t.rgb * vLit, t.a) * fade;",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        // The brightest parts only, for the glow.
+        var BRIGHT_FS = [
+          "precision highp float; uniform sampler2D src; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb;",
+          "  float m = max(c.r, max(c.g, c.b));",
+          "  gl_FragColor = vec4(c * smoothstep(0.55, 1.0, m), 1.0);",
+          "}",
+        ].join("\n");
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // Deep space, drawn once into a picture MARGIN px bigger than the frame on every side:
+        // a dark base, a blue nebula haze in a diagonal band and round the planet, darker dust
+        // lanes, and three layers of stars (many faint ones, fewer brighter ones with a soft
+        // glow, and a few big ones with small cross flares). A tiny fixed dither stops banding.
+        var SPACE_FS = [
+          "precision highp float;",
+          "uniform vec3 accCol; uniform float pxScale; uniform vec2 size; uniform float margin;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "float noise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int k = 0; k < 6; k++) { s += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }",
+          // one star per cell (maybe): a sharp dot never smaller than about a screen pixel, a
+          // soft glow, and (flare > 0) thin cross spikes
+          "vec3 star(vec2 p, float cell, float chance, float seed, float rad, float bright, float glowR, float glowK, float flare){",
+          "  vec2 c = floor(p / cell);",
+          "  vec2 k = c + vec2(seed, seed * 1.7);",
+          "  if (hash(k) > chance) return vec3(0.0);",
+          "  vec2 at = (c + 0.2 + 0.6 * vec2(hash(k + 3.1), hash(k + 7.3))) * cell;",
+          "  vec2 d = p - at;",
+          "  float rr = max(rad, 0.75 / pxScale);",
+          "  float b = bright * (0.35 + 0.65 * hash(k + 5.9)) * (rad / rr) * (rad / rr);",
+          "  float v = b * exp(-dot(d, d) / (2.0 * rr * rr));",
+          "  v += b * glowK * exp(-length(d) / glowR);",
+          "  if (flare > 0.0) {",
+          "    float fl = exp(-abs(d.y) * 1.6 * pxScale) * exp(-abs(d.x) / flare) + exp(-abs(d.x) * 1.6 * pxScale) * exp(-abs(d.y) / flare);",
+          "    v += b * 0.35 * fl;",
+          "  }",
+          "  float temp = hash(k + 9.4);",
+          "  vec3 tint = temp < 0.3 ? vec3(0.75, 0.85, 1.0) : (temp > 0.85 ? vec3(1.0, 0.86, 0.7) : vec3(1.0));",
+          "  return tint * v;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * size.x, (1.0 - uv.y) * size.y) - margin;", // frame pixels
+          "  vec2 q = p / 1080.0;",
+          "  float n1 = fbm(q * 2.1 + vec2(3.1, 7.4));",
+          "  float n2 = fbm(q * 4.3 + vec2(n1 * 1.9, 2.0));",
+          // a haze band rising from the lower left to the upper right, and a glow round the planet
+          "  float bd = dot(q - vec2(0.95, 0.5), normalize(vec2(0.42, 0.91)));",
+          "  float band = exp(-bd * bd * 7.0);",
+          "  vec2 pc = (p - vec2(960.0, 505.0)) / 1080.0;",
+          "  float near = exp(-dot(pc, pc) * 5.5);",
+          "  float haze = band * (0.25 + 1.1 * smoothstep(0.38, 0.82, n2)) + 0.55 * near * (0.55 + 0.45 * n1);",
+          "  vec3 neb = mix(vec3(0.07, 0.15, 0.46), accCol, 0.55);",
+          "  vec3 neb2 = mix(vec3(0.30, 0.12, 0.48), neb, 0.45);",
+          "  vec3 c = vec3(0.004, 0.006, 0.018) + mix(neb, neb2, smoothstep(0.42, 0.68, n1)) * haze * 0.3;",
+          "  c *= 1.0 - 0.55 * band * smoothstep(0.52, 0.74, fbm(q * 7.5 + vec2(11.0, 4.0)));",
+          "  float dens = 0.6 + 1.2 * band;",
+          "  c += star(p, 8.0, 0.05 * dens, 1.0, 0.55, 0.55, 1.0, 0.0, 0.0);",
+          "  c += star(p, 36.0, 0.22 * dens, 17.0, 0.8, 1.0, 2.2, 0.06, 0.0);",
+          "  c += star(p, 170.0, 0.32, 41.0, 1.2, 1.6, 6.0, 0.07, 9.0);",
+          "  c += (hash(floor(p) + vec2(5.0, 9.0)) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The space picture on the frame, shifted by the camera drift and lifted a little with
+        // the music's loudness.
+        var BACKDROP_FS = [
+          "precision highp float;",
+          "uniform sampler2D space; uniform vec2 size; uniform float margin; uniform vec2 drift; uniform float gain;",
+          "varying vec2 uv;",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0) + margin + drift;",
+          "  vec3 c = texture2D(space, vec2(p.x / size.x, 1.0 - p.y / size.y)).rgb;",
+          "  gl_FragColor = vec4(c * gain, 1.0);",
+          "}",
+        ].join("\n");
+        // The planet, drawn on a square round it: for each pixel inside the disc, the point on
+        // the sphere it sees (ray-sphere), turned into the planet's own frame (the ring's tilt,
+        // the view from a little above, and its spin), coloured by seeded 3D noise (continents,
+        // oceans tinted by the accent colour, ice caps, clouds that turn a little faster) or by
+        // the cover wrapped round it, then lit from the upper left with a soft terminator, an
+        // ocean glint, a hazy atmosphere toward the edge, a bright rim light and a glow outside.
+        // Every exp() here is given an argument that can never be positive.
+        var PLANET_VS = [
+          "attribute vec2 p; uniform vec3 box;",
+          "void main(){",
+          "  vec2 px = box.xy + vec2(p.x, -p.y) * box.z;",
+          "  gl_Position = vec4(px.x / 960.0 - 1.0, 1.0 - px.y / 540.0, 0.0, 1.0);",
+          "}",
+        ].join("\n");
+        var PLANET_FS = [
+          "precision highp float;",
+          "uniform vec3 centre;", // x, y, radius (1080p px, y down)
+          "uniform float pxScale, spin, cloudSpin, glow, hasCover, tilt, sinView;",
+          "uniform vec3 accCol;",
+          "uniform sampler2D cover;",
+          "float hash3(vec3 p){ return fract(sin(dot(mod(p, 256.0), vec3(127.1, 311.7, 74.7))) * 43758.5453); }",
+          "float noise3(vec3 p){",
+          "  vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash3(i), b = hash3(i + vec3(1.0, 0.0, 0.0)), c = hash3(i + vec3(0.0, 1.0, 0.0)), d = hash3(i + vec3(1.0, 1.0, 0.0));",
+          "  float e = hash3(i + vec3(0.0, 0.0, 1.0)), g = hash3(i + vec3(1.0, 0.0, 1.0)), h = hash3(i + vec3(0.0, 1.0, 1.0)), k = hash3(i + vec3(1.0, 1.0, 1.0));",
+          "  return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y), mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z);",
+          "}",
+          "float fbm6(vec3 p){ float s = 0.0, a = 0.5; for (int k = 0; k < 6; k++) { s += a * noise3(p); p = p * 2.02 + vec3(5.3, 1.7, 9.1); a *= 0.5; } return s; }",
+          "float fbm4(vec3 p){ float s = 0.0, a = 0.5; for (int k = 0; k < 4; k++) { s += a * noise3(p); p = p * 2.03 + vec3(2.9, 7.7, 4.3); a *= 0.5; } return s / 0.9375; }",
+          "float fbm3(vec3 p){ float s = 0.0, a = 0.5; for (int k = 0; k < 3; k++) { s += a * noise3(p); p = p * 2.07 + vec3(8.1, 3.3, 6.6); a *= 0.5; } return s / 0.875; }",
+          "vec3 rotY(vec3 v, float a){ float c = cos(a), s = sin(a); return vec3(c * v.x - s * v.z, v.y, s * v.x + c * v.z); }",
+          // the cover round the globe: two copies side by side, each 180 degrees wide; across
+          // the join one fades into the other, so there is no seam
+          "vec3 coverAt(float x, float v){",
+          "  float E = 0.08, P = 0.92;",
+          "  vec3 a = texture2D(cover, vec2(x, v)).rgb;",
+          "  if (x < E) a = mix(texture2D(cover, vec2(x + P, v)).rgb, a, x / E);",
+          "  return a;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(gl_FragCoord.x / pxScale, 1080.0 - gl_FragCoord.y / pxScale);",
+          "  vec2 d = (p - centre.xy) / centre.z;",
+          "  float r = length(d);",
+          "  float aa = 1.2 / (centre.z * pxScale);",
+          "  float disc = clamp((1.0 - r) / aa + 0.5, 0.0, 1.0);",
+          "  vec3 atmo = mix(accCol, vec3(0.55, 0.78, 1.0), 0.5);",
+          "  vec2 rimDir = normalize(vec2(0.82, -0.42));", // toward the upper right (y down)
+          "  float side = dot(d / max(r, 0.0001), rimDir);",
+          "  float out1 = max(r - 1.0, 0.0);",
+          "  vec3 halo = atmo * (0.42 * exp(-out1 * 18.0) + 0.12 * exp(-out1 * 4.0)) * (0.5 + 0.5 * smoothstep(-0.7, 0.9, side)) * glow;",
+          "  vec3 col = vec3(0.0);",
+          "  if (r < 1.0 + aa) {",
+          "    float rr = min(r, 1.0);",
+          "    vec3 n = vec3(d.x, -d.y, sqrt(max(0.0, 1.0 - rr * rr)));", // y up, z toward us
+          "    float ct = cos(tilt), st = sin(tilt);",
+          "    vec3 q = vec3(ct * n.x - st * n.y, st * n.x + ct * n.y, n.z);",
+          "    float cv = sqrt(1.0 - sinView * sinView);",
+          "    q = vec3(q.x, q.y * cv + q.z * sinView, -q.y * sinView + q.z * cv);",
+          "    vec3 g = rotY(q, spin);",
+          "    float lat = abs(g.y);",
+          // the generated world
+          "    vec3 s = g * 1.65 + vec3(11.3, 4.7, 7.9);",
+          "    vec2 w = vec2(fbm3(s * 1.4), fbm3(s * 1.4 + vec3(5.2, 1.3, 2.8)));",
+          "    float h = fbm6(s + vec3(0.9 * (w.x - 0.5), 0.9 * (w.y - 0.5), 0.6 * (w.x - w.y)));",
+          "    float land = smoothstep(0.502, 0.518, h);",
+          "    float coast = smoothstep(0.40, 0.502, h) * (1.0 - land);",
+          "    vec3 deep = mix(vec3(0.004, 0.018, 0.065), accCol * 0.30, 0.75);",
+          "    vec3 shallow = mix(deep, accCol * 0.72 + vec3(0.03, 0.10, 0.12), 0.7);",
+          "    vec3 ocean = mix(deep, shallow, coast * coast);",
+          "    float m2 = fbm4(g * 4.6 + vec3(3.1, 0.4, 6.2));",
+          "    vec3 green = vec3(0.10, 0.19, 0.08), dry = vec3(0.46, 0.37, 0.23), dark = vec3(0.05, 0.10, 0.05), high = vec3(0.55, 0.50, 0.44);",
+          "    float aridity = smoothstep(0.44, 0.64, m2 + 0.35 * (0.3 - abs(lat - 0.28)));",
+          "    vec3 ground = mix(green, dry, aridity);",
+          "    ground = mix(ground, dark, smoothstep(0.55, 0.72, m2) * 0.55 * (1.0 - aridity));",
+          "    ground = mix(ground, high, smoothstep(0.62, 0.74, h));",
+          "    ground *= mix(vec3(1.0), 0.45 + 0.9 * accCol, 0.4);",
+          "    vec3 albedo = mix(ocean, ground, land);",
+          "    float ice = smoothstep(0.87, 0.93, lat + 0.09 * (m2 - 0.5));",
+          "    albedo = mix(albedo, vec3(0.74, 0.80, 0.88), ice);",
+          "    float wet = (1.0 - land) * (1.0 - ice);",
+          "    vec3 gc = rotY(g, cloudSpin);",
+          "    float cl = fbm6(vec3(gc.x, gc.y * 2.6, gc.z) * 3.2 + vec3(2.0, 8.0, 4.0) + vec3(0.7 * w.x, 0.0, 0.7 * w.y));",
+          "    float cloud = smoothstep(0.52, 0.76, cl) * 0.85;",
+          // or the cover, wrapped round the globe (two copies, the first facing us at the start)
+          "    if (hasCover > 0.5) {",
+          "      float lon = atan(g.x, g.z);",
+          "      float fu = fract(lon / 3.14159265 + 0.5 + 0.04);",
+          "      albedo = coverAt(fu * 0.92, clamp(0.5 + asin(clamp(g.y, -1.0, 1.0)) / 3.14159265, 0.0, 1.0));",
+          "      wet = 0.0;",
+          "      cloud *= 0.12;",
+          "    }",
+          // light from the upper left
+          "    vec3 L = normalize(vec3(-0.55, 0.45, 0.72));",
+          "    float ndl = dot(n, L);",
+          "    float lit = smoothstep(-0.32, 0.65, ndl) * (0.45 + 0.55 * max(ndl, 0.0));",
+          "    vec3 c = hasCover > 0.5 ? albedo * (0.12 + 1.05 * lit * glow) : albedo * (0.03 + 1.5 * lit * glow);",
+          "    c += accCol * 0.02 * (1.0 - lit);",
+          "    vec3 refl = reflect(-L, n);",
+          "    c += vec3(1.0, 0.95, 0.85) * pow(max(refl.z, 0.0), 60.0) * wet * 0.3 * glow;",
+          "    c = mix(c, vec3(0.92, 0.95, 1.0) * (0.03 + 1.15 * lit * glow), cloud);",
+          "    float fres = clamp(1.0 - n.z, 0.0, 1.0);",
+          "    c = mix(c, atmo * (0.08 + 0.8 * lit * glow), 0.5 * pow(clamp(fres, 0.0, 1.0), 2.4));",
+          "    float rim = pow(clamp(fres, 0.0, 1.0), 5.0) * (0.15 + 1.25 * smoothstep(-0.25, 0.95, side));",
+          "    c += mix(atmo, vec3(1.0), 0.55) * rim * 1.4 * glow;",
+          "    col = c;",
+          "  }",
+          "  gl_FragColor = vec4(col * disc + halo * (1.0 - disc), disc);",
+          "}",
+        ].join("\n");
+        // Everything together: the frame, a soft glow from its brightest parts, the light leak
+        // (a warm diagonal streak, mostly on the right side), a vignette and a tiny dither.
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D scene, bloomA, bloomB;",
+          "uniform vec4 leak; uniform float leakK; uniform vec3 warm;",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "void main(){",
+          "  vec2 p = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec3 c = texture2D(scene, uv).rgb;",
+          "  vec3 b = texture2D(bloomA, uv).rgb * 0.38 + texture2D(bloomB, uv).rgb * 0.55;",
+          "  c = vec3(1.0) - (vec3(1.0) - c) * (vec3(1.0) - clamp(b, 0.0, 1.0));",
+          "  if (leakK > 0.0) {",
+          "    vec2 dir = vec2(cos(leak.z), sin(leak.z));",
+          "    vec2 nrm = vec2(-dir.y, dir.x);",
+          "    float d = dot(p - leak.xy, nrm);",
+          "    float along = dot(p - leak.xy, dir);",
+          "    float w = leak.w;",
+          "    float core = exp(-d * d / (w * w));",
+          "    float wide = exp(-d * d / (10.0 * w * w));",
+          "    float d2 = d + 2.6 * w;",
+          "    float thin2 = exp(-d2 * d2 / (0.08 * w * w));",
+          "    float streaks = 0.82 + 0.18 * sin(along * 0.009 + 1.3);",
+          "    float mask = smoothstep(560.0, 1350.0, p.x);",
+          "    vec3 l = warm * (0.6 * core * streaks + 0.26 * wide + 0.28 * thin2) * leakK * mask;",
+          "    c = vec3(1.0) - (vec3(1.0) - c) * (vec3(1.0) - clamp(l, 0.0, 1.0));",
+          "  }",
+          "  c *= mix(0.62, 1.0, smoothstep(1.25, 0.32, length((uv - vec2(0.5, 0.48)) * vec2(1.35, 1.0))));",
+          "  c += (hash(floor(p) + vec2(3.0, 1.0)) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          // The accent brought most of the way to full brightness, so a dark accent still
+          // tints the planet and the nebula clearly (its hue is what matters there).
+          var ACC_TOP = Math.max(ACC[0], ACC[1], ACC[2], 0.001);
+          var ACC_LIT = mixRGB(ACC, [ACC[0] / ACC_TOP, ACC[1] / ACC_TOP, ACC[2] / ACC_TOP], 0.6);
+          var INT = Number(setting("intensity"));
+          var ORBIT = M.orbitSeconds(setting("orbitSeconds"));
+          var SCALE_ON_BEAT = setting("scaleOnBeat") === true;
+          var FONT = String(setting("font") || "Montserrat");
+          var TITLE = String(setting("title") || "")
+            .toUpperCase()
+            .replace(/\s+/g, " ")
+            .trim();
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          var spec = new Float32Array(32);
+          var RAYS = M.rayCount(Number(setting("bandCount")));
+          var ANGLES = V.ringAngles(RAYS, 360);
+          var RAY_W = M.rayWeights(RAYS, V.mulberry32);
+          var RAY_DIRS = [];
+          for (var ri = 0; ri < RAYS; ri++) RAY_DIRS.push(V.ringPoint(ANGLES[ri], "circle"));
+
+          var S = PREVIEW_SCALE;
+          var W = Math.round(1920 * S),
+            H = Math.round(1080 * S);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          // The space picture is MARGIN px bigger than the frame on every side, for the drift.
+          var MARGIN = 28;
+          var SW = 1920 + 2 * MARGIN,
+            SH = 1080 + 2 * MARGIN;
+          var space = V.createTarget(gl, Math.round(SW * S), Math.round(SH * S));
+          var scene = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var qA = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4)),
+            qB = V.createTarget(gl, Math.round(W / 4), Math.round(H / 4));
+
+          var shapeProg = V.createProgram(gl, SHAPE_VS, SHAPE_FS);
+          var letterProg = V.createProgram(gl, LETTER_VS, LETTER_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var brightProg = V.createProgram(gl, QUAD_VS, BRIGHT_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var spaceProg = V.createProgram(gl, QUAD_VS, SPACE_FS);
+          var backdropProg = V.createProgram(gl, QUAD_VS, BACKDROP_FS);
+          var planetProg = V.createProgram(gl, PLANET_VS, PLANET_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+          var shapeBuf = gl.createBuffer();
+          var letterBuf = gl.createBuffer();
+
+          function texture() {
+            var tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(
+              gl.TEXTURE_2D,
+              0,
+              gl.RGBA,
+              1,
+              1,
+              0,
+              gl.RGBA,
+              gl.UNSIGNED_BYTE,
+              new Uint8Array([0, 0, 0, 0]),
+            );
+            return tex;
+          }
+
+          // The cover, square-cropped to 512 px (no mipmaps: the globe's join must not show).
+          var coverTex = texture();
+          var coverReady = false;
+          function uploadCover() {
+            coverReady = false;
+            if (!coverLoaded || !coverImg.naturalWidth) return;
+            var c2 = document.createElement("canvas");
+            c2.width = 512;
+            c2.height = 512;
+            var w = coverImg.naturalWidth,
+              h = coverImg.naturalHeight,
+              s = Math.min(w, h);
+            c2.getContext("2d").drawImage(coverImg, (w - s) / 2, (h - s) / 2, s, s, 0, 0, 512, 512);
+            gl.bindTexture(gl.TEXTURE_2D, coverTex);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c2);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            coverReady = true;
+          }
+          uploadCover();
+
+          // ---------- the letters: an atlas of the title's characters ----------
+          // Each character is drawn once, big, in bevelled gold (a dark soft shadow, a deep
+          // extrusion below it, a bevel lit from above, a metallic face), and laid out round
+          // the ring from its measured width. Drawn again when the fonts finish loading.
+          var EM = 140; // the atlas's font size (px)
+          var PAD = Math.round(EM * 0.22);
+          var TRACK = 0.05; // extra spacing between letters (em)
+          var atlasTex = texture();
+          var atlasEpoch = -1;
+          var glyphs = {}; // char -> { x, y, w, h, ax, ay } in atlas pixels
+          var AW = 1,
+            AH = 1;
+          var layout = M.titleLayout([], 1);
+          var chars = Array.from(TITLE); // characters in reading order (spaces included)
+          var DARK = mixRGB(MAIN, [0, 0, 0], 0.72);
+          var LIGHT = mixRGB(MAIN, [1, 1, 1], 0.5);
+          function rgb(c, a) {
+            return css(c, a === undefined ? 1 : a);
+          }
+          function fontOf(size) {
+            return "800 " + size + 'px "' + FONT + '", sans-serif';
+          }
+          function paintGlyph(ctx, ch, ox, by, cap) {
+            // the shadow under it and the extrusion: the letter repeated a little lower and to
+            // the right, darkest at the back
+            var depth = 8;
+            for (var i = depth; i >= 1; i--) {
+              if (i === depth) {
+                ctx.shadowColor = "rgba(0,0,0,0.75)";
+                ctx.shadowBlur = EM * 0.14;
+                ctx.shadowOffsetY = EM * 0.05;
+              } else {
+                ctx.shadowColor = "rgba(0,0,0,0)";
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetY = 0;
+              }
+              ctx.fillStyle = rgb(mixRGB(DARK, mixRGB(MAIN, [0, 0, 0], 0.45), 1 - i / depth));
+              ctx.fillText(ch, ox + i * 0.35, by + i * 1.25);
+            }
+            ctx.shadowColor = "rgba(0,0,0,0)";
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+            // the bevel: an outline lit from above (light at the top, dark at the bottom)
+            var bevel = ctx.createLinearGradient(0, by - cap, 0, by);
+            bevel.addColorStop(0, rgb(mixRGB(LIGHT, [1, 1, 1], 0.5)));
+            bevel.addColorStop(0.45, rgb(MAIN));
+            bevel.addColorStop(1, rgb(mixRGB(MAIN, [0, 0, 0], 0.55)));
+            ctx.lineJoin = "round";
+            ctx.lineWidth = EM * 0.045;
+            ctx.strokeStyle = bevel;
+            ctx.strokeText(ch, ox, by);
+            // the metallic face: bright at the top, a dark "horizon" across the middle, a
+            // lighter reflection under it
+            var face = ctx.createLinearGradient(0, by - cap, 0, by);
+            face.addColorStop(0, rgb(LIGHT));
+            face.addColorStop(0.38, rgb(MAIN));
+            face.addColorStop(0.52, rgb(mixRGB(MAIN, [0, 0, 0], 0.5)));
+            face.addColorStop(0.6, rgb(mixRGB(MAIN, [1, 1, 1], 0.2)));
+            face.addColorStop(1, rgb(mixRGB(MAIN, [0, 0, 0], 0.2)));
+            ctx.fillStyle = face;
+            ctx.fillText(ch, ox, by);
+            // a thin bright edge along the top of the face
+            ctx.save();
+            ctx.globalCompositeOperation = "source-atop";
+            ctx.lineWidth = EM * 0.012;
+            ctx.strokeStyle = "rgba(255,255,255,0.35)";
+            ctx.strokeText(ch, ox - 0.6, by - 0.8);
+            ctx.restore();
+          }
+          function buildAtlas() {
+            atlasEpoch = fontEpoch;
+            glyphs = {};
+            var measure = document.createElement("canvas").getContext("2d");
+            measure.font = fontOf(EM);
+            var cap = measure.measureText("H").actualBoundingBoxAscent || EM * 0.7;
+            var adv = function (ch) {
+              return measure.measureText(ch).width;
+            };
+            // which characters to draw, and the layout round the ring from their widths
+            var need = [SEPARATOR];
+            var widths = [];
+            for (var i = 0; i < chars.length; i++) {
+              widths.push(adv(chars[i]) / EM + TRACK);
+              if (chars[i] !== " " && need.indexOf(chars[i]) < 0) need.push(chars[i]);
+            }
+            var sepWidth = (adv(" " + SEPARATOR + " ") / EM) * 1.15 + TRACK;
+            layout = M.titleLayout(widths, sepWidth);
+            // shelf-pack the cells into a 2048-wide atlas
+            var cellH = Math.ceil(EM * 1.25 + 2 * PAD);
+            var x = 0,
+              y = 0;
+            for (var j = 0; j < need.length; j++) {
+              var cw = Math.ceil(adv(need[j]) + 2 * PAD);
+              if (x + cw > 2048) {
+                x = 0;
+                y += cellH;
+              }
+              // ax, ay: the character's centre (the middle of its capitals) inside the cell
+              glyphs[need[j]] = {
+                x: x,
+                y: y,
+                w: cw,
+                h: cellH,
+                ax: PAD + adv(need[j]) / 2,
+                ay: PAD + EM * 0.95 - cap / 2,
+              };
+              x += cw;
+            }
+            AW = 2048;
+            AH = 1;
+            while (AH < y + cellH) AH *= 2;
+            var c2 = document.createElement("canvas");
+            c2.width = AW;
+            c2.height = AH;
+            var ctx = c2.getContext("2d");
+            ctx.font = fontOf(EM);
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+            for (var ch in glyphs) {
+              var gph = glyphs[ch];
+              paintGlyph(ctx, ch, gph.x + PAD, gph.y + PAD + EM * 0.95, cap);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c2);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+          }
+
+          // Letter quads: x, y (1080p px from the centre), u, v, brightness.
+          var LSTRIDE = 5;
+          var lverts = new Float32Array(LSTRIDE * 6 * 256);
+          var lv = 0;
+          function letterVert(x, y, u, v, k) {
+            if (LSTRIDE * (lv + 1) > lverts.length) {
+              var bigger = new Float32Array(lverts.length * 2);
+              bigger.set(lverts);
+              lverts = bigger;
+            }
+            var o = LSTRIDE * lv++;
+            lverts[o] = x - 960;
+            lverts[o + 1] = y - 540;
+            lverts[o + 2] = u;
+            lverts[o + 3] = v;
+            lverts[o + 4] = k;
+          }
+          /** The letters from poses[from] up to (not including) poses[to], into the buffer. */
+          function buildLetters(poses, from, to, glint) {
+            lv = 0;
+            for (var i = from; i < to; i++) {
+              var p = poses[i];
+              var ch = p.k < 0 ? SEPARATOR : chars[p.k];
+              var gph = glyphs[ch];
+              if (!gph) continue;
+              var k = (layout.size / EM) * p.scale * (p.k < 0 ? 0.72 : 1); // a smaller dot
+              var lit = p.bright * (1 + glint * Math.max(0, p.depth));
+              var x0 = -gph.ax * k,
+                x1 = (gph.w - gph.ax) * k,
+                y0 = -gph.ay * k,
+                y1 = (gph.h - gph.ay) * k;
+              var u0 = gph.x / AW,
+                u1 = (gph.x + gph.w) / AW,
+                v0 = gph.y / AH,
+                v1 = (gph.y + gph.h) / AH;
+              var ax = p.x + p.ux * x0 + p.vx * y0,
+                ay = p.y + p.uy * x0 + p.vy * y0;
+              var bx = p.x + p.ux * x1 + p.vx * y0,
+                by = p.y + p.uy * x1 + p.vy * y0;
+              var cx = p.x + p.ux * x1 + p.vx * y1,
+                cy = p.y + p.uy * x1 + p.vy * y1;
+              var dx = p.x + p.ux * x0 + p.vx * y1,
+                dy = p.y + p.uy * x0 + p.vy * y1;
+              letterVert(ax, ay, u0, v0, lit);
+              letterVert(bx, by, u1, v0, lit);
+              letterVert(cx, cy, u1, v1, lit);
+              letterVert(ax, ay, u0, v0, lit);
+              letterVert(cx, cy, u1, v1, lit);
+              letterVert(dx, dy, u0, v1, lit);
+            }
+          }
+
+          // Ray triangles: x, y, r, g, b, fall x, fall y.
+          var STRIDE = 7;
+          var verts = new Float32Array(STRIDE * 6 * 512);
+          var nv = 0;
+          function vert(x, y, c, k, fx, fy) {
+            if (STRIDE * (nv + 1) > verts.length) {
+              var bigger = new Float32Array(verts.length * 2);
+              bigger.set(verts);
+              verts = bigger;
+            }
+            var o = STRIDE * nv++;
+            verts[o] = x - 960;
+            verts[o + 1] = y - 540;
+            verts[o + 2] = c[0] * k;
+            verts[o + 3] = c[1] * k;
+            verts[o + 4] = c[2] * k;
+            verts[o + 5] = fx;
+            verts[o + 6] = fy;
+          }
+          /**
+           * A line this many 1080p pixels wide, never thinner than about one screen pixel:
+           * a thinner line is drawn wider and dimmer, so the preview shows what the render
+           * shows when scaled down.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+            return [w, width / w];
+          }
+          /** A straight stroke from (x0, y0) to (x1, y1), coloured c, brightness kA → kB. */
+          function stroke(x0, y0, x1, y1, width, c, kA, kB) {
+            var t = thin(width);
+            var dx = x1 - x0,
+              dy = y1 - y0;
+            var len = Math.sqrt(dx * dx + dy * dy) || 1;
+            var nx = (-dy / len) * t[0],
+              ny = (dx / len) * t[0];
+            var ka = kA * t[1],
+              kb = kB * t[1];
+            vert(x0 + nx, y0 + ny, c, ka, 1, 0);
+            vert(x0 - nx, y0 - ny, c, ka, -1, 0);
+            vert(x1 - nx, y1 - ny, c, kb, -1, 0);
+            vert(x0 + nx, y0 + ny, c, ka, 1, 0);
+            vert(x1 - nx, y1 - ny, c, kb, -1, 0);
+            vert(x1 + nx, y1 + ny, c, kb, 1, 0);
+          }
+          var RAY_COL = mixRGB([1, 1, 1], mixRGB(ACC, [0.6, 0.8, 1], 0.5), 0.3);
+          function buildRays(t, radius, loud) {
+            nv = 0;
+            audio.spectrum(t, spec);
+            var lens = M.rayLengths(V.ringValues(spec, ANGLES, 360), RAY_W, INT);
+            var level = M.rayLevel(loud);
+            var cap = M.RAY_MAX * Math.max(0.2, Math.min(2, INT));
+            for (var i = 0; i < RAYS; i++) {
+              var len = lens[i];
+              if (len < 0.5) continue;
+              var dir = RAY_DIRS[i];
+              var r0 = radius + 3;
+              var k = level * (0.45 + 0.55 * Math.min(1, len / cap));
+              stroke(
+                M.PLANET_X + dir[0] * r0,
+                M.PLANET_Y + dir[1] * r0,
+                M.PLANET_X + dir[0] * (r0 + len),
+                M.PLANET_Y + dir[1] * (r0 + len),
+                1.1,
+                RAY_COL,
+                k,
+                0,
+              );
+            }
+          }
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function pass(prog, src, dst) {
+            bindTarget(dst);
+            gl.useProgram(prog);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(prog.u.src, 0);
+            V.drawQuad(gl, prog);
+          }
+          function drawBuffer(prog, buf, data, count, stride, layoutList) {
+            if (count === 0) return;
+            gl.useProgram(prog);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, stride * count), gl.DYNAMIC_DRAW);
+            var locs = [],
+              offset = 0;
+            for (var j = 0; j < layoutList.length; j++) {
+              var loc = gl.getAttribLocation(prog, layoutList[j][0]);
+              gl.enableVertexAttribArray(loc);
+              gl.vertexAttribPointer(
+                loc,
+                layoutList[j][1],
+                gl.FLOAT,
+                false,
+                stride * 4,
+                offset * 4,
+              );
+              offset += layoutList[j][1];
+              locs.push(loc);
+            }
+            gl.drawArrays(gl.TRIANGLES, 0, count);
+            for (var k = 0; k < locs.length; k++) gl.disableVertexAttribArray(locs[k]);
+          }
+          var LETTER_LAYOUT = [
+            ["pos", 2],
+            ["tc", 2],
+            ["lit", 1],
+          ];
+          var SHAPE_LAYOUT = [
+            ["pos", 2],
+            ["col", 3],
+            ["fall", 2],
+          ];
+          function drawLetters(fade) {
+            if (lv === 0) return;
+            gl.useProgram(letterProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+            gl.uniform1i(letterProg.u.atlas, 0);
+            gl.uniform1f(letterProg.u.fade, fade);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            drawBuffer(letterProg, letterBuf, lverts, lv, LSTRIDE, LETTER_LAYOUT);
+            gl.disable(gl.BLEND);
+          }
+
+          // Deep space never changes, so it is drawn once.
+          (function drawSpace() {
+            bindTarget(space);
+            gl.useProgram(spaceProg);
+            gl.uniform3fv(spaceProg.u.accCol, ACC_LIT);
+            gl.uniform1f(spaceProg.u.pxScale, S);
+            gl.uniform2f(spaceProg.u.size, SW, SH);
+            gl.uniform1f(spaceProg.u.margin, MARGIN);
+            V.drawQuad(gl, spaceProg);
+          })();
+
+          var WARM = mixRGB([1.0, 0.52, 0.2], MAIN, 0.25);
+
+          function renderAt(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, M.PULSE_RELEASE);
+            var scale = M.planetScale(env, SCALE_ON_BEAT);
+            var glow = M.glowLevel(a.loud);
+            var radius = M.PLANET_R * scale;
+            if (atlasEpoch !== fontEpoch) buildAtlas();
+            var poses = M.placeLetters(layout, songTime, ORBIT);
+            var behind = 0;
+            while (behind < poses.length && poses[behind].depth < 0) behind++;
+            var drift = M.drift(songTime);
+            var leak = M.lightLeak(songTime, V.mulberry32);
+            var fadeIn = Math.max(0, Math.min(1, (t - 0.1) / 1.2));
+            fadeIn = fadeIn * fadeIn * (3 - 2 * fadeIn);
+            var glint = 0.18 * env;
+
+            // 1. space, drifting with the camera
+            bindTarget(scene);
+            gl.useProgram(backdropProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, space.tex);
+            gl.uniform1i(backdropProg.u.space, 0);
+            gl.uniform2f(backdropProg.u.size, SW, SH);
+            gl.uniform1f(backdropProg.u.margin, MARGIN);
+            gl.uniform2f(backdropProg.u.drift, drift[0], drift[1]);
+            gl.uniform1f(backdropProg.u.gain, 0.45 + 0.55 * glow);
+            V.drawQuad(gl, backdropProg);
+
+            // 2. the letters behind the planet (the farthest first)
+            buildLetters(poses, 0, behind, glint);
+            drawLetters(fadeIn);
+
+            // 3. the rays, light adding on
+            buildRays(t, radius, a.loud);
+            if (nv > 0) {
+              gl.enable(gl.BLEND);
+              gl.blendFunc(gl.ONE, gl.ONE);
+              drawBuffer(shapeProg, shapeBuf, verts, nv, STRIDE, SHAPE_LAYOUT);
+              gl.disable(gl.BLEND);
+            }
+
+            // 4. the planet, hiding what is behind it; its glow adds on outside
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(planetProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, coverTex);
+            gl.uniform1i(planetProg.u.cover, 0);
+            gl.uniform3f(planetProg.u.box, M.PLANET_X, M.PLANET_Y, radius * 1.6);
+            gl.uniform3f(planetProg.u.centre, M.PLANET_X, M.PLANET_Y, radius);
+            gl.uniform1f(planetProg.u.pxScale, S);
+            gl.uniform1f(planetProg.u.spin, M.planetSpin(songTime));
+            gl.uniform1f(planetProg.u.cloudSpin, M.planetSpin(songTime * 0.18));
+            gl.uniform1f(planetProg.u.glow, glow);
+            gl.uniform1f(planetProg.u.hasCover, coverReady && coverLoaded ? 1 : 0);
+            gl.uniform1f(planetProg.u.tilt, M.RING_TILT);
+            gl.uniform1f(planetProg.u.sinView, M.RING_RY / M.RING_RX);
+            gl.uniform3fv(planetProg.u.accCol, ACC_LIT);
+            V.drawQuad(gl, planetProg);
+            gl.disable(gl.BLEND);
+
+            // 5. the letters in front of it (the nearest last)
+            buildLetters(poses, behind, poses.length, glint);
+            drawLetters(fadeIn);
+
+            // 6. a soft glow from the brightest parts: half and quarter size (radii kept in
+            // 1080p terms)
+            pass(brightProg, scene, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * S);
+            V.blur(gl, blurProg, hA, hB, 3.0 * S);
+            pass(copyProg, hA, qA);
+            V.blur(gl, blurProg, qA, qB, 2.0 * S);
+            V.blur(gl, blurProg, qA, qB, 4.0 * S);
+
+            // 7. the whole picture onto the screen, with the light leak and the vignette
+            bindTarget(null);
+            gl.useProgram(compProg);
+            var units = [
+              ["scene", scene.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", qA.tex],
+            ];
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(compProg.u[units[u][0]], u);
+            }
+            gl.uniform4f(compProg.u.leak, leak.x, leak.y, leak.angle, leak.width);
+            gl.uniform1f(compProg.u.leakK, leak.strength);
+            gl.uniform3fv(compProg.u.warm, WARM);
+            V.drawQuad(gl, compProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, uploadCover: uploadCover, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitArtist();
+        draw(0);
+        function fontsChanged() {
+          fontEpoch++;
+          fitArtist();
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitArtist(); // the artist is measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songArtist").textContent = setting("artist");
+            setCover(setting("cover"));
+            applyPage();
+            fitArtist();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The artist fades in; the whole picture fades to black over the song's last 2.5 s (the
+        // title fades in by itself, drawn from the time).
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#artistBlock",
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.6,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
