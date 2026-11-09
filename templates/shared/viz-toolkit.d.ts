@@ -11,6 +11,8 @@ export type ToolkitAnalysis = {
   offset?: number;
   /** for a section: where it starts in the whole song, seconds (0 for a whole song) */
   sectionStart?: number;
+  /** for a section: the whole song's length, seconds (duration is the section's) */
+  songDuration?: number;
   /** for a section: each Hz beat range's scale over the whole song (see beatScales) */
   beatScales?: Record<string, number>;
 };
@@ -40,6 +42,8 @@ export type ToolkitAudio = {
   offset: number;
   /** where time 0 is in the whole song, seconds: song time = t + songStart */
   songStart: number;
+  /** the whole song's length in seconds, also in a section */
+  songDuration: number;
   sample(t: number): AudioSample;
   spectrum(t: number, out?: Float32Array): Float32Array;
   /** [age in seconds, strength] of up to n hits at or before t, newest first */
@@ -87,6 +91,16 @@ export interface VizToolkit {
   beatEnvelope(audio: ToolkitAudio, t: number, release: number): number;
   /** the Bands setting (10..100 %) as a point count, from a fifth of `full` to all of it */
   bandsToRingCount(pct: number, full: number): number;
+  /** song time for timers: elapsed and total seconds of the whole song, and elapsed / total */
+  songClock(audio: ToolkitAudio, t: number): { elapsed: number; total: number; fraction: number };
+  /** m:ss, or h:mm:ss from one hour */
+  formatClock(seconds: number): string;
+  /** values for bars along a line: bass at the left end, or in the middle mirrored out */
+  mirrorBars(spectrum: ArrayLike<number>, count: number, fromCentre: boolean): Float32Array;
+  /** a box-blurred copy (radius in bands), the same length */
+  smoothSpectrum(spectrum: ArrayLike<number>, radius: number): Float32Array;
+  /** -1..1 spikes for an oscilloscope line, seeded by the song frame; zeros in silence */
+  scopeLine(audio: ToolkitAudio, t: number, count: number, seed: number): Float32Array;
 }
 
 export type RingShape = "circle" | "rounded";

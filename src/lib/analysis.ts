@@ -30,6 +30,8 @@ export type Analysis = {
   offset?: number;
   /** for a section of a song: where it starts in the whole song, seconds */
   sectionStart?: number;
+  /** for a section of a song: the whole song's length, seconds */
+  songDuration?: number;
   /** for a section of a song: each Hz beat range's scale over the whole song */
   beatScales?: Record<string, number>;
 };

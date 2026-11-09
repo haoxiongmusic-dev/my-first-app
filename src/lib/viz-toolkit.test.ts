@@ -354,3 +354,82 @@ describe("ring kit", () => {
     expect(viz.bandsToRingCount(100, 72)).toBe(72);
   });
 });
+
+describe("song clock (M8 spec §5.1)", () => {
+  it("counts the whole song's time, also in a section", () => {
+    const whole = viz.createAudio(fakeAnalysis(Array.from({ length: 300 }, () => frame())));
+    expect(whole.songDuration).toBe(10);
+    expect(viz.songClock(whole, 4)).toEqual({ elapsed: 4, total: 10, fraction: 0.4 });
+    const part = viz.createAudio({
+      ...fakeAnalysis(Array.from({ length: 90 }, () => frame())),
+      duration: 2,
+      offset: 1,
+      sectionStart: 7,
+      songDuration: 10,
+    });
+    expect(part.songDuration).toBe(10);
+    const c = viz.songClock(part, 0.5);
+    expect(c.elapsed).toBeCloseTo(7.5, 6);
+    expect(c.total).toBe(10);
+    expect(c.fraction).toBeCloseTo(0.75, 6);
+  });
+
+  it("clamps at the ends and never divides by zero", () => {
+    const a = viz.createAudio(fakeAnalysis(Array.from({ length: 300 }, () => frame())));
+    expect(viz.songClock(a, -3).elapsed).toBe(0);
+    expect(viz.songClock(a, 99)).toEqual({ elapsed: 10, total: 10, fraction: 1 });
+    const empty = { ...a, songDuration: 0 };
+    expect(viz.songClock(empty, 1)).toEqual({ elapsed: 0, total: 0, fraction: 0 });
+  });
+
+  it("formatClock writes m:ss, and h:mm:ss from one hour", () => {
+    expect(viz.formatClock(0)).toBe("0:00");
+    expect(viz.formatClock(65.9)).toBe("1:05");
+    expect(viz.formatClock(3599)).toBe("59:59");
+    expect(viz.formatClock(3600)).toBe("1:00:00");
+    expect(viz.formatClock(-4)).toBe("0:00");
+  });
+});
+
+describe("line kit (M8 spec §5.2)", () => {
+  const spec = Float32Array.from([1, 0.5, 0]);
+
+  it("mirrorBars puts the bass at the left end, or in the middle mirrored out", () => {
+    const left = Array.from(viz.mirrorBars(spec, 5, false));
+    expect(left[0]).toBeCloseTo(1, 6);
+    expect(left[2]).toBeCloseTo(0.5, 6);
+    expect(left[4]).toBeCloseTo(0, 6);
+    const mid = Array.from(viz.mirrorBars(spec, 5, true));
+    expect(mid[2]).toBeCloseTo(1, 6);
+    expect(mid[0]).toBeCloseTo(0, 6);
+    expect(mid[4]).toBeCloseTo(0, 6);
+    expect(mid[1]).toBeCloseTo(mid[3], 6);
+    expect(viz.mirrorBars(spec, 1, false)[0]).toBeCloseTo(1, 6);
+  });
+
+  it("smoothSpectrum box-blurs without changing the length", () => {
+    const out = Array.from(viz.smoothSpectrum(Float32Array.from([0, 0, 3, 0, 0]), 1));
+    expect(out).toHaveLength(5);
+    expect(out[1]).toBeCloseTo(1, 6);
+    expect(out[2]).toBeCloseTo(1, 6);
+    expect(out[0]).toBeCloseTo(0, 6);
+    expect(Array.from(viz.smoothSpectrum(spec, 0))).toEqual(Array.from(spec));
+  });
+
+  it("scopeLine is silent in silence and repeats for the same song time", () => {
+    const quiet = viz.createAudio(fakeAnalysis(Array.from({ length: 300 }, () => frame())));
+    expect(Array.from(viz.scopeLine(quiet, 2, 40, 5)).every((v) => v === 0)).toBe(true);
+    const loudFrames = Array.from({ length: 300 }, () => frame({ b: new Array(32).fill(0.9) }));
+    const whole = viz.createAudio(fakeAnalysis(loudFrames));
+    const line = Array.from(viz.scopeLine(whole, 7.2, 40, 5));
+    expect(line.some((v) => Math.abs(v) > 0.1)).toBe(true);
+    expect(line.every((v) => v >= -1 && v <= 1)).toBe(true);
+    const part = viz.createAudio({
+      ...fakeAnalysis(loudFrames.slice(0, 120)),
+      offset: 1,
+      sectionStart: 7,
+      songDuration: 10,
+    });
+    expect(Array.from(viz.scopeLine(part, 0.2, 40, 5))).toEqual(line);
+  });
+});
