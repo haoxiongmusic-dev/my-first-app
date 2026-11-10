@@ -1,0 +1,37 @@
+{
+  "name": "Live Wire",
+  "description": "A chrome voxel loudspeaker on a cracked concrete wall, pumping with the bass, electric arcs crawling along its cables to the corners and crackling round its rim.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "shakeOnBeat", "showDebris"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "shakeOnBeat", "showDebris", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#2a8aff", "accentColor": "#9ad8ff" }
+    },
+    {
+      "name": "Inferno",
+      "thumbnail": "presets/inferno.jpg",
+      "values": { "mainColor": "#ff5a1a", "accentColor": "#ffd08a" }
+    },
+    {
+      "name": "Toxic",
+      "thumbnail": "presets/toxic.jpg",
+      "values": { "mainColor": "#5aff2a", "accentColor": "#e0ffb0" }
+    },
+    {
+      "name": "Violet",
+      "thumbnail": "presets/violet.jpg",
+      "values": { "mainColor": "#9a2aff", "accentColor": "#f0b0ff" }
+    }
+  ]
+}

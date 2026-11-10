@@ -433,3 +433,98 @@ describe("line kit (M8 spec §5.2)", () => {
     expect(Array.from(viz.scopeLine(part, 0.2, 40, 5))).toEqual(line);
   });
 });
+
+describe("lightning (M9 spec §5.5, §5.6)", () => {
+  /** How far (x, y) is from the straight line through a and b. */
+  function sideways(p: [number, number], a: [number, number], b: [number, number]): number {
+    const dx = b[0] - a[0],
+      dy = b[1] - a[1];
+    return Math.abs((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / Math.hypot(dx, dy);
+  }
+
+  it("lightningPath starts and ends exactly at the given points", () => {
+    for (const seed of [1, 42, 9999]) {
+      const pts = viz.lightningPath(12.5, -3, 400.25, 210, seed, 5);
+      expect(pts[0]).toEqual([12.5, -3]);
+      expect(pts[pts.length - 1]).toEqual([400.25, 210]);
+    }
+  });
+
+  it("has 2^detail + 1 points, detail clamped to 0..8", () => {
+    expect(viz.lightningPath(0, 0, 100, 0, 1, 0)).toHaveLength(2);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, 1)).toHaveLength(3);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, 4)).toHaveLength(17);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, 20)).toHaveLength(257);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, -3)).toHaveLength(2);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, NaN)).toHaveLength(2);
+    expect(viz.lightningPath(0, 0, 100, 0, 1, 3.7)).toHaveLength(9);
+  });
+
+  it("is the same for the same seed and differs for another", () => {
+    const a = viz.lightningPath(0, 0, 300, 100, 77, 6);
+    expect(viz.lightningPath(0, 0, 300, 100, 77, 6)).toEqual(a);
+    expect(viz.lightningPath(0, 0, 300, 100, 78, 6)).not.toEqual(a);
+  });
+
+  it("is jagged, and its sideways offset is bounded by its length", () => {
+    const a: [number, number] = [100, 100],
+      b: [number, number] = [700, 400];
+    const len = Math.hypot(600, 300);
+    let biggest = 0;
+    for (let seed = 0; seed < 200; seed++) {
+      const pts = viz.lightningPath(a[0], a[1], b[0], b[1], seed, 6);
+      let most = 0;
+      for (const p of pts) most = Math.max(most, sideways(p, a, b));
+      expect(most).toBeLessThanOrEqual(0.5 * len);
+      biggest = Math.max(biggest, most);
+      // it moves steadily from one end to the other (never doubles back along the line)
+      const along = pts.map((p) => ((p[0] - a[0]) * 600 + (p[1] - a[1]) * 300) / len);
+      for (let i = 1; i < along.length; i++) expect(along[i]).toBeGreaterThan(along[i - 1]);
+    }
+    expect(biggest).toBeGreaterThan(0.08 * len); // visibly jagged
+    // the jag scales with the bolt's length, and can be set
+    const short = viz.lightningPath(0, 0, 60, 0, 5, 5);
+    const long = viz.lightningPath(0, 0, 600, 0, 5, 5);
+    for (let i = 0; i < short.length; i++) expect(long[i][1]).toBeCloseTo(short[i][1] * 10, 6);
+    const calm = viz.lightningPath(0, 0, 600, 0, 5, 5, 0.05);
+    const wild = viz.lightningPath(0, 0, 600, 0, 5, 5, 0.3);
+    const spread = (pts: [number, number][]) => Math.max(...pts.map((p) => Math.abs(p[1])));
+    expect(spread(wild)).toBeGreaterThan(spread(calm));
+  });
+
+  it("gives finite points for a zero-length bolt or bad numbers", () => {
+    const pts = viz.lightningPath(50, 60, 50, 60, 3, 4);
+    expect(pts).toHaveLength(17);
+    for (const p of pts) expect(p).toEqual([50, 60]);
+    for (const p of viz.lightningPath(NaN, 0, 10, Infinity, NaN, 3)) {
+      expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
+    }
+  });
+
+  it("lightningBranches forks off a path, seeded and bounded", () => {
+    const main = viz.lightningPath(960, 0, 960, 600, 11, 6);
+    const forks = viz.lightningBranches(main, 11, 3, 4);
+    expect(forks).toHaveLength(3);
+    expect(viz.lightningBranches(main, 11, 3, 4)).toEqual(forks);
+    expect(viz.lightningBranches(main, 12, 3, 4)).not.toEqual(forks);
+    const keys = new Set(main.map((p) => p.join(",")));
+    for (const fork of forks) {
+      expect(fork).toHaveLength(17);
+      // each starts on the main path, away from its ends
+      expect(keys.has(fork[0].join(","))).toBe(true);
+      expect(fork[0]).not.toEqual(main[0]);
+      expect(fork[0]).not.toEqual(main[main.length - 1]);
+      const reach = Math.hypot(
+        fork[fork.length - 1][0] - fork[0][0],
+        fork[fork.length - 1][1] - fork[0][1],
+      );
+      expect(reach).toBeGreaterThan(0.1 * 600);
+      expect(reach).toBeLessThanOrEqual(0.5 * 600);
+      // heading on the way the bolt goes (down here), not back up
+      expect(fork[fork.length - 1][1]).toBeGreaterThan(fork[0][1]);
+      for (const p of fork) expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
+    }
+    expect(viz.lightningBranches(main, 11, 0, 4)).toEqual([]);
+    expect(viz.lightningBranches([[1, 1]], 11, 2, 4)).toEqual([]);
+  });
+});

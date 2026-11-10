@@ -1,0 +1,1248 @@
+<!doctype html>
+<!--
+  Live Wire: a chrome loudspeaker on a dark cracked concrete wall, lit from the middle. The
+  speaker, built from voxels and seen straight on: a glowing edge in the main colour, a thick
+  dark chrome rim with eight screws, a rubber surround, a bright brushed silver cone stepping
+  down into a bowl, and a glossy black dust cap. Four thick black cables leave the rim through
+  chrome plugs (two each side) and curve out in S-shapes to the frame's four corners, lying in
+  grooves in the wall. Electric arcs (main colour, white cores) crawl along the cables toward the
+  speaker and crackle round its rim, sparks round the rim follow the spectrum, and on strong hits
+  a bright arc jumps from a cable to the rim and concrete debris flies out. The title above the
+  speaker and the artist below it in a bold metallic style (bevelled silver, a rim light in the
+  main colour, a dark outline).
+  Spec: docs/superpowers/specs/2026-11-10-m9-final-templates-design.md §5.5
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials).
+    1. The wall: one shader (concrete, a crack network, the grooves, the cables, the light from
+       the middle) drawn once into its own 8-bit target; each frame only copies it, lit by the
+       speaker's glow and shaken on strong hits.
+    2. The speaker: the voxel parts (assets/speaker-voxels.js) as instanced cubes, matt with their
+       chrome shading baked in; the cone, surround and cap are one group scaled by the bass.
+    3. The arcs, the sparks, the debris streaks and the text: an overlay in 1080p pixels.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/wire-motion.js (unit-tested).
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Oswald","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#2a8aff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#9ad8ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"shakeOnBeat","type":"boolean","label":"Shake on beat","default":true},
+    {"id":"showDebris","type":"boolean","label":"Show debris","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"8","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/speaker-voxels.js"></script>
+    <script src="assets/wire-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fontPreload b {
+        font-weight: 600;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa<b>Aa</b></span
+      ><span class="f-inter">Aa<b>Aa</b></span> <span class="f-outfit">Aa<b>Aa</b></span
+      ><span class="f-poppins">Aa<b>Aa</b></span> <span class="f-lato">Aa<b>Aa</b></span
+      ><span class="f-oswald">Aa<b>Aa</b></span> <span class="f-playfair">Aa<b>Aa</b></span
+      ><span class="f-garamond">Aa<b>Aa</b></span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.WireMotion;
+        var SP = window.LiveWireSpeaker;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // ---------- the layout (1080p pixels, y down) ----------
+        var CX = M.CENTRE.x,
+          CY = M.CENTRE.y;
+        var TITLE = { top: 104, bottom: 318, width: 1380 };
+        var ARTIST = { y: 810, size: 58, width: 1100 };
+        var BEAT_RELEASE = 0.15; // the cone's kick
+        var RING_R = M.RIM_PX + 3; // the arcs crackling round the rim
+        var SPARK_MAX = 72; // px: the spectrum's sparks round the rim
+        var SPARK_FULL = 40; // sparks round the rim at Bands 100 %
+        var CABLE_W = 30; // px: a cable's thickness
+        var GROOVE_W = 50; // px: its groove's
+        var ARC_GLOW = 20; // px: an arc's soft glow (full width) …
+        var ARC_CORE = 2.8; // … and its white core
+
+        // ---------- the speaker (voxel units; 8 px each at z = 0) ----------
+        var CAM_FOV = 30;
+        var VIEW_HALF_H = 540 / M.VOXEL_PX; // half the frame's height at z = 0
+        var CAM_DIST = VIEW_HALF_H / Math.tan(((CAM_FOV / 2) * Math.PI) / 180);
+        var CHROME = [0.9, 0.94, 1.0]; // a cool steel tint
+        var CHIP_Z = 9; // the debris chips fly this far in front of the wall
+
+        /** [r, g, b] 0..1 mixes. */
+        function mix(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function scale3(a, k) {
+          return [a[0] * k, a[1] * k, a[2] * k];
+        }
+        function css(rgb, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, rgb[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        var WHITE = [1, 1, 1];
+
+        // the cables' paths (1080p px), shared by the wall's grooves and the arcs
+        var CABLES = [0, 1, 2, 3].map(function (c) {
+          return M.cablePath(c, 96);
+        });
+
+        // ---------- shaders ----------
+        var QUAD_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+        // 1. The wall, drawn once: concrete (stains, grain and pores), a seeded crack network,
+        // the marks drawn on a canvas (the speaker's impact cracks and the cables' grooves), the
+        // cables lying in them, and the light from the middle, darker toward the edges.
+        var WALL_FS = [
+          "uniform sampler2D marks, cables;",
+          "uniform float px;",
+          "varying vec2 vUv;",
+          "float hash2(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(12.9898, 78.233))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash2(i), b = hash2(i + vec2(1.0, 0.0));",
+          "  float c = hash2(i + vec2(0.0, 1.0)), d = hash2(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          "float fbm(vec2 p){",
+          "  float s = 0.0, a = 0.5;",
+          "  for (int k = 0; k < 5; k++) { s += a * vnoise(p); p = p * 2.03 + vec2(17.0, 9.0); a *= 0.5; }",
+          "  return s / 0.97;",
+          "}",
+          // the distance to the nearest edge of a jittered cell pattern (the crack network)
+          "float cellEdge(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p);",
+          "  float d1 = 8.0, d2 = 8.0;",
+          "  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {",
+          "    vec2 g = vec2(float(x), float(y));",
+          "    vec2 o = vec2(hash2(i + g + 3.0), hash2(i + g + 19.0));",
+          "    float d = length(g + o - f);",
+          "    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }",
+          "  }",
+          "  return d2 - d1;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  vec2 uv = p / vec2(1920.0, 1080.0);",
+          // concrete: big stains, mid mottling, fine grain and small pores
+          "  float big = fbm(p / 430.0 + 3.1);",
+          "  float mid = fbm(p / 85.0 + 11.7);",
+          "  float grain = vnoise(p / 2.4);",
+          "  float g = 0.3 + 0.2 * (big - 0.5) + 0.11 * (mid - 0.5) + 0.035 * (grain - 0.5);",
+          "  vec2 cell = floor(p / 11.0);",
+          "  float h = hash2(cell + 5.0);",
+          "  if (h > 0.9) {",
+          "    vec2 c = (cell + 0.25 + 0.5 * vec2(hash2(cell + 1.0), hash2(cell + 2.0))) * 11.0;",
+          "    float rad = 0.6 + 1.6 * hash2(cell + 3.0);",
+          "    float d = length(p - c);",
+          "    g -= 0.09 * clamp((rad + 0.6 - d) / (1.2 * px), 0.0, 1.0);",
+          "    g += 0.05 * clamp((rad + 0.6 - length(p - c - vec2(0.9, 1.1))) / (1.2 * px), 0.0, 1.0) * step(rad, d);",
+          "  }",
+          // the crack network: a warped cell pattern's edges, only where a slow noise allows
+          "  vec2 w = p / 210.0 + 0.55 * vec2(fbm(p / 260.0), fbm(p / 260.0 + 7.3));",
+          "  float e = cellEdge(w) * 210.0;",
+          "  float where = smoothstep(0.5, 0.62, fbm(p / 520.0 + 21.0));",
+          "  float crack = clamp((1.3 - e) / (1.1 * px), 0.0, 1.0) * where;",
+          "  float crackRim = clamp((4.0 - e) / (2.0 * px), 0.0, 1.0) * where;",
+          "  g *= 1.0 - 0.12 * crackRim;",
+          "  g *= 1.0 - 0.75 * crack;",
+          "  vec3 col = vec3(g) * vec3(0.93, 0.955, 1.0);",
+          // the marks: r impact cracks, g the grooves' shade, b their lit lip
+          "  vec4 mk = texture2D(marks, uv);",
+          "  col *= 1.0 - 0.8 * mk.r;",
+          "  col *= 1.0 - 0.72 * mk.g;",
+          "  col += vec3(0.16, 0.165, 0.17) * mk.b;",
+          // the cables in their grooves
+          "  vec4 cb = texture2D(cables, uv);",
+          "  col = mix(col, cb.rgb, cb.a);",
+          // the light from the middle, darker toward the edges and corners
+          "  vec2 q = (p - vec2(960.0, 540.0)) / vec2(960.0, 540.0);",
+          "  float r = length((p - vec2(960.0, 540.0)) / 1.0);",
+          "  float light = 0.3 + 0.95 * exp(-r * r / (500.0 * 500.0)) + 0.18 * exp(-r / 900.0);",
+          "  light *= 1.0 - 0.35 * smoothstep(0.55, 1.45, length(q));",
+          "  gl_FragColor = vec4(clamp(col * light, 0.0, 1.0), 1.0);",
+          "}",
+        ].join("\n");
+
+        // 2. Each frame: the wall, shaken, brightened by the speaker's light and tinted by its glow.
+        var BG_FS = [
+          "uniform sampler2D wall;",
+          "uniform vec2 shake;",
+          "uniform vec3 glowCol;",
+          "uniform float light, glow, rim;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0) - shake;",
+          "  vec3 col = texture2D(wall, vec2(p.x / 1920.0, 1.0 - p.y / 1080.0)).rgb;",
+          "  float r = length(p - vec2(960.0, 540.0));",
+          "  float near = exp(-r * r / (470.0 * 470.0));",
+          "  float ring = exp(-max(r - rim, 0.0) / 110.0);",
+          "  col *= 1.0 + (light - 1.0) * near + glowCol * glow * 1.1 * ring;",
+          "  col += glowCol * glow * 0.035 * exp(-max(r - rim, 0.0) / 200.0);",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        // 3. The arcs, sparks and debris streaks: soft-edged lines in 1080p pixels, added on.
+        var LINE_VS = [
+          "attribute float edge;",
+          "attribute float sharp;",
+          "attribute vec3 tint;",
+          "varying float vEdge;",
+          "varying float vSharp;",
+          "varying vec3 vTint;",
+          "void main(){",
+          "  vEdge = edge; vSharp = sharp; vTint = tint;",
+          "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+          "}",
+        ].join("\n");
+        var LINE_FS = [
+          "varying float vEdge;",
+          "varying float vSharp;",
+          "varying vec3 vTint;",
+          "void main(){",
+          "  float d = clamp(abs(vEdge), 0.0, 1.0);",
+          "  float prof = pow(max(1.0 - d, 0.0), vSharp);",
+          "  gl_FragColor = vec4(vTint * prof, 1.0);",
+          "}",
+        ].join("\n");
+
+        /** A soft round glow texture (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 64;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.3, "rgba(255,255,255,0.35)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 64, 64);
+          return new THREE.CanvasTexture(c);
+        }
+        /** A soft ring of light: brightest at RING_AT of the radius. */
+        var RING_AT = 0.62;
+        function ringTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 256;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+          grad.addColorStop(0, "rgba(255,255,255,0)");
+          grad.addColorStop(RING_AT - 0.08, "rgba(255,255,255,0.05)");
+          grad.addColorStop(RING_AT - 0.012, "rgba(255,255,255,0.9)");
+          grad.addColorStop(RING_AT + 0.02, "rgba(255,255,255,0.75)");
+          grad.addColorStop(RING_AT + 0.1, "rgba(255,255,255,0.22)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 256, 256);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** Each voxel face: full brightness, darker at its edges (the voxel seams). */
+        function seamTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 32;
+          var g = c.getContext("2d");
+          g.fillStyle = "rgb(140,140,140)";
+          g.fillRect(0, 0, 32, 32);
+          g.fillStyle = "rgb(205,205,205)";
+          g.fillRect(2, 2, 28, 28);
+          g.fillStyle = "rgb(255,255,255)";
+          g.fillRect(4, 4, 24, 24);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** A polyline as a canvas path. */
+        function tracePath(g, pts, dx, dy) {
+          g.beginPath();
+          g.moveTo(pts[0][0] + dx, pts[0][1] + dy);
+          for (var i = 1; i < pts.length; i++) g.lineTo(pts[i][0] + dx, pts[i][1] + dy);
+        }
+        /** A cable's path, starting a little inside its plug (so no gap shows at the plug). */
+        function cableLine(c) {
+          var pts = CABLES[c];
+          var dx = pts[1][0] - pts[0][0],
+            dy = pts[1][1] - pts[0][1];
+          var l = Math.hypot(dx, dy) || 1;
+          return [[pts[0][0] - (dx / l) * 26, pts[0][1] - (dy / l) * 26]].concat(pts);
+        }
+
+        /**
+         * The wall's marks, the same every time: in red the speaker's impact cracks (seeded
+         * lightning reaching out from the rim, with forks), in green the cables' grooves (soft
+         * shade), in blue the grooves' lit lip.
+         */
+        function drawMarks(c) {
+          var g = c.getContext("2d");
+          g.fillStyle = "#000";
+          g.fillRect(0, 0, c.width, c.height);
+          g.globalCompositeOperation = "lighter";
+          g.lineCap = "round";
+          g.lineJoin = "round";
+          // the grooves
+          for (var k = 0; k < 4; k++) {
+            var line = cableLine(k);
+            g.shadowColor = "rgb(0,255,0)";
+            g.shadowBlur = 16;
+            g.strokeStyle = "rgba(0,200,0,1)";
+            g.lineWidth = GROOVE_W;
+            tracePath(g, line, 0, 0);
+            g.stroke();
+            g.shadowBlur = 3;
+            g.shadowColor = "rgb(0,0,255)";
+            g.strokeStyle = "rgba(0,0,255,0.8)";
+            g.lineWidth = 3;
+            tracePath(g, line, 6, 7);
+            g.stroke();
+          }
+          g.shadowBlur = 0;
+          g.shadowColor = "transparent";
+          // the impact cracks
+          var rng = V.mulberry32(M.SEED + 11);
+          for (var i = 0; i < 11; i++) {
+            var a = ((i + 0.3 + 0.5 * rng()) / 11) * 2 * Math.PI;
+            var r0 = M.RIM_PX + 2;
+            var len = 130 + 330 * rng();
+            var x0 = CX + Math.cos(a) * r0,
+              y0 = CY + Math.sin(a) * r0;
+            var bolt = V.lightningPath(
+              x0,
+              y0,
+              x0 + Math.cos(a) * len,
+              y0 + Math.sin(a) * len,
+              M.SEED + 300 + i,
+              6,
+              0.16,
+            );
+            var forks = V.lightningBranches(
+              bolt,
+              M.SEED + 400 + i,
+              1 + Math.floor(rng() * 3),
+              4,
+              0.2,
+            );
+            [bolt].concat(forks).forEach(function (pts, f) {
+              for (var s = 1; s < pts.length; s++) {
+                var along = s / pts.length;
+                g.strokeStyle = "rgba(255,0,0," + (0.95 - 0.4 * along).toFixed(3) + ")";
+                g.lineWidth = (f === 0 ? 3.2 : 2) * (1 - 0.7 * along) + 0.7;
+                g.beginPath();
+                g.moveTo(pts[s - 1][0], pts[s - 1][1]);
+                g.lineTo(pts[s][0], pts[s][1]);
+                g.stroke();
+              }
+            });
+          }
+          g.globalCompositeOperation = "source-over";
+        }
+
+        /** The four black rubber cables, lit from the upper left, with their shadows. */
+        function drawCables(c) {
+          var g = c.getContext("2d");
+          g.clearRect(0, 0, c.width, c.height);
+          g.lineCap = "round";
+          g.lineJoin = "round";
+          for (var k = 0; k < 4; k++) {
+            var line = cableLine(k);
+            // the cast shadow in the groove
+            g.shadowColor = "rgba(0,0,0,0.85)";
+            g.shadowBlur = 10;
+            g.shadowOffsetX = 5;
+            g.shadowOffsetY = 7;
+            g.strokeStyle = "#060708";
+            g.lineWidth = CABLE_W;
+            tracePath(g, line, 0, 0);
+            g.stroke();
+            g.shadowColor = "transparent";
+            g.shadowBlur = 0;
+            g.shadowOffsetX = g.shadowOffsetY = 0;
+            // the rubber: a soft sheen, then a sharper highlight on the side facing the light
+            g.strokeStyle = "rgba(120,130,145,0.16)";
+            g.lineWidth = CABLE_W * 0.55;
+            tracePath(g, line, -3, -4);
+            g.stroke();
+            g.strokeStyle = "rgba(190,200,215,0.42)";
+            g.lineWidth = 3;
+            tracePath(g, line, -6, -7);
+            g.stroke();
+            // and a dark edge on the far side
+            g.strokeStyle = "rgba(0,0,0,0.6)";
+            g.lineWidth = 4;
+            tracePath(g, line, 9, 11);
+            g.stroke();
+          }
+        }
+
+        // ---------- the title and artist, drawn once per settings change ----------
+        var textCanvas = document.createElement("canvas");
+        textCanvas.width = 1920;
+        textCanvas.height = 1080;
+        var tctx = textCanvas.getContext("2d");
+        function spaced(ctx, px) {
+          if ("letterSpacing" in ctx) ctx.letterSpacing = px.toFixed(1) + "px";
+        }
+        /**
+         * Bold metallic letters at (0, 0) of the current transform: a rim light in the main
+         * colour glowing round a dark outline, a bevel (light upper-left, dark lower-right
+         * edges) and a chrome face (bright, a dark horizon band, lighter again below).
+         */
+        function metalText(ctx, text, size, main, acc) {
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+          // the glow
+          ctx.shadowColor = css(main, 0.95);
+          ctx.shadowBlur = size * 0.3;
+          ctx.strokeStyle = css(main, 0.7);
+          ctx.lineWidth = size * 0.12;
+          ctx.strokeText(text, 0, 0);
+          ctx.shadowBlur = size * 0.08;
+          ctx.shadowColor = "rgba(0,0,0,0.9)";
+          ctx.shadowOffsetY = size * 0.04;
+          // the dark outline
+          ctx.strokeStyle = "#030407";
+          ctx.lineWidth = size * 0.15;
+          ctx.strokeText(text, 0, 0);
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+          // the rim light
+          ctx.strokeStyle = css(mix(main, WHITE, 0.3), 1);
+          ctx.lineWidth = size * 0.065;
+          ctx.strokeText(text, 0, 0);
+          // the bevel
+          ctx.fillStyle = "#15181e";
+          ctx.fillText(text, size * 0.016, size * 0.02);
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(text, -size * 0.012, -size * 0.016);
+          // the face
+          var gr = ctx.createLinearGradient(0, -size * 0.42, 0, size * 0.42);
+          gr.addColorStop(0, "#ffffff");
+          gr.addColorStop(0.32, css(mix([0.86, 0.89, 0.94], acc, 0.12), 1));
+          gr.addColorStop(0.5, "#8b94a4");
+          gr.addColorStop(0.53, "#3a414e");
+          gr.addColorStop(0.68, "#8d97a8");
+          gr.addColorStop(1, css(mix([0.93, 0.95, 0.98], acc, 0.18), 1));
+          ctx.fillStyle = gr;
+          ctx.fillText(text, 0, 0);
+        }
+        function drawText() {
+          var ctx = tctx;
+          var font = '"' + setting("font") + '", sans-serif';
+          var main = V.hexToRGB(setting("mainColor"));
+          var acc = V.hexToRGB(setting("accentColor"));
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          // the title: as big as fits on one line, else two, shrinking as needed
+          var SPACE = 0.04;
+          var title = String(setting("title") || "")
+            .toUpperCase()
+            .trim();
+          var measure = function (s) {
+            ctx.font = "600 100px " + font;
+            spaced(ctx, SPACE * 100);
+            return ctx.measureText(s).width / 100;
+          };
+          var fit = M.fitTitle(title, measure, TITLE.width, 1, 150, 92);
+          if (fit.lines.length > 1) fit = M.fitTitle(title, measure, TITLE.width, 2, 92, 30);
+          var size = fit.size;
+          var lineH = size * 1.12;
+          var widest = 0;
+          for (var w = 0; w < fit.lines.length; w++)
+            widest = Math.max(widest, measure(fit.lines[w]) * size);
+          var boxH = TITLE.bottom - TITLE.top;
+          var k = Math.min(
+            1,
+            boxH / Math.max(fit.lines.length * lineH, 1),
+            TITLE.width / Math.max(widest, 1),
+          );
+          ctx.font = "600 " + size + "px " + font;
+          spaced(ctx, SPACE * size);
+          var cy = (TITLE.top + TITLE.bottom) / 2;
+          for (var i = 0; i < fit.lines.length; i++) {
+            var ly = cy + (i - (fit.lines.length - 1) / 2) * lineH * k;
+            // (letter spacing trails the last letter: shift by half of it to stay centred)
+            ctx.setTransform(k, 0, 0, k, 960 + (SPACE * size * k) / 2, ly);
+            metalText(ctx, fit.lines[i], size, main, acc);
+          }
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+          // the artist: smaller, spaced, in the same metal
+          var artist = String(setting("artist") || "")
+            .toUpperCase()
+            .trim();
+          if (artist) {
+            var asize = ARTIST.size;
+            var aspace = 0.16;
+            var aw = function (s) {
+              ctx.font = "600 " + s + "px " + font;
+              spaced(ctx, aspace * s);
+              return ctx.measureText(artist).width;
+            };
+            while (aw(asize) > ARTIST.width && asize > 22) asize -= 1;
+            var squeeze = Math.min(1, ARTIST.width / Math.max(aw(asize), 1));
+            ctx.setTransform(squeeze, 0, 0, 1, 960 + (aspace * asize * squeeze) / 2, ARTIST.y);
+            metalText(ctx, artist, asize, main, acc);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          spaced(ctx, 0);
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials, audio
+         * and the text (apply), and a new preview size only resizes (resize), so the live
+         * preview never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.setClearColor(0x000000, 1);
+          renderer.autoClear = false;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var flatCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+          // ----- 1. the wall, drawn once into its own 8-bit target -----
+          var wallTarget = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, {
+              type: THREE.UnsignedByteType,
+              depthBuffer: false,
+              generateMipmaps: false,
+              minFilter: THREE.LinearFilter,
+              magFilter: THREE.LinearFilter,
+            }),
+          );
+          var marksCanvas = document.createElement("canvas");
+          marksCanvas.width = 1920;
+          marksCanvas.height = 1080;
+          drawMarks(marksCanvas);
+          var marksTex = keep(new THREE.CanvasTexture(marksCanvas));
+          var cablesCanvas = document.createElement("canvas");
+          cablesCanvas.width = 1920;
+          cablesCanvas.height = 1080;
+          drawCables(cablesCanvas);
+          var cablesTex = keep(new THREE.CanvasTexture(cablesCanvas));
+          [marksTex, cablesTex].forEach(function (tex) {
+            tex.flipY = false; // the canvases' rows top-down, as the shader reads them
+            tex.minFilter = THREE.LinearFilter;
+            tex.generateMipmaps = false;
+          });
+          var wallMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: WALL_FS,
+              uniforms: {
+                marks: { value: marksTex },
+                cables: { value: cablesTex },
+                px: { value: 1 },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var wallScene = new THREE.Scene();
+          var wallQuad = new THREE.Mesh(quad, wallMat);
+          wallQuad.frustumCulled = false;
+          wallScene.add(wallQuad);
+          function buildWall() {
+            renderer.setRenderTarget(wallTarget);
+            renderer.clear();
+            renderer.render(wallScene, flatCam);
+            renderer.setRenderTarget(null);
+          }
+
+          // ----- 2. the speaker, in front of the wall -----
+          var scene = new THREE.Scene();
+          var camera = new THREE.PerspectiveCamera(CAM_FOV, 1920 / 1080, 10, 1000);
+          camera.position.set(0, 0, CAM_DIST);
+          camera.lookAt(0, 0, 0);
+          var bgMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: BG_FS,
+              uniforms: {
+                wall: { value: wallTarget.texture },
+                shake: { value: new THREE.Vector2(0, 0) },
+                glowCol: { value: new THREE.Color() },
+                light: { value: 1 },
+                glow: { value: 0 },
+                rim: { value: M.RIM_PX },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var bgQuad = new THREE.Mesh(quad, bgMat);
+          bgQuad.frustumCulled = false;
+          bgQuad.renderOrder = -10;
+          scene.add(bgQuad);
+
+          var parts = SP.buildSpeaker();
+          var box = keep(new THREE.BoxGeometry(1, 1, 1));
+          var seams = keep(seamTexture());
+          seams.minFilter = THREE.LinearMipmapLinearFilter;
+          var metal = keep(new THREE.MeshLambertMaterial({ color: 0xffffff, map: seams }));
+          var edgeMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, map: seams }));
+          function voxels(list, material, tint, parent) {
+            var mesh = new THREE.InstancedMesh(box, material, list.length);
+            var m = new THREE.Matrix4();
+            var c = new THREE.Color();
+            for (var i = 0; i < list.length; i++) {
+              var v = list[i];
+              m.makeTranslation(v[0], v[1], v[2]);
+              mesh.setMatrixAt(i, m);
+              var rgb = scale3(tint, v[3]);
+              mesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2]));
+            }
+            keep(mesh);
+            parent.add(mesh);
+            return mesh;
+          }
+          var speaker = new THREE.Group();
+          scene.add(speaker);
+          voxels(parts.rim, metal, CHROME, speaker);
+          voxels(parts.screws, metal, CHROME, speaker);
+          voxels(parts.plugs, metal, CHROME, speaker);
+          voxels(parts.edge, edgeMat, WHITE, speaker);
+          // the moving group: surround, cone and dust cap pump together
+          var pump = new THREE.Group();
+          speaker.add(pump);
+          voxels(parts.surround, metal, [1, 1, 1], pump);
+          voxels(parts.cone, metal, CHROME, pump);
+          voxels(parts.cap, metal, [1, 1, 1], pump);
+
+          // the debris chips: small concrete cubes
+          var chipMat = keep(new THREE.MeshLambertMaterial({ color: 0xffffff }));
+          var chips = new THREE.InstancedMesh(box, chipMat, M.DEBRIS_MAX);
+          keep(chips);
+          chips.frustumCulled = false;
+          chips.count = 0;
+          var chipColour = new THREE.Color();
+          var chipRng = V.mulberry32(M.SEED + 21);
+          for (var ci = 0; ci < M.DEBRIS_MAX; ci++) {
+            var shade = 0.42 + 0.3 * chipRng();
+            chips.setColorAt(ci, chipColour.setRGB(shade, shade * 0.98, shade * 0.96));
+          }
+          scene.add(chips);
+
+          // the light: a dim fill and a key from the upper left, in front (three.js's matt
+          // material divides by π: these are π times the brightness wanted)
+          scene.add(new THREE.AmbientLight(0xffffff, 0.35 * Math.PI));
+          var key = new THREE.DirectionalLight(0xffffff, 1.0 * Math.PI);
+          key.position.set(-0.5, 0.62, 0.6);
+          scene.add(key);
+
+          // glows: coloured light can't rely on 8-bit bloom, so the edge gets its own sprites
+          var glowTex = keep(glowTexture());
+          var ringTex = keep(ringTexture());
+          function glowSprite(tex, size, z) {
+            var mat = keep(
+              new THREE.SpriteMaterial({
+                map: tex,
+                color: 0xffffff,
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+              }),
+            );
+            var sprite = new THREE.Sprite(mat);
+            sprite.position.set(0, 0, z);
+            sprite.scale.set(size, size, 1);
+            sprite.renderOrder = 5;
+            scene.add(sprite);
+            return sprite;
+          }
+          var edgeR = (SP.R_OUT - 0.5) * 1.0;
+          var ringGlow = glowSprite(ringTex, (2 * edgeR) / RING_AT, 1.5);
+          var haze = glowSprite(glowTex, 2 * SP.R_OUT * 3.2, 0);
+
+          // ----- 3. the overlay: arcs, sparks and streaks (added on), then the text -----
+          var overlay = new THREE.Scene();
+          var overCam = new THREE.OrthographicCamera(0, 1920, 0, 1080, -10, 10);
+          var MAX_VERTS = 60000;
+          var linePos = new Float32Array(MAX_VERTS * 3);
+          var lineEdge = new Float32Array(MAX_VERTS);
+          var lineSharp = new Float32Array(MAX_VERTS);
+          var lineTint = new Float32Array(MAX_VERTS * 3);
+          var lineGeo = keep(new THREE.BufferGeometry());
+          var posAttr = new THREE.BufferAttribute(linePos, 3).setUsage(THREE.DynamicDrawUsage);
+          var edgeAttr = new THREE.BufferAttribute(lineEdge, 1).setUsage(THREE.DynamicDrawUsage);
+          var sharpAttr = new THREE.BufferAttribute(lineSharp, 1).setUsage(THREE.DynamicDrawUsage);
+          var tintAttr = new THREE.BufferAttribute(lineTint, 3).setUsage(THREE.DynamicDrawUsage);
+          lineGeo.setAttribute("position", posAttr);
+          lineGeo.setAttribute("edge", edgeAttr);
+          lineGeo.setAttribute("sharp", sharpAttr);
+          lineGeo.setAttribute("tint", tintAttr);
+          lineGeo.setDrawRange(0, 0);
+          var lineMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: LINE_VS,
+              fragmentShader: LINE_FS,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
+          var lines = new THREE.Mesh(lineGeo, lineMat);
+          lines.frustumCulled = false;
+          overlay.add(lines);
+          var textTex = keep(new THREE.CanvasTexture(textCanvas));
+          textTex.flipY = false;
+          textTex.minFilter = THREE.LinearFilter;
+          textTex.generateMipmaps = false;
+          var textMat = keep(
+            new THREE.MeshBasicMaterial({
+              map: textTex,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            }),
+          );
+          var textQuad = new THREE.Mesh(keep(new THREE.PlaneGeometry(1920, 1080)), textMat);
+          // (the overlay's y runs down, and the canvas's rows are read top-down: no flip needed)
+          textQuad.position.set(960, 540, 0);
+          textQuad.renderOrder = 10;
+          overlay.add(textQuad);
+
+          var W = 1920,
+            H = 1080,
+            SCALE = 1;
+          function resize(scale) {
+            SCALE = scale;
+            W = Math.round(1920 * scale);
+            H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            wallTarget.setSize(W, H);
+            wallMat.uniforms.px.value = 1 / scale;
+            buildWall();
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio, text (no new WebGL objects) -----
+          var audio, specAudio, INT, BOOST, MAIN, ACC, SHAKE_ON, DEBRIS_ON, ANGLES;
+          var CORE_RGB, GLOW_RGB;
+          function apply() {
+            INT = Number(setting("intensity"));
+            if (!(INT >= 0)) INT = 1;
+            BOOST = Number(setting("spectrumBoost")) || 1;
+            SHAKE_ON = setting("shakeOnBeat") === true;
+            DEBRIS_ON = setting("showDebris") === true;
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            specAudio = V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: Number(setting("spectrumLow")),
+              spectrumHigh: Number(setting("spectrumHigh")),
+              spectrumBoost: 1, // the sparks' shape is unboosted; the boost sets their reach
+              spectrumCount: 48,
+            });
+            ANGLES = V.ringAngles(
+              V.bandsToRingCount(Number(setting("bandCount")), SPARK_FULL),
+              360,
+            );
+            MAIN = V.hexToRGB(setting("mainColor"));
+            ACC = V.hexToRGB(setting("accentColor"));
+            CORE_RGB = mix(ACC, WHITE, 0.55);
+            GLOW_RGB = mix(MAIN, ACC, 0.15);
+            bgMat.uniforms.glowCol.value.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            ringGlow.material.color.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            haze.material.color.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            drawText();
+            textTex.needsUpdate = true;
+          }
+          apply();
+
+          // ----- the overlay's lines -----
+          var nVerts = 0;
+          function vert(x, y, e, sharp, rgb) {
+            var i = nVerts++;
+            linePos[i * 3] = x;
+            linePos[i * 3 + 1] = y;
+            linePos[i * 3 + 2] = 0;
+            lineEdge[i] = e;
+            lineSharp[i] = sharp;
+            lineTint[i * 3] = rgb[0];
+            lineTint[i * 3 + 1] = rgb[1];
+            lineTint[i * 3 + 2] = rgb[2];
+          }
+          /** A polyline as a ribbon `width` px across (mitred joins), with a soft or hard edge. */
+          function ribbon(pts, width, sharp, rgb) {
+            var n = pts.length;
+            if (n < 2 || nVerts + (n - 1) * 6 > MAX_VERTS) return;
+            var half = width / 2;
+            var L = new Array(n),
+              R = new Array(n);
+            for (var i = 0; i < n; i++) {
+              var a = pts[Math.max(0, i - 1)],
+                b = pts[i],
+                c = pts[Math.min(n - 1, i + 1)];
+              var d0x = b[0] - a[0],
+                d0y = b[1] - a[1],
+                d1x = c[0] - b[0],
+                d1y = c[1] - b[1];
+              var l0 = Math.hypot(d0x, d0y) || 1,
+                l1 = Math.hypot(d1x, d1y) || 1;
+              var n0x = -d0y / l0,
+                n0y = d0x / l0,
+                n1x = -d1y / l1,
+                n1y = d1x / l1;
+              if (i === 0) ((n0x = n1x), (n0y = n1y));
+              if (i === n - 1) ((n1x = n0x), (n1y = n0y));
+              var mx = n0x + n1x,
+                my = n0y + n1y;
+              var ml = Math.hypot(mx, my);
+              if (ml < 1e-6) ((mx = n1x), (my = n1y), (ml = 1));
+              mx /= ml;
+              my /= ml;
+              var k = 1 / Math.max(0.5, mx * n1x + my * n1y); // the mitre, at most twice as wide
+              L[i] = [b[0] + mx * half * k, b[1] + my * half * k];
+              R[i] = [b[0] - mx * half * k, b[1] - my * half * k];
+            }
+            for (var s = 0; s < n - 1; s++) {
+              vert(L[s][0], L[s][1], 1, sharp, rgb);
+              vert(R[s][0], R[s][1], -1, sharp, rgb);
+              vert(L[s + 1][0], L[s + 1][1], 1, sharp, rgb);
+              vert(R[s][0], R[s][1], -1, sharp, rgb);
+              vert(R[s + 1][0], R[s + 1][1], -1, sharp, rgb);
+              vert(L[s + 1][0], L[s + 1][1], 1, sharp, rgb);
+            }
+          }
+          /** An electric bolt: a wide soft glow in the main colour, then a thin bright core. */
+          function bolt(pts, bright, widthScale) {
+            var ws = widthScale || 1;
+            var b = Math.max(0, Math.min(1.2, bright));
+            ribbon(pts, ARC_GLOW * ws, 2.2, scale3(GLOW_RGB, 0.5 * b));
+            ribbon(pts, Math.max(ARC_CORE * ws, 1.3 / SCALE), 0.55, scale3(CORE_RGB, b));
+          }
+          /** Lightning round an arc of the rim's circle, from angle a0 to a1. */
+          function ringBolt(a0, a1, seed, bright) {
+            var steps = Math.max(1, Math.round(((a1 - a0) * RING_R) / 30));
+            var out = [];
+            var prev = [CX + Math.cos(a0) * RING_R, CY + Math.sin(a0) * RING_R];
+            for (var k = 1; k <= steps; k++) {
+              var a = a0 + ((a1 - a0) * k) / steps;
+              var next = [CX + Math.cos(a) * RING_R, CY + Math.sin(a) * RING_R];
+              var piece = V.lightningPath(
+                prev[0],
+                prev[1],
+                next[0],
+                next[1],
+                seed + k * 29,
+                2,
+                0.35,
+              );
+              for (var j = k === 1 ? 0 : 1; j < piece.length; j++) out.push(piece[j]);
+              prev = next;
+            }
+            bolt(out, bright, 0.8);
+          }
+
+          var chipM = new THREE.Matrix4();
+          var chipQ = new THREE.Quaternion();
+          var chipAxis = new THREE.Vector3(0.6, 0.8, 0.3).normalize();
+          var chipP = new THREE.Vector3();
+          var chipS = new THREE.Vector3();
+          function render(t) {
+            var songTime = t + audio.songStart;
+            // the electric layer reads the music at its tick's moment (12 times a second)
+            var tick = M.tickOf(songTime);
+            var tt = M.tickTime(tick) - audio.songStart;
+            var level = M.arcLevel(audio.sample(tt).loud, INT);
+            var events = M.hitEvents(audio, t);
+            var hitEnv = M.hitEnvelope(events);
+            var env = V.beatEnvelope(audio, t, BEAT_RELEASE);
+            var shake = M.shakeOffset(hitEnv, INT, songTime, SHAKE_ON, V.mulberry32);
+            var lit = M.wallLight(level, hitEnv * Math.min(1, INT));
+
+            // the wall and the speaker's glow
+            var u = bgMat.uniforms;
+            u.shake.value.set(shake[0], shake[1]);
+            u.light.value = lit.light;
+            u.glow.value = lit.glow;
+            ringGlow.material.opacity = Math.min(1, 0.35 + 0.55 * lit.glow);
+            haze.material.opacity = Math.min(0.3, 0.03 + 0.08 * lit.glow);
+            var edge = mix(MAIN, WHITE, 0.2 + 0.25 * level);
+            var ek = 0.55 + 0.45 * Math.min(1.3, lit.glow);
+            edgeMat.color.setRGB(edge[0] * ek, edge[1] * ek, edge[2] * ek);
+
+            // the cone pumps with the bass
+            var cone = M.coneScale(M.bassLevel(audio.sample(t).bands), env, INT);
+            pump.scale.setScalar(cone);
+            pump.position.z = M.conePush(cone);
+            var tilt = M.speakerTilt(songTime, V.mulberry32);
+            speaker.rotation.set(tilt[0], tilt[1], 0);
+            camera.setViewOffset(1920, 1080, -shake[0], -shake[1], 1920, 1080);
+            overCam.left = -shake[0];
+            overCam.right = 1920 - shake[0];
+            overCam.top = -shake[1];
+            overCam.bottom = 1080 - shake[1];
+            overCam.updateProjectionMatrix();
+
+            // the arcs
+            nVerts = 0;
+            for (var c = 0; c < 4; c++) {
+              var arcs = M.cableArcs(c, tick, level, V.mulberry32);
+              for (var a = 0; a < arcs.length; a++) {
+                var arc = arcs[a];
+                bolt(M.boltAlong(CABLES[c], arc.s0, arc.s1, arc.seed, V.lightningPath), arc.bright);
+              }
+            }
+            var rings = M.ringArcs(tick, level, V.mulberry32);
+            for (var r = 0; r < rings.length; r++)
+              ringBolt(rings[r].a0, rings[r].a1, rings[r].seed, rings[r].bright);
+            // the spectrum's sparks round the rim
+            var spec = specAudio.spectrum(tt);
+            var lens = M.sparkLengths(V.ringValues(spec, ANGLES, 360), INT, BOOST, SPARK_MAX);
+            for (var s = 0; s < ANGLES.length; s++) {
+              if (!(lens[s] > 7)) continue;
+              var rp = V.ringPoint(ANGLES[s], "circle");
+              var r0 = M.RIM_PX + 1;
+              var sp = V.lightningPath(
+                CX + rp[0] * r0,
+                CY + rp[1] * r0,
+                CX + rp[0] * (r0 + lens[s]),
+                CY + rp[1] * (r0 + lens[s]),
+                M.SEED + tick * 53 + s,
+                3,
+                0.3,
+              );
+              bolt(sp, 0.45 + (0.55 * lens[s]) / SPARK_MAX, 0.75);
+            }
+            // a strong hit: a bright arc jumps from a cable across to the rim, forking
+            var strike = M.hitArc(events, tick, V.mulberry32);
+            if (strike) {
+              var ends = M.strikeEnds(CABLES[strike.cable], strike);
+              var from = ends.from,
+                to = ends.to;
+              var main = V.lightningPath(from[0], from[1], to[0], to[1], strike.seed, 6, 0.2);
+              bolt(main, strike.bright * 1.2, 2.2);
+              var forks = V.lightningBranches(main, strike.seed, 3, 4, 0.25);
+              for (var f = 0; f < forks.length; f++) bolt(forks[f], strike.bright * 0.8, 1.1);
+            }
+            // the debris: bright streaks, and chips of concrete
+            var specks = M.debris(events, INT, DEBRIS_ON, V.mulberry32);
+            var nChips = 0;
+            for (var d = 0; d < specks.length; d++) {
+              var p = specks[d];
+              if (p.kind === "streak") {
+                var tail = [
+                  [p.x - p.dx * p.len, p.y - p.dy * p.len],
+                  [p.x, p.y],
+                ];
+                ribbon(tail, 12, 2.2, scale3(GLOW_RGB, 0.6 * p.alpha));
+                ribbon(tail, Math.max(3, 1.3 / SCALE), 0.6, scale3(CORE_RGB, p.alpha));
+              } else {
+                var sz = (p.size / M.VOXEL_PX) * (0.35 + 0.65 * p.alpha);
+                chipP.set((p.x - CX) / M.VOXEL_PX, (CY - p.y) / M.VOXEL_PX, CHIP_Z);
+                chipQ.setFromAxisAngle(chipAxis, p.spin);
+                chipS.set(sz, sz, sz);
+                chips.setMatrixAt(nChips++, chipM.compose(chipP, chipQ, chipS));
+              }
+            }
+            chips.count = nChips;
+            chips.instanceMatrix.needsUpdate = true;
+            posAttr.needsUpdate = true;
+            edgeAttr.needsUpdate = true;
+            sharpAttr.needsUpdate = true;
+            tintAttr.needsUpdate = true;
+            posAttr.clearUpdateRanges();
+            posAttr.addUpdateRange(0, nVerts * 3);
+            edgeAttr.clearUpdateRanges();
+            edgeAttr.addUpdateRange(0, nVerts);
+            sharpAttr.clearUpdateRanges();
+            sharpAttr.addUpdateRange(0, nVerts);
+            tintAttr.clearUpdateRanges();
+            tintAttr.addUpdateRange(0, nVerts * 3);
+            lineGeo.setDrawRange(0, nVerts);
+
+            renderer.setRenderTarget(null);
+            renderer.clear();
+            renderer.render(scene, camera);
+            renderer.render(overlay, overCam);
+          }
+          function textChanged() {
+            drawText();
+            textTex.needsUpdate = true;
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return {
+            render: render,
+            dispose: dispose,
+            apply: apply,
+            resize: resize,
+            textChanged: textChanged,
+          };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale), textChanged() }
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        // The text is drawn on a canvas: draw it again whenever a font arrives.
+        function fontsChanged() {
+          if (drawing) drawing.textChanged();
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
