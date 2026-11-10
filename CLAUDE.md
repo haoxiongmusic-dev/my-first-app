@@ -56,7 +56,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [ ] M9 the last eight catalog templates (spec
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
-      [ ] Deep Swell · [ ] Silk Lights · [ ] Late Show · [ ] Night Flight · [ ] Live Wire ·
+      [x] Deep Swell · [ ] Silk Lights · [ ] Late Show · [ ] Night Flight · [ ] Live Wire ·
       [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
@@ -204,6 +204,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   glow copy and a mirrored reflection, 8-bit bloom): a 30 s Final section of T-REX took 4 min 24 s
   in total with the phone copy (frame capture 1 min 54 s ≈ 3.8×), 10.1 MB per 30 s (the phone
   copy 15.3 MB).
+- Deep Swell (WebGL, 59,800 points + glow; far dots drawn wide and dim so the distance stays a
+  soft glow, which halved its files): a 30 s Final section of T-REX with a logo took 4 min 22 s in
+  total with the phone copy (frame capture 2 min 2 s ≈ 4.1×), 27.2 MB per 30 s (the phone copy
+  16.3 MB).
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).
