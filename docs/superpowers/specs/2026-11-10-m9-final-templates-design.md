@@ -22,7 +22,7 @@ Halo Rings, Prism Heart, Neon Sundown, Iron Wraith, Nova Streak and M8's ten).
 | 4 | **Night Flight** | Through Sky | Flying fast above moonlit clouds; a cockpit HUD of spectrum rings around your cover |
 | 5 | **Live Wire** | Power Bass | A chrome loudspeaker on a cracked concrete wall pumping with the bass, electric arcs crawling to the edges |
 | 6 | **Static Tower** | Storm Signal | A pyramid of old TVs showing your picture under a stormy sky; lightning on the hits |
-| 7 | **Hyper Tunnel** | RoboWave | A neon sci-fi tunnel rushing past a holographic panel with your picture, inside a HUD frame |
+| 7 | **Hyper Tunnel** | RoboWave | A chrome voxel robot in a VR headset inside a rushing neon sci-fi tunnel, under a HUD frame |
 | 8 | **Moon Jelly** | Aqua Reverie | Glowing jellyfish drifting through deep water under light shafts, pulsing on the beat |
 
 ## 2. Shared understanding
@@ -36,7 +36,8 @@ from the catalog's written study notes (2026-11-04), not a fresh frame-by-frame 
 
 **Assumed (the owner can correct):** every name, look detail and preset below. Licensed art in the
 references (RoboWave's robot, Through Sky's cockpit, Power Bass's 3D speaker, Storm Signal's TV
-photos) is replaced by things drawn in code. Where a reference takes many pictures (Storm Signal's
+photos) is replaced by **three.js voxel models built in code** (the owner, 2026-11-10: "just use
+three.js and voxel to draw the pictures"), like Iron Wraith's skull. Where a reference takes many pictures (Storm Signal's
 14 media slots), ours takes one picture (the existing `image` setting) and varies it per screen.
 Deep Swell's bokeh orbs are **off by default** (the owner removed Particle Horizon's orbs) and on
 in one preset.
@@ -56,12 +57,24 @@ image setting, and a 14-slot form is out of scope); a Colors-panel palette picke
 ## 4. Shared rules
 
 M8 spec §4 applies to all eight unchanged: drawn at 1920×1080, CLAUDE.md's template rules, plain
-WebGL / 2D canvas with the toolkit (three.js only where a section says so), motion maths in a pure
+WebGL / 2D canvas with the toolkit, or three.js where a section says so, motion maths in a pure
 tested `assets/<short>-motion.js`, the **standard settings** table (ids, types, ranges, order),
 4 presets each, `showTimer` (default true) on templates with a timer. Text fields fit a
 60-character title without leaving the frame. Image settings follow CLAUDE.md
 (`{"type":"image","fit":"square","default":""}`, Content tab, redraw on `load`, a missing picture
 draws a designed fallback, never a hole).
+
+**Voxel models** (Late Show, Night Flight, Live Wire, Static Tower, Hyper Tunnel, Moon Jelly):
+every object that stands in for licensed art is a three.js voxel model, built the way Iron Wraith
+builds its skull: a **pure** builder module `assets/<name>-voxels.js` (no DOM, no three.js) returns
+voxel lists `[x, y, z, shade]` per part, Vitest-tested (same output every time, sensible size,
+parts in place); the page draws each part as one `InstancedMesh` of cubes slightly smaller than
+the grid (the gaps read as voxel seams), lit with Iron Wraith's chrome/metal approach. All of
+CLAUDE.md's three.js rules apply (`three-kit.js`, 8-bit `UnsignedByteType` targets everywhere,
+coloured glows as additive sprites, build the renderer once, ColorManagement off with
+`NoToneMapping` so preset colours come out as picked). Keep each model at most 15,000 voxels.
+Moving parts (speaker cone, gauge needles, tentacles) are separate meshes moved or re-posed per
+frame from the motion module.
 
 Fonts: the usual eight (Halo Rings' list). Late Show and Hyper Tunnel add `Orbitron` to that
 list as their default, with the font files copied from Iron Wraith's `assets/fonts/`.
@@ -144,9 +157,12 @@ tab) — this template has no `artist` field: the tagline replaces it.
 **Presets:** Original (pink/cyan), Green (`#3dff6a`/`#c8ff3d`, a green-phosphor monitor), Sunset
 (`#ff8a2f`/`#ff2f6a`), Ice (`#9ad8ff`/`#ffffff`).
 
-**Build notes:** draw the screen scene into its own canvas (or WebGL target), then map it onto the
-screen with the barrel curve in a small shader; the TV body is a 2D overlay. Reuse Neon Sundown's
-grid/sun ideas by copying, not importing.
+**Build notes:** three.js. The TV is a voxel model (`tv-voxels.js`: cabinet with wood-grain
+shades, a bevelled bezel, knobs and a speaker grille), seen at a slight angle with a slow seeded
+drift of the camera. The synthwave scene is drawn into its own 8-bit target (or canvas texture) and
+shown on a curved screen mesh inside the bezel with the barrel curve and scanlines in its shader.
+The room is a dark floor and wall lit by an additive glow sprite in the screen's colour. Reuse
+Neon Sundown's grid/sun ideas by copying, not importing.
 
 ### 5.4 Night Flight (`night-flight`), after Through Sky
 
@@ -170,8 +186,10 @@ spectrum 30–1000 Hz, boost 8×, bands 100 %.
 **Presets:** Original (cool blue night), Purple (`#c08aff`/`#ffd8ff`, violet sky), Orange
 (`#ffb070`/`#fff0d8`, dusk sky), Clear (blue, `showCockpit` off).
 
-**Build notes:** one full-screen shader for sky, moon and clouds (8-bit); rings and cockpit in a
-2D canvas over it. Sky colours come from the preset colours (mixed darker).
+**Build notes:** three.js. Sky, moon and clouds as one full-screen shader pass (8-bit); the
+cockpit is a voxel model (`cockpit-voxels.js`: window struts, a dashboard with a few voxel gauges
+whose needle voxels turn) in front of the camera; the HUD rings and text in a 2D canvas over it.
+Sky colours come from the preset colours (mixed darker).
 
 ### 5.5 Live Wire (`live-wire`), after Power Bass
 
@@ -195,8 +213,12 @@ A faint camera shake on hits (`shakeOnBeat`).
 **Presets:** Original (blue arcs), Inferno (`#ff5a1a`/`#ffd08a`), Toxic (`#5aff2a`/`#e0ffb0`),
 Violet (`#9a2aff`/`#f0b0ff`).
 
-**Build notes:** 2D canvas for the speaker, cables and arcs (arcs drawn twice: wide blurred, then
-thin core), wall prebuilt once per settings change. Lightning bolt generator goes in the toolkit
+**Build notes:** three.js. The speaker is a voxel model (`speaker-voxels.js`: chrome rim with
+screw voxels, a cone of concentric voxel rings as its own mesh so it can pump, a dust cap, cable
+voxels running to the frame edges); the cracked wall a backdrop shader or texture built once per
+settings change; the title and artist in a bold chrome-gradient style (HTML/canvas text, so a
+60-character title fits). Arcs are additive glow lines along the cables (drawn twice: wide soft,
+then thin core); debris are small voxel cubes. Lightning bolt generator goes in the toolkit
 (`lightningPath(x0, y0, x1, y1, seed, detail)` → points), tested, for Static Tower to reuse.
 
 ### 5.6 Static Tower (`static-tower`), after Storm Signal
@@ -221,34 +243,37 @@ font `Oswald`, main `#2affd8`, accent `#ffffff`, spectrum 30–1000 Hz, boost 8�
 **Presets:** Original (teal storm, `centre`), Broadcast (`#ff3a3a`/`#ffd0d0`, `all`), Amber
 (`#ffb02a`/`#fff0c0`), Ghost (`#b0c0ff`/`#ffffff`, `all`).
 
-**Build notes:** WebGL for the sky and lightning glow, 2D canvas for the TVs (the picture drawn
-into each screen with clipping), or one WebGL pass with the picture as a texture — the builder
-chooses by speed.
+**Build notes:** three.js. Each TV is a voxel cabinet (a `tv-voxels.js` builder with seeded size
+and shade variants) with a screen quad that shows the picture as a texture through a small shader
+(tint, crop offset, scanlines, static). Sky and lightning glow as a backdrop shader plus additive
+bolt sprites; the ground spectrum as thin glowing quads.
 
 ### 5.7 Hyper Tunnel (`hyper-tunnel`), after RoboWave
 
 **Look.** A neon sci-fi tunnel rushing toward the camera: receding rectangular frames with
 chamfered corners, neon edge lines (`mainColor`), dark metal panels, a few cables sagging along the
-walls, a bright vanishing point. Centre: a holographic panel (≈ 560 px square, slightly tilted,
-thin glowing border, scan lines) showing the owner's picture (image `picture`; no picture → a
-glowing visor-helmet line drawing). A HUD frame over everything: corner brackets, thin ruler ticks
+walls, a bright vanishing point. Centre: a **chrome voxel robot** (head, neck and shoulders,
+about 60 % of the frame height) wearing a chunky **VR headset** whose front panel glows in
+`mainColor` with scrolling scan lines; cable voxels run from the back of the head into the tunnel.
+A HUD frame over everything: corner brackets, thin ruler ticks
 on the edges, small readouts. Bottom-left: artist small, title big. Right edge: a vertical timer
 (digits stacked, rotated). Top-right: an optional logo (image `logo`, small).
 
 **Motion.** Tunnel speed `1 + 0.7 × loud × intensity`; each frame's neon edge brightness follows
 a band (frames nearer the camera = lower bands), so the spectrum runs down the tunnel; on beats
-the edges flash (`beatEnvelope`) and the panel glitches sideways for ≤ 2 frames (seeded by the
-beat's song frame). The HUD ticks crawl slowly.
+the edges flash (`beatEnvelope`), the headset visor flares, and the robot's head nods slightly
+(≤ 3°, release 0.3 s); a slow head turn (±8°) follows the song time. The HUD ticks crawl slowly.
 
-**Extra settings:** `picture` (image), `logo` (image), `finish` (`silver` / `gold`, the frame and
-HUD metal colour; default `silver`), `showTimer` (true). Defaults: font `Orbitron`, main
+**Extra settings:** `logo` (image), `finish` (`silver` / `gold`, the robot's metal, as the
+reference's Character Style; default `silver`), `showTimer` (true). Defaults: font `Orbitron`, main
 `#2ad9ff`, accent `#ff2abf`, spectrum 30–1000 Hz, boost 4×, bands 30 %.
 
 **Presets:** Electric (cyan/magenta, silver), Matrix (`#2aff6a`/`#c8ffd0`, silver), Original
 (`#ff2abf`/`#2ad9ff`, silver), Metal (`#ffb02a`/`#ffffff`, gold).
 
-**Build notes:** plain WebGL: the tunnel as instanced frame quads (or one ray-marched shader if
-cheaper), 8-bit glow; the panel, HUD and text as 2D canvas/HTML over it.
+**Build notes:** three.js. The robot is a voxel model (`robot-voxels.js`; Iron Wraith's skull is
+the closest reference: copy its approach, not its shape); the tunnel as instanced frame meshes
+with neon edge strips and additive glow; the HUD and text as 2D canvas/HTML over it.
 
 ### 5.8 Moon Jelly (`moon-jelly`), after Aqua Reverie
 
@@ -273,8 +298,11 @@ boost 2×, bands 100 %.
 **Presets:** Original (pink/blue), Glow (`#7affd8`/`#d8ff7a`), Abyss (`#7a8aff`/`#ff7ad8`, darker
 water), Coral (`#ffb07a`/`#ff7a8a`).
 
-**Build notes:** WebGL backdrop shader (water, shafts, snow); jellyfish as 2D canvas paths with
-additive blending, or WebGL triangle strips if the canvas is too slow. Each jellyfish's state at
+**Build notes:** three.js. Water, shafts and snow as a backdrop shader; each jellyfish a voxel
+model (`jelly-voxels.js`: a hollow domed bell of translucent glowing voxels, a frilled rim ring,
+tentacles and oral arms as voxel chains) drawn additively so it glows and reads as translucent;
+the bell's contraction scales the bell mesh, and the tentacle chains are re-posed per frame from
+the motion module. Each jellyfish's state at
 time t is a pure function of t and the beat list (`beatEnvelope`), so any frame can be drawn alone.
 
 ## 6. Testing (each template)
@@ -291,7 +319,8 @@ given points, no NaN).
 | Risk | Plan |
 |---|---|
 | Looks are from notes, not a fresh study | Every look value is here and in presets; the owner reviews each video before merging |
-| Drawn stand-ins for licensed art (speaker, TVs, cockpit, helmet) look cheap | Keep them simple and stylised, lit by the glow; prefer silhouettes and line art over fake realism |
+| Voxel stand-ins for licensed art (speaker, TVs, cockpit, robot, jellyfish) look crude | Follow Iron Wraith (the owner approved its voxel look): enough voxels for a clear shape, chrome lighting, glow |
+| Six three.js templates render slowly | Iron Wraith and Black Crown took about 5 min per 30 s; keep models at most 15,000 voxels and measure |
 | 2D canvas templates with many glowing paths render slowly | Draw glows at reduced resolution and scale up; measure on the 30 s render (≤ 6 min) |
 | One picture across ten TVs looks repetitive | Per-screen tint, crop and static variation |
 
