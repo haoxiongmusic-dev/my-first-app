@@ -57,7 +57,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
       [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [x] Live Wire ·
-      [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
+      [x] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -234,6 +234,13 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   ribbons): a 30 s Final section of T-REX took 5 min 17 s in total with the phone copy (frame
   capture 2 min 11 s ≈ 4.4×), 15.0 MB per 30 s (the phone copy 15.3 MB). A strong fine grain
   on the wall seemed to slow frame capture (one 10 s test: 70 s, 53 s without), so it is subtle.
+- Static Tower (three.js: storm clouds drawn once into a repeating 8-bit target and slid along in
+  whole pixels, mountains and floor drawn once, one composite shader per frame; 5,600 Lambert-lit
+  voxels for 15 TVs, one screen quad each, the stack mirrored into a half-size target for the wet
+  floor): a 30 s Final section of T-REX with a picture took 5 min 47 s in total with the phone copy
+  (frame capture 1 min 56 s ≈ 3.9×), 15.0 MB per 30 s (the phone copy 15.2 MB). An earlier run with
+  the clouds drifting by sub-pixels and the stack swaying every frame took 6 min 5 s (partly
+  run-to-run noise: HyperFrames' setup and audio steps vary by ≈ 20 s between runs).
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).
