@@ -34,6 +34,12 @@ export type Analysis = {
   songDuration?: number;
   /** for a section of a song: each Hz beat range's scale over the whole song */
   beatScales?: Record<string, number>;
+  /**
+   * for a section of a song: the loudness summed over the frames before the kept analysis
+   * (loud-seconds: each frame's 0..1 loudness for 1/fps), so motion that travels with the
+   * loudness so far (Night Flight's clouds) matches the whole song
+   */
+  loudBefore?: number;
 };
 
 /** True for an analysis written by the current analyzer version. */
