@@ -53,11 +53,11 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
   - [x] Song clock and line kit (toolkit)
   - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [x] Moon Tide ·
         [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [x] Black Crown · [x] Cube Core
-- [ ] M9 the last eight catalog templates (spec
+- [x] M9 the last eight catalog templates (spec
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
       [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [x] Live Wire ·
-      [x] Static Tower · [x] Hyper Tunnel · [ ] Moon Jelly
+      [x] Static Tower · [x] Hyper Tunnel · [x] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -248,6 +248,13 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   copy (frame capture 2 min 11 s ≈ 4.4×), 30.7 MB per 30 s (the phone copy 15.4 MB). Earlier runs
   took 6:05–6:31: a full-size 2D-canvas HUD redrawn every frame slowed frame capture, and busier
   walls, a faster tunnel and a robot that moved 6 times a second made bigger files.
+- Moon Jelly (three.js: the water as one shader drawn into a half-size 8-bit target only when its
+  15-per-second steps change; 12,500 additive voxels for 14 jellyfish at most, 10,000 for the
+  default 9, in one mesh for the bells and one for the re-posed tentacles; coloured glows as
+  instanced sprites): a 30 s Final section of T-REX took 4 min 39 s in total with the phone copy
+  (frame capture 1 min 45 s ≈ 3.5×), 35.0 MB per 30 s (the phone copy 15.7 MB). 14 jellyfish
+  render as fast as 9. The files are big because T-REX's beats keep every bell swimming; drawing
+  steps, whole-pixel tentacles and softer seams made no difference.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).

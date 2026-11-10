@@ -1,0 +1,1073 @@
+<!doctype html>
+<!--
+  Moon Jelly: underwater, looking slightly up. The upper part of the frame is the water's surface
+  seen from below: a bright blue ceiling broken into soft shimmering patches of cyan, white and
+  lavender light that crowd together toward a hazy horizon line; below it the water deepens to
+  near black, light shafts slant down from the surface, swaying slowly, and specks of marine snow
+  drift by. Translucent glowing voxel jellyfish drift slowly upward through it at different depths
+  (two big ones in front at the lower left and right, mid-sized and small far ones behind,
+  dimmer and bluer), each a wide hollow dome with main-colour edges and four glowing rings inside,
+  a frilled rim, long trailing tentacles and frilly oral arms in the accent colour. On each beat
+  every jellyfish swims: its bell contracts (narrower, taller) and relaxes, pushing it up a little,
+  its tentacles trailing behind. Each glows with the loudness and its own band of the spectrum
+  (the front ones the bass). With the ripple on, the surface shimmers and the whole picture
+  wobbles faintly on the beat. Tiny centred text under the horizon: "artist · title", the timer.
+  Spec: docs/superpowers/specs/2026-11-10-m9-final-templates-design.md §5.8
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials; the
+  jellyfish count only changes how many instances are drawn).
+    1. The water: one shader drawn into a half-size 8-bit target (it is all soft light), then
+       copied to the screen, wobbled sideways by the ripple.
+    2. The jellyfish: their voxels (assets/jelly-voxels.js) as instanced cubes a little smaller
+       than the grid, added on, so the overlapping front and back of each hollow bell glow like
+       translucent jelly. All bells share one mesh, all tentacles and arms another (re-posed every
+       frame from assets/jelly-motion.js), and their coloured glows a third (soft sprites).
+    3. The text, as two small pictures redrawn only when they change.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Outfit","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ff7ad8"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#7ad8ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"ripple","type":"boolean","label":"Ripple effect","default":true},
+    {"id":"jellyCount","type":"number","label":"Jellyfish","default":9,"min":3,"max":14,"step":1},
+    {"id":"water","type":"enum","label":"Water","default":"bright","options":[
+      {"value":"bright","label":"Bright"},
+      {"value":"dark","label":"Dark"}]},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/jelly-voxels.js"></script>
+    <script src="assets/jelly-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fontPreload b {
+        font-weight: 600;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa1<b>Aa1</b></span> <span class="f-inter">Aa1<b>Aa1</b></span>
+      <span class="f-outfit">Aa1<b>Aa1</b></span> <span class="f-poppins">Aa1<b>Aa1</b></span>
+      <span class="f-lato">Aa1<b>Aa1</b></span> <span class="f-oswald">Aa1<b>Aa1</b></span>
+      <span class="f-playfair">Aa1<b>Aa1</b></span> <span class="f-garamond">Aa1<b>Aa1</b></span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.JellyMotion;
+        var JV = window.JellyVoxels;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // ---------- the layout (1080p pixels, y down) ----------
+        var TEXT = { y: 528, width: 900, size: 21, floor: 13, timer: 15 };
+        var VOXEL = 0.84; // cube size: the gaps read as voxel seams
+        var WOBBLE_FREQ = 0.018; // the ripple's wobble: radians per px down the frame
+        // The water's shimmer and the tentacles' sway move this often a second (every other
+        // frame): half the change from frame to frame, so smaller files and a quicker render.
+        var STEP_RATE = 15;
+        var BODY = [0.6, 0.82, 1.0]; // the bells' pale blue
+        var WATER = [0.16, 0.36, 0.7]; // far jellyfish fade toward the water's blue
+        var WHITE = [1, 1, 1];
+        // per tier: how far into the water's blue a jellyfish fades, and how bright it is
+        var DEPTH = {
+          front: { blue: 0, bright: 1 },
+          mid: { blue: 0.2, bright: 0.85 },
+          far: { blue: 0.45, bright: 0.62 },
+        };
+        var SLOTS = M.SLOTS;
+        var MODELS = SLOTS.map(function (s, i) {
+          return JV.buildJelly(s.tier, M.SEED + i);
+        });
+
+        /** [r, g, b] 0..1 mixes. */
+        function mix(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function scale3(a, k) {
+          return [a[0] * k, a[1] * k, a[2] * k];
+        }
+        function css(rgb, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, rgb[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+
+        // ---------- shaders ----------
+        var QUAD_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+
+        // 1. The water. Above the horizon: the surface from below, its light patches laid out on
+        // the surface plane (so they crowd and flatten toward the horizon) and fading into haze
+        // there; below: deep blue to near black, light shafts from the surface, marine snow.
+        var WATER_FS = [
+          "uniform float time, loud, ripple, dark, sway, horizon;",
+          "uniform vec3 mainCol;",
+          "varying vec2 vUv;",
+          "float hash1(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(12.9898, 78.233))) * 43758.5453); }",
+          "vec2 hash2(vec2 p){ vec2 q = mod(p, 256.0); return fract(sin(vec2(dot(q, vec2(127.1, 311.7)), dot(q, vec2(269.5, 183.3)))) * 43758.5453); }",
+          // soft light patches: a jittered grid of soft spots, each cyan, white or lavender
+          "vec3 patches(vec2 q, float tt){",
+          "  vec2 cell = floor(q);",
+          "  vec2 f = fract(q);",
+          "  vec3 acc = vec3(0.0);",
+          "  for (int j = -1; j <= 1; j++) {",
+          "    for (int i = -1; i <= 1; i++) {",
+          "      vec2 o = vec2(float(i), float(j));",
+          "      vec2 c = cell + o;",
+          "      vec2 h = hash2(c);",
+          "      vec2 pt = o + 0.5 + 0.38 * vec2(sin(tt * 0.21 + 6.2831 * h.x), cos(tt * 0.17 + 6.2831 * h.y));",
+          "      vec2 d = (f - pt) * vec2(1.0, 1.15);",
+          "      float k = hash1(c + 17.0);",
+          "      float spot = exp(-dot(d, d) / (0.035 + 0.09 * h.y)) * smoothstep(0.1, 0.5, fract(k * 7.31));",
+          "      vec3 col = k < 0.4 ? vec3(0.45, 0.9, 1.0) : (k < 0.72 ? vec3(0.9, 0.97, 1.0) : mix(vec3(0.74, 0.68, 1.0), mainCol, 0.25));",
+          "      acc += col * spot * (0.5 + 0.5 * h.x);",
+          "    }",
+          "  }",
+          "  return acc;",
+          "}",
+          // marine snow: sparse soft specks in two layers, sinking slowly
+          "vec3 snow(vec2 p, float tt){",
+          "  vec3 acc = vec3(0.0);",
+          "  for (int layer = 0; layer < 2; layer++) {",
+          "    float L = float(layer);",
+          "    float cs = 74.0 + 56.0 * L;",
+          "    vec2 q = p - vec2(10.0 * sin(tt * 0.09 + 2.0 * L), tt * (3.5 - 1.5 * L));",
+          "    vec2 c = floor(q / cs);",
+          "    vec2 h = hash2(c + 31.0 * L);",
+          "    if (h.x < 0.16) {",
+          "      vec2 pos = (c + 0.2 + 0.6 * hash2(c + 7.0)) * cs;",
+          "      vec2 d = q - pos;",
+          "      float r = 2.6 + 1.8 * L;",
+          "      acc += vec3(0.72, 0.86, 1.0) * (0.2 + 0.3 * h.y) * (1.0 - 0.45 * L) * exp(-dot(d, d) / (r * r));",
+          "    }",
+          "  }",
+          "  return acc;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  float H = horizon;",
+          "  vec3 haze = mix(vec3(0.36, 0.6, 0.9), vec3(0.13, 0.24, 0.48), dark);",
+          "  vec3 col;",
+          "  if (p.y < H) {",
+          "    float dy = H - p.y;",
+          "    float z = 520.0 / (dy + 26.0);",
+          "    vec2 q = vec2((p.x - 960.0) / (dy + 26.0) * 1.8, z * 1.7 - time * 0.03);",
+          "    q += 0.3 * vec2(sin(q.y * 1.3 + time * 0.2), sin(q.x * 1.1 - time * 0.16));",
+          "    q.x += ripple * 0.22 * sin(z * 4.0 - time * 2.6);",
+          "    vec3 sky = mix(vec3(0.09, 0.3, 0.7), vec3(0.18, 0.46, 0.9), smoothstep(H, 0.0, p.y));",
+          "    sky *= mix(vec3(1.0), vec3(0.45, 0.5, 0.62), dark);",
+          "    vec3 light = patches(q, time) * (0.4 + 0.22 * loud + 0.3 * ripple) * mix(1.0, 0.5, dark);",
+          "    float fog = smoothstep(1.6, 9.0, z);",
+          "    col = sky + light * (1.0 - fog);",
+          "    col = mix(col, haze, fog * 0.85);",
+          "  } else {",
+          "    float depth = (p.y - H) / (1080.0 - H);",
+          "    vec3 deep = mix(vec3(0.03, 0.12, 0.32), vec3(0.012, 0.045, 0.14), dark);",
+          "    col = mix(haze * 0.72, deep, smoothstep(0.0, 0.3, depth));",
+          "    col = mix(col, vec3(0.0, 0.01, 0.03), smoothstep(0.35, 1.05, depth));",
+          "  }",
+          // the horizon's hazy line
+          "  float hl = (p.y - H) / 24.0;",
+          "  col += haze * (0.3 + 0.1 * ripple) * exp(-hl * hl);",
+          // light shafts slanting down from the surface, swaying slowly
+          "  vec2 rv = p - vec2(960.0 + 1400.0 * sway, -900.0);",
+          "  float ang = atan(rv.x, rv.y);",
+          "  float rays = 0.5 + 0.5 * sin(ang * 21.0 + 1.3) * sin(ang * 8.0 + 0.5);",
+          "  rays = smoothstep(0.4, 1.0, rays);",
+          "  float below = max(p.y - H + 40.0, 0.0);",
+          "  float shaft = exp(-below / 420.0) * smoothstep(0.0, 90.0, below);",
+          "  col += vec3(0.3, 0.55, 0.95) * rays * shaft * 0.26 * mix(1.0, 0.55, dark);",
+          "  col += snow(p, time) * (p.y > H - 30.0 ? 1.0 : 0.3);",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        // The water's half-size picture on the screen, wobbled sideways by the ripple.
+        var COPY_FS = [
+          "uniform sampler2D tex;",
+          "uniform float wob, phase, freq;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  float y = (1.0 - vUv.y) * 1080.0;",
+          "  vec2 uv = vUv + vec2(wob * sin(y * freq + phase) / 1920.0, 0.0);",
+          "  gl_FragColor = vec4(texture2D(tex, uv).rgb, 1.0);",
+          "}",
+        ].join("\n");
+
+        /** Each voxel face: full brightness, darker at its edges (the voxel seams). */
+        function seamTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 32;
+          var g = c.getContext("2d");
+          g.fillStyle = "rgb(70,70,70)";
+          g.fillRect(0, 0, 32, 32);
+          g.fillStyle = "rgb(170,170,170)";
+          g.fillRect(2, 2, 28, 28);
+          g.fillStyle = "rgb(255,255,255)";
+          g.fillRect(4, 4, 24, 24);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** A soft round glow (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 128;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.25, "rgba(255,255,255,0.55)");
+          grad.addColorStop(0.6, "rgba(255,255,255,0.14)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 128, 128);
+          return new THREE.CanvasTexture(c);
+        }
+
+        // ---------- the text: "artist · title" and the timer, as small pictures ----------
+        var textCanvas = document.createElement("canvas");
+        textCanvas.width = 1000;
+        textCanvas.height = 100;
+        var timerCanvas = document.createElement("canvas");
+        timerCanvas.width = 400;
+        timerCanvas.height = 40;
+        function spaced(ctx, px) {
+          if ("letterSpacing" in ctx) ctx.letterSpacing = px.toFixed(1) + "px";
+        }
+        function fontOf(weight, size) {
+          return weight + " " + size + 'px "' + setting("font") + '", sans-serif';
+        }
+        var SPACE = 0.2; // letter spacing, a share of the size
+        /** Draws the line(s); returns how far below TEXT.y the timer goes. */
+        function drawText(main) {
+          var ctx = textCanvas.getContext("2d");
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+          var artist = String(setting("artist") || "").toUpperCase();
+          var title = String(setting("title") || "").toUpperCase();
+          var measure = function (s) {
+            ctx.font = fontOf(500, 100);
+            spaced(ctx, SPACE * 100);
+            return ctx.measureText(s).width / 100;
+          };
+          var fit = M.titleLines(artist, title, measure, TEXT.width, TEXT.size, TEXT.floor);
+          var size = fit.size;
+          var lineH = size * 1.35;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          var first = 50 - ((fit.lines.length - 1) * lineH) / 2;
+          for (var i = 0; i < fit.lines.length; i++) {
+            var y = first + i * lineH;
+            var wide = measure(fit.lines[i]) * size;
+            var k = Math.min(1, (TEXT.width - 4) / Math.max(wide, 1));
+            ctx.save();
+            // letter spacing adds a space's worth after the last letter: centre the ink
+            ctx.translate(500 + (SPACE * size * k) / 2, y);
+            ctx.scale(k, 1);
+            ctx.font = fontOf(500, size);
+            spaced(ctx, SPACE * size);
+            ctx.shadowColor = "rgba(0,14,44,0.75)";
+            ctx.shadowBlur = size * 0.6;
+            ctx.fillStyle = css(mix(WHITE, main, 0.12), 0.95);
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = "transparent";
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.restore();
+          }
+          spaced(ctx, 0);
+          return ((fit.lines.length - 1) * lineH) / 2 + size * 0.5 + 18;
+        }
+        function drawTimer(text, main) {
+          var ctx = timerCanvas.getContext("2d");
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, timerCanvas.width, timerCanvas.height);
+          ctx.font = fontOf(400, TEXT.timer);
+          spaced(ctx, TEXT.timer * 0.25);
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.shadowColor = "rgba(0,14,44,0.75)";
+          ctx.shadowBlur = 8;
+          ctx.fillStyle = css(mix(WHITE, main, 0.2), 0.78);
+          ctx.fillText(text, 200 + TEXT.timer * 0.125, 20);
+          spaced(ctx, 0);
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials, audio
+         * and the text (apply), and a new preview size only resizes (resize), so the live preview
+         * never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.setClearColor(0x000000, 1);
+          renderer.autoClear = false;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var flatCam = new THREE.OrthographicCamera(0, 1920, 0, 1080, -10, 10);
+
+          // ----- 1. the water: drawn at half size into an 8-bit target, copied up -----
+          var waterRT = keep(
+            new THREE.WebGLRenderTarget(960, 540, {
+              type: THREE.UnsignedByteType,
+              format: THREE.RGBAFormat,
+              minFilter: THREE.LinearFilter,
+              magFilter: THREE.LinearFilter,
+              depthBuffer: false,
+            }),
+          );
+          var waterMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: WATER_FS,
+              uniforms: {
+                time: { value: 0 },
+                loud: { value: 0 },
+                ripple: { value: 0 },
+                dark: { value: 0 },
+                sway: { value: 0 },
+                horizon: { value: M.HORIZON },
+                mainCol: { value: new THREE.Color() },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var waterScene = new THREE.Scene();
+          var waterQuad = new THREE.Mesh(quad, waterMat);
+          waterQuad.frustumCulled = false;
+          waterScene.add(waterQuad);
+          var copyMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: COPY_FS,
+              uniforms: {
+                tex: { value: waterRT.texture },
+                wob: { value: 0 },
+                phase: { value: 0 },
+                freq: { value: WOBBLE_FREQ },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var copyScene = new THREE.Scene();
+          var copyQuad = new THREE.Mesh(quad, copyMat);
+          copyQuad.frustumCulled = false;
+          copyScene.add(copyQuad);
+
+          // ----- 2. the jellyfish: every bell in one mesh, every chain in another, the glows in
+          // a third; the camera looks straight on, in 1080p pixels, y up -----
+          var jellyScene = new THREE.Scene();
+          var jellyCam = new THREE.OrthographicCamera(0, 1920, 1080, 0, -4000, 4000);
+          var box = keep(new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL));
+          var seams = keep(seamTexture());
+          seams.minFilter = THREE.LinearMipmapLinearFilter;
+          var voxelMat = keep(
+            new THREE.MeshBasicMaterial({
+              map: seams,
+              color: 0xffffff,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          // The voxel lists, all jellyfish one after another (in slot order, so the first N
+          // jellyfish are the first instances): each voxel's model position, shade and jellyfish.
+          var bellVox = [],
+            chainVox = [];
+          var bellStart = [0],
+            chainStart = [0];
+          var chains = []; // { jelly, links, ax, az, sway }
+          MODELS.forEach(function (model, j) {
+            var R = model.radius;
+            [model.bell, model.rim, model.gonads].forEach(function (list) {
+              list.forEach(function (v) {
+                bellVox.push({ x: v[0], y: v[1], z: v[2], shade: v[3], jelly: j });
+              });
+            });
+            bellStart.push(bellVox.length);
+            var r = V.mulberry32(M.SEED + 977 * (j + 1));
+            var freq = 0.16 + 0.12 * r();
+            function addChain(chain, kind) {
+              var index = chains.length;
+              chains.push({
+                jelly: j,
+                links: chain.length,
+                ax: chain.anchor[0] / R,
+                az: chain.anchor[2] / R,
+                sway: {
+                  amp: kind === "arm" ? 0.16 : 0.34,
+                  freq: freq * (kind === "arm" ? 0.8 : 1),
+                  phase: r() * 2 * Math.PI,
+                  wave: kind === "arm" ? 1.6 : 2.6,
+                },
+              });
+              chain.voxels.forEach(function (v) {
+                chainVox.push({
+                  x: v[0],
+                  y: v[1],
+                  z: v[2],
+                  shade: v[3],
+                  k: v[4],
+                  chain: index,
+                  jelly: j,
+                });
+              });
+            }
+            model.tentacles.forEach(function (c) {
+              addChain(c, "tentacle");
+            });
+            model.arms.forEach(function (c) {
+              addChain(c, "arm");
+            });
+            chainStart.push(chainVox.length);
+          });
+          function instanced(count, material) {
+            var mesh = new THREE.InstancedMesh(box, material, count);
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            mesh.setColorAt(0, new THREE.Color(0, 0, 0));
+            mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+            mesh.frustumCulled = false;
+            keep(mesh);
+            jellyScene.add(mesh);
+            return mesh;
+          }
+          var bellMesh = instanced(bellVox.length, voxelMat);
+          var chainMesh = instanced(chainVox.length, voxelMat);
+          var bellBase = new Float32Array(bellVox.length * 3);
+          var chainBase = new Float32Array(chainVox.length * 3);
+          var GLOWS = 3; // per jellyfish: a wide halo, the inner core, a haze over the tentacles
+          var glowTex = keep(glowTexture());
+          var glowMat = keep(
+            new THREE.MeshBasicMaterial({
+              map: glowTex,
+              color: 0xffffff,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var glowMesh = new THREE.InstancedMesh(
+            keep(new THREE.PlaneGeometry(1, 1)),
+            glowMat,
+            SLOTS.length * GLOWS,
+          );
+          glowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+          glowMesh.setColorAt(0, new THREE.Color(0, 0, 0));
+          glowMesh.frustumCulled = false;
+          glowMesh.renderOrder = -1;
+          keep(glowMesh);
+          jellyScene.add(glowMesh);
+          var glowBase = []; // per jellyfish: [halo, core, haze] colours
+
+          // ----- 3. the text -----
+          var hudScene = new THREE.Scene();
+          function hudQuad(tex, w, h) {
+            tex.flipY = false; // the HUD's y runs down, as the canvas's rows do
+            tex.minFilter = THREE.LinearFilter;
+            tex.generateMipmaps = false;
+            var mat = keep(
+              new THREE.MeshBasicMaterial({
+                map: tex,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              }),
+            );
+            var mesh = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, h)), mat);
+            mesh.frustumCulled = false;
+            hudScene.add(mesh);
+            return mesh;
+          }
+          var textTex = keep(new THREE.CanvasTexture(textCanvas));
+          var textQuad = hudQuad(textTex, 1000, 100);
+          textQuad.position.set(960, TEXT.y, 0);
+          var timerTex = keep(new THREE.CanvasTexture(timerCanvas));
+          var timerQuad = hudQuad(timerTex, 400, 40);
+          var timerDrawn = "";
+          function redrawText() {
+            var below = drawText(MAIN);
+            textTex.needsUpdate = true;
+            timerQuad.position.set(960, TEXT.y + below, 0);
+            timerDrawn = "";
+          }
+
+          function resize(scale) {
+            renderer.setSize(Math.round(1920 * scale), Math.round(1080 * scale), false);
+            waterRT.setSize(Math.round(960 * scale), Math.round(540 * scale));
+            waterDrawn = "";
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio, text (no new WebGL objects) -----
+          var audio, specAudio, INT, BOOST, MAIN, ACC, TIMER_ON, RIPPLE_ON, COUNT, BANDS;
+          function shadeColour(shade) {
+            switch (shade) {
+              case 1:
+                return scale3(BODY, 0.15);
+              case 2:
+                return scale3(BODY, 0.09);
+              case 3:
+                return scale3(mix(BODY, MAIN, 0.8), 0.24);
+              case 4:
+                return scale3(mix(MAIN, WHITE, 0.25), 0.5);
+              case 5:
+                return scale3(mix(MAIN, WHITE, 0.15), 0.4);
+              case 6:
+                return scale3(mix(ACC, WHITE, 0.2), 0.3);
+              case 7:
+                return scale3(ACC, 0.17);
+              case 8:
+                return scale3(mix(ACC, WHITE, 0.1), 0.2);
+              default:
+                return scale3(mix(ACC, WHITE, 0.4), 0.32);
+            }
+          }
+          function depthed(rgb, tier) {
+            var d = DEPTH[tier];
+            return scale3(
+              mix(rgb, scale3(WATER, Math.max(rgb[0], rgb[1], rgb[2])), d.blue),
+              d.bright,
+            );
+          }
+          function fillBase(list, base) {
+            for (var i = 0; i < list.length; i++) {
+              var c = depthed(shadeColour(list[i].shade), SLOTS[list[i].jelly].tier);
+              base[i * 3] = c[0];
+              base[i * 3 + 1] = c[1];
+              base[i * 3 + 2] = c[2];
+            }
+          }
+          function apply() {
+            INT = Number(setting("intensity"));
+            if (!(INT >= 0)) INT = 1;
+            BOOST = Number(setting("spectrumBoost")) || 1;
+            TIMER_ON = setting("showTimer") === true;
+            RIPPLE_ON = setting("ripple") === true;
+            COUNT = M.jellyCount(setting("jellyCount"));
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            BANDS = V.bandsToRingCount(Number(setting("bandCount")), 40);
+            specAudio = V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: Number(setting("spectrumLow")),
+              spectrumHigh: Number(setting("spectrumHigh")),
+              spectrumBoost: 1, // the shape is unboosted; the boost sets the level
+              spectrumCount: BANDS,
+            });
+            MAIN = V.hexToRGB(setting("mainColor"));
+            ACC = V.hexToRGB(setting("accentColor"));
+            var u = waterMat.uniforms;
+            u.mainCol.value.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            u.dark.value = setting("water") === "dark" ? 1 : 0;
+            waterDrawn = "";
+            fillBase(bellVox, bellBase);
+            fillBase(chainVox, chainBase);
+            glowBase = SLOTS.map(function (s) {
+              return [
+                depthed(scale3(mix(BODY, MAIN, 0.45), 0.13), s.tier),
+                depthed(scale3(mix(MAIN, WHITE, 0.1), 0.26), s.tier),
+                depthed(scale3(ACC, 0.06), s.tier),
+              ];
+            });
+            redrawText();
+          }
+          apply();
+
+          // ----- the jellyfish, posed for this frame -----
+          var lin = new Float32Array(9); // a jellyfish's 3×3 (rotation × voxel size), row-major
+          var rot = new THREE.Matrix4();
+          var euler = new THREE.Euler();
+          var poses = []; // per chain: its links' offsets this frame
+          var level = new Float32Array(SLOTS.length);
+          var gm = new THREE.Matrix4();
+          var gc = new THREE.Color();
+          /** Writes a 4×4 (columns c0, c1, c2, translation t) at instance n. */
+          function put(arr, n, c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, tx, ty, tz) {
+            var o = n * 16;
+            arr[o] = c0x;
+            arr[o + 1] = c0y;
+            arr[o + 2] = c0z;
+            arr[o + 3] = 0;
+            arr[o + 4] = c1x;
+            arr[o + 5] = c1y;
+            arr[o + 6] = c1z;
+            arr[o + 7] = 0;
+            arr[o + 8] = c2x;
+            arr[o + 9] = c2y;
+            arr[o + 10] = c2z;
+            arr[o + 11] = 0;
+            arr[o + 12] = tx;
+            arr[o + 13] = ty;
+            arr[o + 14] = tz;
+            arr[o + 15] = 1;
+          }
+          function drawJellies(t, songTime, stepTime, energy, a, wob, phase) {
+            var beats = M.beatsAt(audio, t);
+            // the glow follows the music in steps too (the swim on the beat does not)
+            var tStep = stepTime - audio.songStart;
+            var loudStep = audio.sample(tStep).loud;
+            if (specBuf.length !== BANDS) specBuf = new Float32Array(BANDS);
+            specAudio.spectrum(tStep, specBuf);
+            var levels = M.bandLevels(specBuf, INT, BOOST);
+            var bm = bellMesh.instanceMatrix.array,
+              bc = bellMesh.instanceColor.array;
+            var cm = chainMesh.instanceMatrix.array,
+              cc = chainMesh.instanceColor.array;
+            var states = [];
+            for (var j = 0; j < COUNT; j++) {
+              var st = M.jellyAt(j, songTime, beats, INT, V.mulberry32);
+              states.push(st);
+              var model = MODELS[j];
+              var R = model.radius;
+              var vox = st.width / (2 * R + 1);
+              euler.set(st.pitch, st.yaw, -st.lean, "ZXY");
+              rot.makeRotationFromEuler(euler);
+              var e = rot.elements; // column-major
+              for (var r = 0; r < 3; r++) {
+                for (var c = 0; c < 3; c++) lin[r * 3 + c] = e[c * 4 + r] * vox;
+              }
+              // whole pixels: the bells stay crisp between frames
+              var bx = Math.round(st.x),
+                by = 1080 - Math.round(st.y);
+              level[j] =
+                Math.round(M.glowLevel(loudStep, levels[j], st.contraction, INT) * st.fade * 40) /
+                40;
+              var w = st.w,
+                h = st.h;
+              // the bell, its rim and gonads, scaled by the contraction about the rim
+              for (var i = bellStart[j]; i < bellStart[j + 1]; i++) {
+                var v = bellVox[i];
+                var lx = v.x * w,
+                  ly = v.y * h,
+                  lz = v.z * w;
+                var tx = bx + lin[0] * lx + lin[1] * ly + lin[2] * lz;
+                var ty = by + lin[3] * lx + lin[4] * ly + lin[5] * lz;
+                var tz = lin[6] * lx + lin[7] * ly + lin[8] * lz;
+                if (wob) tx -= wob * Math.sin((1080 - ty) * WOBBLE_FREQ + phase);
+                put(
+                  bm,
+                  i,
+                  lin[0] * w,
+                  lin[3] * w,
+                  lin[6] * w,
+                  lin[1] * h,
+                  lin[4] * h,
+                  lin[7] * h,
+                  lin[2] * w,
+                  lin[5] * w,
+                  lin[8] * w,
+                  tx,
+                  ty,
+                  tz,
+                );
+                var g = level[j];
+                bc[i * 3] = bellBase[i * 3] * g;
+                bc[i * 3 + 1] = bellBase[i * 3 + 1] * g;
+                bc[i * 3 + 2] = bellBase[i * 3 + 2] * g;
+              }
+              // the tentacles and arms, trailing the bell
+              var tr = M.trail(j, songTime, beats, INT, V.mulberry32, 10);
+              var radiusPx = (st.width / 2) * (R / (R + 0.5));
+              for (var ci = 0; ci < chains.length; ci++) {
+                var ch = chains[ci];
+                if (ch.jelly !== j) continue;
+                poses[ci] = M.chainPose(
+                  tr,
+                  radiusPx,
+                  ch.ax,
+                  ch.az,
+                  ch.links,
+                  ch.sway,
+                  stepTime,
+                  energy,
+                );
+              }
+              for (var k = chainStart[j]; k < chainStart[j + 1]; k++) {
+                var cv = chainVox[k];
+                var pose = poses[cv.chain];
+                var ox = cv.x + pose[cv.k * 3] * R,
+                  oy = cv.y + pose[cv.k * 3 + 1] * R,
+                  oz = cv.z + pose[cv.k * 3 + 2] * R;
+                var cx = bx + lin[0] * ox + lin[1] * oy + lin[2] * oz;
+                var cy = by + lin[3] * ox + lin[4] * oy + lin[5] * oz;
+                var cz = lin[6] * ox + lin[7] * oy + lin[8] * oz;
+                if (wob) cx -= wob * Math.sin((1080 - cy) * WOBBLE_FREQ + phase);
+                put(
+                  cm,
+                  k,
+                  lin[0],
+                  lin[3],
+                  lin[6],
+                  lin[1],
+                  lin[4],
+                  lin[7],
+                  lin[2],
+                  lin[5],
+                  lin[8],
+                  cx,
+                  cy,
+                  cz,
+                );
+                var gk = level[j];
+                cc[k * 3] = chainBase[k * 3] * gk;
+                cc[k * 3 + 1] = chainBase[k * 3 + 1] * gk;
+                cc[k * 3 + 2] = chainBase[k * 3 + 2] * gk;
+              }
+              // the glows: a wide halo round the bell, its inner core, a haze over the tentacles
+              var H = model.height;
+              var spots = [
+                [0, 0.45 * H * h, 1.6 * st.width * w, 1.2 * st.width, 1],
+                [0, 0.5 * H * h, 0.75 * st.width * w, 0.5 * st.width, 1 + 0.6 * st.contraction],
+                [0, -1.0 * R, 0.95 * st.width, 1.6 * st.width, 1],
+              ];
+              for (var s = 0; s < GLOWS; s++) {
+                var sp = spots[s];
+                var gx = bx + lin[0] * sp[0] + lin[1] * sp[1];
+                var gy = by + lin[3] * sp[0] + lin[4] * sp[1];
+                gm.makeScale(sp[2], sp[3], 1);
+                gm.setPosition(gx, gy, 0);
+                glowMesh.setMatrixAt(j * GLOWS + s, gm);
+                var base = glowBase[j][s];
+                var gl = level[j] * sp[4];
+                glowMesh.setColorAt(
+                  j * GLOWS + s,
+                  gc.setRGB(base[0] * gl, base[1] * gl, base[2] * gl),
+                );
+              }
+            }
+            bellMesh.count = bellStart[COUNT];
+            chainMesh.count = chainStart[COUNT];
+            glowMesh.count = COUNT * GLOWS;
+            [bellMesh, chainMesh].forEach(function (mesh) {
+              mesh.instanceMatrix.clearUpdateRanges();
+              mesh.instanceMatrix.addUpdateRange(0, mesh.count * 16);
+              mesh.instanceMatrix.needsUpdate = true;
+              mesh.instanceColor.clearUpdateRanges();
+              mesh.instanceColor.addUpdateRange(0, mesh.count * 3);
+              mesh.instanceColor.needsUpdate = true;
+            });
+            glowMesh.instanceMatrix.needsUpdate = true;
+            glowMesh.instanceColor.needsUpdate = true;
+          }
+
+          var specBuf = new Float32Array(BANDS || 40);
+          var waterDrawn = ""; // what the water target holds (redrawn when this changes)
+          function render(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var envRipple = V.beatEnvelope(audio, t, M.RIPPLE_RELEASE);
+            var wob = M.wobblePx(envRipple, RIPPLE_ON, INT);
+            var phase = songTime * 2.2;
+
+            // the slow parts in steps: the water is drawn again only when they change
+            var stepTime = Math.floor(songTime * STEP_RATE + 1e-6) / STEP_RATE;
+            var energy = Math.round(a.loud * 10) / 10;
+            var u = waterMat.uniforms;
+            u.time.value = stepTime;
+            u.loud.value = Math.round(a.loud * Math.min(1.2, INT) * 20) / 20;
+            u.ripple.value = RIPPLE_ON ? Math.round(envRipple * Math.min(1, INT) * 20) / 20 : 0;
+            u.sway.value = M.shaftSway(stepTime);
+            copyMat.uniforms.wob.value = wob;
+            copyMat.uniforms.phase.value = phase;
+            drawJellies(t, songTime, stepTime, energy, a, wob, phase);
+
+            var waterKey = [stepTime, u.loud.value, u.ripple.value].join("|");
+            if (waterKey !== waterDrawn) {
+              renderer.setRenderTarget(waterRT);
+              renderer.clear();
+              renderer.render(waterScene, flatCam);
+              waterDrawn = waterKey;
+            }
+            renderer.setRenderTarget(null);
+            renderer.clear();
+            renderer.render(copyScene, flatCam);
+            renderer.render(jellyScene, jellyCam);
+            // the timer (its picture redrawn only when the text changes)
+            timerQuad.visible = TIMER_ON;
+            if (TIMER_ON) {
+              var clock = V.songClock(audio, t);
+              var text = V.formatClock(clock.elapsed) + "  /  " + V.formatClock(clock.total);
+              if (text !== timerDrawn) {
+                drawTimer(text, MAIN);
+                timerTex.needsUpdate = true;
+                timerDrawn = text;
+              }
+            }
+            renderer.render(hudScene, flatCam);
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return {
+            render: render,
+            dispose: dispose,
+            apply: apply,
+            resize: resize,
+            textChanged: redrawText,
+          };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale), textChanged() }
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        // The text is drawn on a canvas: draw it again whenever a font arrives.
+        function fontsChanged() {
+          if (drawing) drawing.textChanged();
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
