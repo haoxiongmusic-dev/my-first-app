@@ -31,8 +31,9 @@ Halo Rings, Prism Heart, Neon Sundown, Iron Wraith, Nova Streak and M8's ten).
 working stays: one shared design, each template on its own branch and pull request with a 30 s
 video, built one after another without stopping, nothing merged until the owner says so.
 
-**How the references move:** the owner's Chrome was not connected this time, so these looks come
-from the catalog's written study notes (2026-11-04), not a fresh frame-by-frame study.
+**How the references move:** each one's 15-second Videobolt preview was studied as a frame sheet
+in the owner's Chrome on 2026-11-10 (look only), on top of the catalog's notes. The look
+paragraphs below come from that.
 
 **Assumed (the owner can correct):** every name, look detail and preset below. Licensed art in the
 references (RoboWave's robot, Through Sky's cockpit, Power Bass's 3D speaker, Storm Signal's TV
@@ -99,7 +100,10 @@ logo → a small glowing ring alone). Below it "ARTIST – TITLE" in one line.
 **Motion.** The surface swells with the low end: wave height `base × (0.5 + 1.2 × low × intensity)`
 where `low` is the 0–200 Hz energy (the default spectrum range); slow rolling swell along the
 view direction; crest brightness follows loudness. The logo scales `1 + 0.04 × beatEnvelope`.
-Bokeh orbs (when on): 12 seeded orbs drifting slowly, brightness `0.6 + 0.4 × loud`.
+Bokeh orbs (when on): 40–80 seeded soft orbs of mixed sizes and blur drifting slowly,
+brightness `0.6 + 0.4 × loud`. (The reference's sheet is a fine wireframe-like grid of dot rows
+forming big dunes that rise diagonally from lower left to upper right, with a slightly rolled
+camera, filling most of the frame.)
 
 **Extra settings:** `logo` (image), `showBokeh` (false), `waveHeight` (0–100 %, 60),
 `flowSpeed` (0–100 %, 40). Defaults: font `Montserrat`, main `#2a6dff`, accent `#9ad8ff`,
@@ -113,20 +117,27 @@ module, then change camera, colours and the swell rule; do not change Particle H
 
 ### 5.2 Silk Lights (`silk-lights`), after Beatwave
 
-**Look.** A dark backdrop crossed by 5 wide, heavily blurred neon colour bands (magenta, blue,
-cyan mixed from `mainColor` and `accentColor`) streaming slowly sideways. A smooth line spectrum
-across the top (y ≈ 150) and its mirror across the bottom (y ≈ 930), 3 px with glow. Centre-left:
-the cover (image `cover`, 420 px, rounded corners 32 px, soft shadow). To its right:
-"ARTIST" small, "TITLE" big, a mini bar spectrum (24 bars, 60 px tall) under it, and up to three
-**tag pills** (rounded outline pills with the text, e.g. `HIP HOP`), plus the timer.
+**Look.** A black backdrop. Across the middle of the frame, a wide, heavily blurred neon glow
+band (a long soft rounded slab, ≈ 70 % of the width and ≈ 25 % of the height, magenta/pink/blue
+mixed from `mainColor` and `accentColor`, with brighter hot spots) that shimmers and streams
+slowly sideways, darker vignette at the left and right ends. Across the lower third, a big smooth
+glowing **wave spectrum line** (4 px with glow, a horizontal gradient `mainColor` → `accentColor`)
+whose peaks rise up to ≈ 300 px into the glow band; a fainter, thinner copy runs along the top
+(y ≈ 120). Left block (x ≈ 70, vertically centred): the cover (image `cover`, 290 px, rounded
+corners 28 px); to its lower right a mini bar spectrum (40 hairline bars, up to 70 px); under
+them "ARTIST – TITLE" in one line; under that up to **five tag pills** in two rows (filled rounded
+pills, each a different tint mixed from the two colours, white text, e.g. `HIP HOP`), plus the
+timer.
 
-**Motion.** Bands drift sideways at different seeded speeds, their brightness and vertical sway
-follow loudness and `flux`; on each beat the bands brighten (`beatEnvelope` release 0.3 s). The
-line spectra use `smoothSpectrum` + `mirrorBars` (bass in the middle), height up to 90 px.
-The cover scales `1 + 0.025 × beatEnvelope`.
+**Motion.** The glow band's hot spots drift sideways at different seeded speeds; its brightness
+and height follow loudness and `flux`; on each beat it brightens (`beatEnvelope` release 0.3 s).
+The wave line is a smooth curve through `smoothSpectrum` values (bass at the left, like the
+reference), its peaks shaped (squared) so it is mostly calm with tall smooth peaks. The mini bars
+follow the spectrum directly. The cover scales `1 + 0.025 × beatEnvelope`.
 
-**Extra settings:** `cover` (image), `tag1` (`HIP HOP`), `tag2` (`NEW MUSIC`), `tag3` (`""`)
-(strings, max 20, empty hides the pill; on the Content tab), `showTimer` (true). Defaults: font
+**Extra settings:** `cover` (image), `tag1` (`HIP HOP`), `tag2` (`NEW MUSIC`), `tag3`
+(`ELECTRONIC`), `tag4` (`""`), `tag5` (`""`) (strings, max 20, empty hides the pill; on the
+Content tab), `showTimer` (true). Defaults: font
 `Poppins`, main `#ff2fb4`, accent `#2fd9ff`, spectrum 30–1000 Hz, boost 2×, bands 65 %.
 
 **Presets:** Original (magenta/cyan), Sunset (`#ff7a2f`/`#ff2f6a`), Ocean (`#2f7aff`/`#2fffd0`),
@@ -137,17 +148,23 @@ No-cover fallback: a gradient square with a note icon.
 
 ### 5.3 Late Show (`late-show`), after Synthwave
 
-**Look.** A dark room with a warm wall glow; centre, a chunky old CRT television (wood-and-plastic
-body drawn in 2D, rounded bulging screen ≈ 1100×800, two knobs and a speaker grille on the right
-side panel). On the screen: a synthwave scene (Neon Sundown's pieces: grid floor scrolling toward
-the viewer, low mountains, a striped sun with the cover in it, a horizon line spectrum), the
-chrome-gradient title over it, a small tagline, and CRT look: scanlines, slight barrel curve,
-a vignette, a soft glare on the glass. Light from the screen spills onto the room.
+**Look.** A close-up of an old CRT television: the screen nearly fills the frame, framed by a
+thick grey plastic bezel with rounded corners (only the bezel and a sliver of the darker cabinet
+show at the frame edges). The screen bulges (barrel curve), with scanlines, a soft vignette and a
+pale window-shaped glare in the top-left corner. On the screen, a synthwave scene in purple and
+`mainColor` pink: a neon grid floor scrolling toward the viewer, a very bright horizon line
+across the middle, dark low mountains behind it, a starry purple sky, a thin line spectrum on the
+horizon (tall peaks near the left and right ends), the cover as a square in the centre standing
+on the horizon (it glitches on beats), the title big above it in a slanted chrome style (bright
+red-orange-to-yellow gradient face with a 3D extruded side going down and back), and the tagline
+small under the horizon.
 
 **Motion.** Grid scroll speed `1 + 0.6 × loud × intensity`; horizon spectrum (`mirrorBars`, bass
 centre) up to 120 px; the sun's stripes breathe on the beat; the screen brightness flickers
 subtly (seeded, ≤ 4 %, ≤ 6 changes/s) and dips briefly on strong hits (a "signal" roll line,
-`beatEnvelope` release 0.2 s). The spill light follows screen brightness.
+`beatEnvelope` release 0.2 s). The cover glitches on strong beats: 2–4 horizontal slices offset
+sideways for ≤ 0.12 s, seeded by the beat's song frame. The camera drifts very slowly (seeded,
+≤ 1°) so the voxel bezel catches the light.
 
 **Extra settings:** `cover` (image), `tagline` (string, max 40, `SYNTHWAVE FOREVER`, Content
 tab) — this template has no `artist` field: the tagline replaces it.
@@ -157,22 +174,23 @@ tab) — this template has no `artist` field: the tagline replaces it.
 **Presets:** Original (pink/cyan), Green (`#3dff6a`/`#c8ff3d`, a green-phosphor monitor), Sunset
 (`#ff8a2f`/`#ff2f6a`), Ice (`#9ad8ff`/`#ffffff`).
 
-**Build notes:** three.js. The TV is a voxel model (`tv-voxels.js`: cabinet with wood-grain
-shades, a bevelled bezel, knobs and a speaker grille), seen at a slight angle with a slow seeded
-drift of the camera. The synthwave scene is drawn into its own 8-bit target (or canvas texture) and
-shown on a curved screen mesh inside the bezel with the barrel curve and scanlines in its shader.
-The room is a dark floor and wall lit by an additive glow sprite in the screen's colour. Reuse
-Neon Sundown's grid/sun ideas by copying, not importing.
+**Build notes:** three.js. The bezel and cabinet edge are a voxel model (`tv-voxels.js`: a thick
+rounded-rectangle bezel with a bevel, grey plastic shades, the dark cabinet behind), seen nearly
+head-on. The synthwave scene is drawn into its own 8-bit target (or canvas texture) and shown on a
+curved screen mesh inside the bezel with the barrel curve, scanlines, vignette and glare in its
+shader. Reuse Neon Sundown's grid/sun ideas by copying, not importing.
 
 ### 5.4 Night Flight (`night-flight`), after Through Sky
 
 **Look.** Flying fast just above a sea of moonlit clouds at night: clouds (seeded noise in a
-shader) rushing toward the camera, a big pale moon ahead near the horizon, stars above. A cockpit
-frame in silhouette (two dark window struts angling in from the top corners and a dark dashboard
-edge along the bottom with a few small lit gauges). Centre: a HUD of three thin concentric rings
-(`mainColor`), the outer two made of spectrum ticks (Halo Rings' ring kit), the cover in a circle
-in the middle (image `cover`; no cover → a crosshair). Title at the top, spaced capitals;
-artist under it.
+shader) rushing toward the camera, a very bright blue glow along the horizon (≈ 55 % down), a
+big pale cratered moon ahead and to the right, partly behind the haze, faint stars and fine
+scratches on the glass. A dark cockpit seen from the pilot's seat: two thick window struts rising
+from the dashboard at the bottom centre out to the top-left and top-right corners (a V), a dark
+dashboard across the bottom with a small screen in its centre showing the cover (image `cover`;
+no cover → a glowing crosshair), small lit buttons and two gauges. In the sky, centred: a HUD of
+three thin concentric rings (`mainColor`), the outer two made of spectrum ticks (Halo Rings' ring
+kit), a glowing dot in the middle. Title above the HUD in spaced capitals; artist under it.
 
 **Motion.** Cloud speed `1 + 0.8 × loud × intensity`; a gentle seeded bank/roll (±2°, slow); on
 beats a small camera shake (`shakeOnBeat`, ≤ 6 px) and the rings pulse
@@ -187,18 +205,22 @@ spectrum 30–1000 Hz, boost 8×, bands 100 %.
 (`#ffb070`/`#fff0d8`, dusk sky), Clear (blue, `showCockpit` off).
 
 **Build notes:** three.js. Sky, moon and clouds as one full-screen shader pass (8-bit); the
-cockpit is a voxel model (`cockpit-voxels.js`: window struts, a dashboard with a few voxel gauges
-whose needle voxels turn) in front of the camera; the HUD rings and text in a 2D canvas over it.
+cockpit is a voxel model (`cockpit-voxels.js`: the V of window struts, a dashboard with a few
+voxel gauges whose needle voxels turn, and a frame for the cover screen, which is a textured quad)
+in front of the camera; the HUD rings and text in a 2D canvas over it.
 Sky colours come from the preset colours (mixed darker).
 
 ### 5.5 Live Wire (`live-wire`), after Power Bass
 
-**Look.** A cracked grey concrete wall (generated: noise + a seeded crack network) filling the
-frame, lit from the centre. Centre: a chrome loudspeaker (≈ 520 px across): a brushed metal rim
-with screws, a dark cone with concentric shading, a chrome dust cap, a coloured glow
-(`mainColor`) behind it. Cables run from the speaker to the four edges along the wall; electric
-arcs (`accentColor`, white core) crawl along the cables. Title above the speaker and artist below
-it in a bold metallic style (vertical chrome gradient, dark outline).
+**Look.** A dark cracked grey concrete wall (generated: noise + a seeded crack network) filling the
+frame, lit from the centre, darker at the edges. Centre, seen straight on: a loudspeaker
+(≈ 300 px across at 1080p): a thick dark rim ring with a glowing `mainColor` edge, a bright
+silver-white cone with radial brushed shading, a black glossy dust cap. Four thick black cables
+leave the rim at left and right (two each side) and curve out in S-shapes to the four corners,
+lying in grooves in the wall. Electric arcs (`mainColor`, white core) crawl along the cables and
+crackle in a ring around the rim. Fine bright debris streaks fly outward from the speaker.
+Title above the speaker and artist below it in a bold metallic style (bevelled silver face, blue
+rim light, dark outline).
 
 **Motion.** The cone pumps with the bass: cone scale `1 + 0.08 × bass × intensity` with a
 `beatEnvelope` kick (release 0.15 s); the glow follows loudness. Arcs: jagged seeded bolts along
@@ -223,18 +245,24 @@ then thin core); debris are small voxel cubes. Lightning bolt generator goes in 
 
 ### 5.6 Static Tower (`static-tower`), after Storm Signal
 
-**Look.** A stormy teal night sky (slow-moving clouds, seeded noise) over a dark flat arena floor.
-Centre: a pyramid of stacked old TVs (rows of 4, 3, 2, 1 = 10 sets, different seeded sizes and
-cabinet shades, slightly uneven). Each screen shows the owner's picture (image `picture`), each
-with its own treatment (tint in `mainColor`/`accentColor`, a crop/zoom offset, scanlines); no
-picture → a glowing test-pattern/logo mark. A thin line spectrum lies across the ground in front
-of the stack. Title wide and spaced at the bottom, artist small above it.
+**Look.** A stormy teal night sky (heavy slow-moving clouds, seeded noise, brighter teal at the top
+centre) over a dark mountain horizon at ≈ 40 % height and a dark wet arena floor with scattered
+puddles that reflect teal light and the TVs. Centre, quite small (the stack ≈ 45 % of the frame
+height, ≈ 15 % of its width): a narrow stepped tower of stacked old TVs, about 15 sets (rows from
+the top: 1, 1, 3, 3, 4, 3), different seeded sizes and cabinet shades, slightly uneven. Each
+screen shows the owner's picture (image `picture`), each with its own treatment (tint in
+`mainColor`/`accentColor`, a crop/zoom offset, scanlines); no picture → a glowing play-button
+logo mark. A lightning bolt often hangs from the clouds onto the top TV. Thin hairline spectrum
+lines stand along the horizon to the left and right of the stack, and a faint line spectrum lies
+on the ground in front of it. Title wide and spaced in thin capitals just under the stack, artist
+small under it.
 
 **Motion.** The `react` setting (the reference's "Logo is Main / Media is Main"):
 `centre` — the top TV is the bright "main" one, the others dim and flicker in step with the beat;
 `all` — every screen pulses together. Screens flash to static (seeded noise, ≤ 0.15 s) on strong
-hits. Lightning: on hits above a threshold, a bolt (toolkit `lightningPath`) strikes in the sky
-behind the stack, the sky and the stack's rim light flash (release 0.4 s). Ground spectrum
+hits. Lightning: on hits above a threshold, a bolt (toolkit `lightningPath`) strikes from the
+clouds down to the top TV (sometimes a second one off to the side), the sky and the stack's rim
+light flash (release 0.4 s), and the puddles flash with it. Horizon hairlines and ground spectrum
 `mirrorBars` (bass centre), up to 60 px.
 
 **Extra settings:** `picture` (image), `react` (`centre` / `all`, default `centre`). Defaults:
@@ -250,19 +278,24 @@ bolt sprites; the ground spectrum as thin glowing quads.
 
 ### 5.7 Hyper Tunnel (`hyper-tunnel`), after RoboWave
 
-**Look.** A neon sci-fi tunnel rushing toward the camera: receding rectangular frames with
-chamfered corners, neon edge lines (`mainColor`), dark metal panels, a few cables sagging along the
-walls, a bright vanishing point. Centre: a **chrome voxel robot** (head, neck and shoulders,
-about 60 % of the frame height) wearing a chunky **VR headset** whose front panel glows in
-`mainColor` with scrolling scan lines; cable voxels run from the back of the head into the tunnel.
-A HUD frame over everything: corner brackets, thin ruler ticks
-on the edges, small readouts. Bottom-left: artist small, title big. Right edge: a vertical timer
-(digits stacked, rotated). Top-right: an optional logo (image `logo`, small).
+**Look.** A neon sci-fi tunnel rushing toward the camera: receding octagonal frames, many thin
+bright neon edge lines (`mainColor`, jagged like circuit traces) on dark metal panels, cables
+sagging across the tunnel, a bright vanishing point behind the robot's head. Centre: a **chrome
+voxel robot**, waist up (head at ≈ 30 % from the top, filling ≈ 85 % of the frame height),
+glossy dark chrome with bright reflections, a segmented chest plate, arms held out at its sides
+with open hands, wearing a chunky **VR headset** with a cable from its side, head turned a
+little to one side. On beats, big soft `accentColor` light washes / flares sweep across the frame
+from one side. A HUD frame over everything: a thin rounded-rectangle border inset ≈ 20 px
+(`accentColor` with `mainColor` corners), small bar meters at the top centre, thin side text.
+Bottom-left: artist small, title big. Right edge: a vertical timer (rotated). Top-right: an
+optional logo (image `logo`, small; no logo → nothing).
 
 **Motion.** Tunnel speed `1 + 0.7 × loud × intensity`; each frame's neon edge brightness follows
 a band (frames nearer the camera = lower bands), so the spectrum runs down the tunnel; on beats
-the edges flash (`beatEnvelope`), the headset visor flares, and the robot's head nods slightly
-(≤ 3°, release 0.3 s); a slow head turn (±8°) follows the song time. The HUD ticks crawl slowly.
+the edges flash (`beatEnvelope`), the headset visor flares, the robot's head nods slightly
+(≤ 3°, release 0.3 s), and on strong beats an `accentColor` flare sweeps across (seeded side and
+angle from the beat's song frame, fades over 0.5 s); a slow head turn (±8°) and a slight arm
+sway follow the song time. The HUD ticks crawl slowly.
 
 **Extra settings:** `logo` (image), `finish` (`silver` / `gold`, the robot's metal, as the
 reference's Character Style; default `silver`), `showTimer` (true). Defaults: font `Orbitron`, main
@@ -277,13 +310,15 @@ with neon edge strips and additive glow; the HUD and text as 2D canvas/HTML over
 
 ### 5.8 Moon Jelly (`moon-jelly`), after Aqua Reverie
 
-**Look.** Deep water: a gradient from teal-blue near the top to near-black below, slow light
-shafts from the surface fanning down, drifting particles (marine snow). A rippling surface band
-at the very top (optional). Five translucent glowing jellyfish (one large ≈ 420 px bell near the
-centre, four smaller at seeded depths/sizes, the far ones dimmer and bluer): domed bells with a
-bright rim and inner glow (`mainColor`), frilled edge, 8–12 long trailing tentacles and a few
-frilly oral arms (`accentColor`), additive glow. Small centred text near the bottom: artist,
-title.
+**Look.** Underwater, looking slightly up: the upper ≈ 40 % of the frame is the water surface seen
+from below, a bright blue ceiling broken into shimmering cyan, white and lavender light patches
+(caustic reflections, soft ellipses) that compress toward a hazy horizon line at ≈ 45 %; below
+it deep blue fading to near-black, with drifting bright specks (marine snow). Many translucent
+glowing jellyfish at different depths: two large ones in front (bells ≈ 450 px wide, lower left
+and lower right, partly cut by the frame), three or four mid-sized, and several small far ones
+(dimmer, bluer). Each: a wide domed bell, pale blue body with `mainColor` pink edges and inner
+glow, a frilled rim, long thin trailing tentacles and frilly oral arms (`accentColor`), additive
+glow. Tiny centred text just under the horizon: "artist · title" and the timer.
 
 **Motion.** Each jellyfish drifts slowly upward on its own seeded path (wrapping softly), and
 swims: on each beat its bell contracts (narrower, taller) and relaxes over 0.6 s, pushing it up a
@@ -291,7 +326,7 @@ little; tentacles trail and sway as delayed sine chains that lag the bell. Glow 
 loudness. Light shafts sway slowly. Ripple effect (`ripple` on): the surface band and a faint
 full-frame refraction wobble pulse on the beat.
 
-**Extra settings:** `ripple` (true), `jellyCount` (1–7, default 5). Defaults: font
+**Extra settings:** `ripple` (true), `jellyCount` (3–14, default 9), `showTimer` (true). Defaults: font
 `Outfit`, main `#ff7ad8`, accent `#7ad8ff`, beat range `kick`, spectrum 30–1000 Hz,
 boost 2×, bands 100 %.
 
@@ -318,7 +353,7 @@ given points, no NaN).
 
 | Risk | Plan |
 |---|---|
-| Looks are from notes, not a fresh study | Every look value is here and in presets; the owner reviews each video before merging |
+| Looks were studied from 9 frames of each preview, not every frame | Every look value is here and in presets; the owner reviews each video before merging |
 | Voxel stand-ins for licensed art (speaker, TVs, cockpit, robot, jellyfish) look crude | Follow Iron Wraith (the owner approved its voxel look): enough voxels for a clear shape, chrome lighting, glow |
 | Six three.js templates render slowly | Iron Wraith and Black Crown took about 5 min per 30 s; keep models at most 15,000 voxels and measure |
 | 2D canvas templates with many glowing paths render slowly | Draw glows at reduced resolution and scale up; measure on the 30 s render (≤ 6 min) |
