@@ -51,8 +51,19 @@
   var LOGO_PULSE = 0.04; // scale added by a full beat
   var PULSE_RELEASE = 0.25; // seconds for the pulse to fall to about a third
 
-  // ---- the bokeh orbs ----
-  var ORB_COUNT = 12;
+  // ---- the bokeh orbs: many, of mixed sizes, all over the frame ----
+  var ORB_COUNT = 60;
+  // Sizes by kind, in turn through every 20 orbs: 6 small and fairly sharp, 12 mid-sized, 2 large
+  // and very soft. [smallest radius, largest radius, faintest, brightest] in px and alpha.
+  var ORB_KINDS = [
+    [15, 40, 0.3, 0.6],
+    [40, 110, 0.12, 0.3],
+    [110, 200, 0.07, 0.15],
+  ];
+  function orbKind(i) {
+    var k = i % 20;
+    return k < 6 ? 0 : k < 18 ? 1 : 2;
+  }
   var ORB_SEED = 7331;
 
   function clamp(v, lo, hi) {
@@ -154,17 +165,17 @@
     var rnd = mulberry32(ORB_SEED);
     var list = [];
     for (var i = 0; i < ORB_COUNT; i++) {
-      var r = 60 + rnd() * 130;
+      var kind = ORB_KINDS[orbKind(i)];
       list.push({
         x0: rnd() * 1920,
-        y0: 140 + rnd() * 800,
-        r: r,
+        y0: 40 + rnd() * 1000,
+        r: kind[0] + rnd() * (kind[1] - kind[0]),
         vx: (rnd() < 0.5 ? -1 : 1) * (5 + rnd() * 11), // px per second, left or right
-        bob: 15 + rnd() * 35, // px up and down
+        bob: 10 + rnd() * 20, // px up and down
         bobRate: TAU * (0.025 + rnd() * 0.045), // radians per second
         phase: rnd() * TAU,
-        // big orbs are fainter, so none dominates
-        alpha: (0.28 + rnd() * 0.3) * (1.15 - (0.45 * (r - 60)) / 130),
+        // small orbs are bright points, big ones faint haze, so none dominates
+        alpha: kind[2] + rnd() * (kind[3] - kind[2]),
       });
     }
     orbCache = { fn: mulberry32, list: list };
@@ -172,7 +183,7 @@
   }
 
   /**
-   * The 12 bokeh orbs at this song time: { x, y, r, alpha } in px. They drift slowly sideways
+   * The bokeh orbs at this song time: { x, y, r, alpha } in px. They drift slowly sideways
    * (wrapping round the frame) and bob; brightness alpha × (0.6 + 0.4 × loud).
    */
   function orbs(songTime, loud, mulberry32) {

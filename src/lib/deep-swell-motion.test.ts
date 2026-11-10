@@ -71,7 +71,8 @@ function lowAt(analysis: ToolkitAnalysis, t: number): number {
 
 describe("Deep Swell motion", () => {
   it("is set up as the spec says", () => {
-    expect(m.ORB_COUNT).toBe(12);
+    expect(m.ORB_COUNT).toBeGreaterThanOrEqual(40);
+    expect(m.ORB_COUNT).toBeLessThanOrEqual(80);
     expect(m.LOGO_SIZE).toBe(220);
     expect(m.LOGO_PULSE).toBe(0.04);
     expect(m.H_FULL).toBeGreaterThan(0);
@@ -226,18 +227,18 @@ describe("Deep Swell motion", () => {
     expect(m.crestGain(1, 2)).toBeLessThanOrEqual(2);
   });
 
-  it("bokeh orbs: 12, seeded, slow, brightness 0.6 + 0.4 × loud", () => {
+  it("bokeh orbs: 40–80, seeded, slow, brightness 0.6 + 0.4 × loud", () => {
     const quiet = m.orbs(30, 0, viz.mulberry32);
     const loud = m.orbs(30, 1, viz.mulberry32);
-    expect(quiet).toHaveLength(12);
-    for (let i = 0; i < 12; i++) {
+    expect(quiet).toHaveLength(m.ORB_COUNT);
+    for (let i = 0; i < m.ORB_COUNT; i++) {
       const q = quiet[i],
         l = loud[i];
       expect([q.x, q.y, q.r]).toEqual([l.x, l.y, l.r]);
       expect(q.alpha).toBeCloseTo(l.alpha * 0.6, 9);
       expect(l.alpha).toBeGreaterThan(0);
       expect(l.alpha).toBeLessThanOrEqual(1);
-      expect(q.r).toBeGreaterThanOrEqual(40);
+      expect(q.r).toBeGreaterThanOrEqual(15);
       expect(q.r).toBeLessThanOrEqual(200);
       // somewhere on (or just off) the frame
       expect(q.x).toBeGreaterThanOrEqual(-q.r - 1);
@@ -247,10 +248,29 @@ describe("Deep Swell motion", () => {
     }
     // the same song time places them the same; they differ from one another
     expect(m.orbs(30, 0.4, viz.mulberry32)).toEqual(m.orbs(30, 0.4, viz.mulberry32));
-    expect(new Set(quiet.map((o) => Math.round(o.x))).size).toBeGreaterThan(8);
+    expect(new Set(quiet.map((o) => Math.round(o.x))).size).toBeGreaterThan(m.ORB_COUNT * 0.8);
+    // mixed sizes: some small (sharp), most mid-sized, a few large (very soft)
+    const radii = quiet.map((o) => o.r);
+    const small = radii.filter((r) => r <= 40).length;
+    const large = radii.filter((r) => r >= 110).length;
+    expect(small).toBeGreaterThanOrEqual(m.ORB_COUNT * 0.15);
+    expect(large).toBeGreaterThanOrEqual(3);
+    expect(large).toBeLessThan(small);
+    expect(m.ORB_COUNT - small - large).toBeGreaterThan(m.ORB_COUNT / 2);
+    // spread over the whole frame: every quarter of it has some
+    for (const [x0, y0] of [
+      [0, 0],
+      [960, 0],
+      [0, 540],
+      [960, 540],
+    ])
+      expect(
+        quiet.filter((o) => o.x >= x0 && o.x < x0 + 960 && o.y >= y0 && o.y < y0 + 540).length,
+        `quarter ${x0},${y0}`,
+      ).toBeGreaterThanOrEqual(5);
     // they drift slowly: under 40 px in a second (away from the wrap at the frame's edges)
     const later = m.orbs(31, 0, viz.mulberry32);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < m.ORB_COUNT; i++) {
       const d = Math.hypot(later[i].x - quiet[i].x, later[i].y - quiet[i].y);
       if (d < 1000) expect(d).toBeLessThan(40);
     }

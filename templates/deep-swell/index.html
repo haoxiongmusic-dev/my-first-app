@@ -557,7 +557,7 @@
           "uniform float loud, env, horizonN, rollS, rollC, glow, orbOn;",
           "uniform vec2 logoPos;",
           "uniform float textY;",
-          "uniform vec4 orbs[12];",
+          "uniform vec4 orbs[" + M.ORB_COUNT + "];",
           "varying vec2 uv;",
           "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
           "void main(){",
@@ -580,15 +580,16 @@
           "  c *= 1.0 - 0.35 * exp(-dot(tq, tq));",
           "  vec2 lq = (px - logoPos) / 175.0;",
           "  c += mainCol * exp(-dot(lq, lq)) * (0.05 + 0.14 * env);",
-          "  for (int i = 0; i < 12; i++) {",
+          "  for (int i = 0; i < " + M.ORB_COUNT + "; i++) {",
           "    vec4 o = orbs[i];",
           "    float dd = length(px - o.xy) / max(o.z, 1.0);",
           // small orbs are sharper, big ones softer (further out of focus)
-          "    float soft = mix(0.9, 0.62, smoothstep(60.0, 190.0, o.z));",
+          "    float soft = mix(0.86, 0.2, smoothstep(30.0, 180.0, o.z));",
           "    float disc = 1.0 - smoothstep(soft, 1.0, dd);",
           "    float rim = 0.65 + 0.35 * smoothstep(0.45, 0.96, dd);",
-          "    vec3 oc = mix(mainCol, hiCol, 0.25 + 0.5 * fract(float(i) * 0.618));",
-          "    c += oc * disc * rim * o.w * 0.3 * orbOn;",
+          "    float small = 1.0 - smoothstep(15.0, 60.0, o.z);",
+          "    vec3 oc = mix(mainCol, hiCol, 0.2 + 0.4 * fract(float(i) * 0.618) + 0.4 * small);",
+          "    c += oc * disc * rim * o.w * (0.3 + 0.2 * small) * orbOn;",
           "  }",
           "  c = vec3(1.0) - exp(-c * 1.5);",
           "  c *= mix(0.6, 1.0, smoothstep(1.2, 0.35, length((uv - 0.5) * vec2(1.15, 1.0))));",
@@ -634,7 +635,7 @@
           var means = new Float32Array(M.LOW_AGES.length);
           var ripRow = new Float32Array(NPTS);
           var ripBytes = new Uint8Array(NPTS * HIST_ROWS);
-          var orbData = new Float32Array(48);
+          var orbData = new Float32Array(M.ORB_COUNT * 4);
 
           var W = Math.round(1920 * PREVIEW_SCALE),
             H = Math.round(1080 * PREVIEW_SCALE);
