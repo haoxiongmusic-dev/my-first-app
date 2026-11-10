@@ -56,7 +56,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [ ] M9 the last eight catalog templates (spec
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
-      [x] Deep Swell · [x] Silk Lights · [ ] Late Show · [ ] Night Flight · [ ] Live Wire ·
+      [x] Deep Swell · [x] Silk Lights · [x] Late Show · [ ] Night Flight · [ ] Live Wire ·
       [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
@@ -106,6 +106,8 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   PC's Intel UHD 620 (ANGLE/D3D11). Always check shader compile _and_ link status.
 - Keep grain subtle and slow (≤ 0.02, ≤ 6 updates/s); per-frame noise makes files huge.
 - Elements that span the song carry `data-song-length`; the job builder sets their duration.
+- Every template declares `title` and `intensity`; `artist` is usual but optional (Late Show's
+  `tagline` replaces it, and its exports are named `<title> (<template>)`).
 - Every template must pass `npx hyperframes check`. Run `npm run check:templates` before
   committing any template change (settings rules, HyperFrames check, quiet vs loud reaction).
 - The toolkit lives in `templates/shared/viz-toolkit.js`: edit it there, then
@@ -211,6 +213,12 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
 - Silk Lights (2D canvas; the glow and the lines' halo drawn at quarter resolution, blurred
   there and scaled up): a 30 s Final section of T-REX with a cover took 3 min 42 s in total with
   the phone copy (frame capture 1 min 50 s ≈ 3.7×), 8.9 MB per 30 s (the phone copy 15.5 MB).
+- Late Show (three.js: the synthwave scene as one full-screen shader into an 8-bit target at 0.8
+  size, shown on a curved screen mesh; 10,600 Lambert-lit voxels for the TV): a 30 s Final section
+  of T-REX with a cover took 6 min 0 s to 6 min 15 s in total with the phone copy over four runs
+  (frame capture ≈ 2 min 36 s ≈ 5.2×), 25.1 MB per 30 s (the phone copy 15.5 MB). It sits at the
+  6 min limit: the always-moving grid makes big files (≈ 2 min of encoding after the render);
+  the camera drift and scanlines add only ≈ 10 % and 8 %.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).

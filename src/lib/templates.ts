@@ -22,7 +22,8 @@ import {
 
 export * from "@/lib/template-values";
 
-const REQUIRED_IDS = ["title", "artist", "intensity"];
+// Every template has these. (Most also have an artist; Late Show's tagline replaces it.)
+const REQUIRED_IDS = ["title", "intensity"];
 const TYPES = ["string", "number", "color", "boolean", "enum", "image"];
 
 function decodeEntities(text: string): string {

@@ -128,11 +128,16 @@ describe("validateTemplate", () => {
     expect(problems.some((p) => p.includes("Hot") && p.includes("intensity"))).toBe(true);
   });
 
-  it("requires title, artist and intensity", () => {
+  it("requires title and intensity", () => {
     const problems = validateTemplate(template([REQUIRED[3]]));
-    for (const id of ["title", "artist", "intensity"]) {
+    for (const id of ["title", "intensity"]) {
       expect(problems.some((p) => p.includes(id))).toBe(true);
     }
+  });
+
+  it("lets a template leave out the artist (Late Show has a tagline instead)", () => {
+    const noArtist = REQUIRED.filter((v) => v.id !== "artist");
+    expect(validateTemplate(template(noArtist))).toEqual([]);
   });
 
   it("accepts a valid template", () => {
