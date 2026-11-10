@@ -1,0 +1,912 @@
+<!doctype html>
+<!--
+  Deep Swell: Particle Horizon's dot sea seen closer and steeper, in blue. The camera sits low
+  over the surface looking down into it: the sheet of dots fills the lower two thirds of the
+  frame and recedes to a soft horizon glow at y ≈ 330, fading into a dark navy haze. The sea
+  rolls slowly toward the camera and swells with the low end (wave height = base × (0.5 + 1.2 ×
+  low × intensity), low = the chosen spectrum range's energy); a faint ripple of the spectrum
+  runs across the front; the crests brighten into the accent colour as the music gets louder.
+  Optional large soft bokeh orbs drift in front. In the middle: your logo in a circle with a thin
+  ring (none: a small glowing ring alone), pulsing on the beat, and "ARTIST – TITLE" below it.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths (the swell, the
+  roll, the crests, the orbs, the logo pulse) lives in assets/swell-motion.js and the beat
+  maths in the toolkit (all unit-tested).
+
+  The logo arrives as a picture location (assets/images/logo.jpg in an export, the image route
+  in the preview) or "" for none: it is set at startup and drawn again when it loads; a picture
+  that fails to load is simply left out (the ring alone stands in).
+
+  Built in WebGL: the sea is one draw call of points (their waves worked out in the vertex
+  shader from the motion module's table), added together as light into an 8-bit target, then
+  given a soft glow; the sky, haze and orbs are added in the final pass. The logo and title are
+  HTML over it.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Montserrat","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"logo","type":"image","label":"Logo","default":"","fit":"square"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#2a6dff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#9ad8ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"waveHeight","type":"number","label":"Wave height","default":60,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"flowSpeed","type":"number","label":"Flow speed","default":40,"min":0,"max":100,"step":1,"unit":"%"},
+    {"id":"showBokeh","type":"boolean","label":"Bokeh orbs","default":false},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":200,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"1","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/swell-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #overlay {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+        font-family: "Montserrat", sans-serif;
+        opacity: 0;
+      }
+      /* The logo: a 220 px circle in a 340 px canvas (room for its glow), centred on (960, 470),
+         scaled on the beat about its own centre. */
+      #logoCanvas {
+        position: absolute;
+        left: 790px;
+        top: 300px;
+        width: 340px;
+        height: 340px;
+        transform-origin: 50% 50%;
+      }
+      /* "ARTIST – TITLE" on one line, centred on y 668. */
+      #textRow {
+        position: absolute;
+        left: 0;
+        top: 668px;
+        width: 1920px;
+        height: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      #titleText {
+        flex: none;
+        width: fit-content; /* as wide as its text, so it can be measured and shrunk to fit */
+        white-space: nowrap;
+        text-transform: uppercase;
+        color: #ffffff;
+        font-size: 30px;
+        line-height: 1.2;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        margin-right: -0.14em; /* the last letter's spacing would push the text off-centre */
+        transform-origin: 50% 50%;
+      }
+      #titleDash {
+        opacity: 0.7;
+      }
+      #logoImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="overlay"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      >
+        <canvas id="logoCanvas" width="680" height="680"></canvas>
+        <div id="textRow">
+          <div id="titleText">
+            <span id="songArtist" data-var-text="artist">ARTIST NAME</span
+            ><span id="titleDash"> – </span
+            ><span id="songTitle" data-var-text="title">SONG NAME</span>
+          </div>
+        </div>
+      </div>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="logoImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa</span><span class="f-inter">Aa</span>
+      <span class="f-outfit">Aa</span><span class="f-poppins">Aa</span>
+      <span class="f-lato">Aa</span><span class="f-oswald">Aa</span>
+      <span class="f-playfair">Aa</span><span class="f-garamond">Aa</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.SwellMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // Where things sit (1080p px): the logo's centre, the title's centre line, the horizon.
+        var LOGO_X = 960,
+          LOGO_Y = 470;
+        var TEXT_Y = 668;
+        var HORIZON_Y = 330;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+
+        /**
+         * A line this many 1080p pixels wide, never thinner than about one screen pixel: a
+         * thinner line is drawn wider and dimmer, so the preview shows what the render shows
+         * when scaled down. Returns [width, brightness].
+         */
+        function thin(width) {
+          var w = Math.max(width, 1.2 / PREVIEW_SCALE);
+          return [w, width / w];
+        }
+        function rgba(c, a) {
+          return (
+            "rgba(" +
+            Math.round(c[0] * 255) +
+            "," +
+            Math.round(c[1] * 255) +
+            "," +
+            Math.round(c[2] * 255) +
+            "," +
+            a.toFixed(3) +
+            ")"
+          );
+        }
+        function mixRGB(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+
+        // ---------- the logo ----------
+        // The location is set at once, so the page's own loading waits for it; the logo is
+        // drawn again when it arrives. A picture that fails to load is simply left out.
+        var logoImg = document.getElementById("logoImg");
+        var logoCanvas = document.getElementById("logoCanvas");
+        var logoSrc = "";
+        var logoLoaded = false;
+        logoImg.addEventListener("load", function () {
+          logoLoaded = true;
+          paintLogo();
+          draw(Math.max(0, lastTime));
+        });
+        logoImg.addEventListener("error", function () {
+          logoLoaded = false;
+          paintLogo();
+          draw(Math.max(0, lastTime));
+        });
+        function setLogo(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === logoSrc) return;
+          logoSrc = src;
+          logoLoaded = false;
+          if (src) logoImg.src = src;
+          else logoImg.removeAttribute("src");
+          paintLogo();
+        }
+        /**
+         * The logo circle (220 px) with a thin bright ring and a soft glow in the accent colour;
+         * with no logo (or one that failed), a small glowing ring alone.
+         */
+        function paintLogo() {
+          var ctx = logoCanvas.getContext("2d");
+          var S = logoCanvas.width / 340; // canvas pixels per 1080p pixel
+          var C = 170 * S; // the centre
+          var main = V.hexToRGB(setting("mainColor"));
+          var acc = V.hexToRGB(setting("accentColor"));
+          var ringCol = mixRGB(acc, [1, 1, 1], 0.45);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, logoCanvas.width, logoCanvas.height);
+          var R = (M.LOGO_SIZE / 2) * S;
+          if (logoLoaded && logoImg.naturalWidth) {
+            // a soft glow and shadow behind the disc
+            ctx.save();
+            ctx.shadowColor = rgba(main, 0.55);
+            ctx.shadowBlur = 46 * S;
+            ctx.fillStyle = "#02040a";
+            ctx.beginPath();
+            ctx.arc(C, C, R, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // the picture, square-cropped into the circle
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(C, C, R, 0, Math.PI * 2);
+            ctx.clip();
+            var w = logoImg.naturalWidth,
+              h = logoImg.naturalHeight,
+              s = Math.min(w, h);
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(logoImg, (w - s) / 2, (h - s) / 2, s, s, C - R, C - R, 2 * R, 2 * R);
+            ctx.restore();
+            // the thin ring just outside it
+            var line = thin(2);
+            ctx.save();
+            ctx.shadowColor = rgba(acc, 0.9);
+            ctx.shadowBlur = 14 * S;
+            ctx.lineWidth = line[0] * S;
+            ctx.strokeStyle = rgba(ringCol, 0.92 * line[1]);
+            ctx.beginPath();
+            ctx.arc(C, C, R + 7 * S, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+            return;
+          }
+          // no logo: a small glowing ring, a fainter one around it, a breath of light inside
+          var r = 56 * S;
+          var inner = ctx.createRadialGradient(C, C, 0, C, C, r);
+          inner.addColorStop(0, rgba(main, 0.16));
+          inner.addColorStop(1, rgba(main, 0));
+          ctx.fillStyle = inner;
+          ctx.beginPath();
+          ctx.arc(C, C, r, 0, Math.PI * 2);
+          ctx.fill();
+          var ring = thin(3);
+          ctx.save();
+          ctx.shadowColor = rgba(acc, 1);
+          ctx.shadowBlur = 26 * S;
+          ctx.lineWidth = ring[0] * S;
+          ctx.strokeStyle = rgba(ringCol, 0.95 * ring[1]);
+          for (var pass = 0; pass < 2; pass++) {
+            ctx.beginPath();
+            ctx.arc(C, C, r, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          ctx.restore();
+          var outer = thin(1.2);
+          ctx.lineWidth = outer[0] * S;
+          ctx.strokeStyle = rgba(ringCol, 0.35 * outer[1]);
+          ctx.beginPath();
+          ctx.arc(C, C, r + 14 * S, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        setLogo(setting("logo"));
+        paintLogo();
+
+        // ---------- the title line ----------
+        function applyPage() {
+          document.getElementById("overlay").style.fontFamily =
+            '"' + setting("font") + '", sans-serif';
+          var main = V.hexToRGB(setting("mainColor"));
+          document.getElementById("titleText").style.textShadow =
+            "0 0 18px " + rgba(main, 0.75) + ", 0 2px 10px rgba(0,0,0,0.7)";
+        }
+        applyPage();
+
+        // Fit "ARTIST – TITLE" on one line, TEXT_SAFE wide: it shrinks first, and past the
+        // smallest size the whole line is scaled down, so it can never leave the frame.
+        // Measured on seeks, settings and font loads only, never in the timeline callback.
+        var TEXT_SAFE = 1500;
+        var TEXT_SIZE = 30,
+          TEXT_FLOOR = 16;
+        var fitted = "";
+        function fitTitles() {
+          var loaded = 0;
+          if (document.fonts)
+            document.fonts.forEach(function (face) {
+              if (face.status === "loaded") loaded++;
+            });
+          var artist = document.getElementById("songArtist").textContent.trim();
+          var title = document.getElementById("songTitle").textContent.trim();
+          var key = [artist, title, setting("font"), loaded].join("|");
+          if (key === fitted) return;
+          fitted = key;
+          // the dash only between two names; with neither, no line at all
+          document.getElementById("titleDash").style.display = artist && title ? "" : "none";
+          var line = document.getElementById("titleText");
+          line.style.display = artist || title ? "" : "none";
+          line.style.transform = "";
+          var size = TEXT_SIZE;
+          line.style.fontSize = size + "px";
+          while (line.offsetWidth > TEXT_SAFE && size > TEXT_FLOOR) {
+            size = Math.max(TEXT_FLOOR, Math.floor(size * 0.95));
+            line.style.fontSize = size + "px";
+          }
+          var w = line.offsetWidth;
+          line.style.transform = w > TEXT_SAFE ? "scale(" + (TEXT_SAFE / w).toFixed(4) + ")" : "";
+        }
+
+        // ---------- shaders ----------
+        function glslFloat(n) {
+          var s = Number(n).toFixed(4);
+          return s.charAt(0) === "-" ? "(" + s + ")" : s;
+        }
+        // The sea's three travelling waves, written out from the motion module's table so the
+        // shader and the tested maths can never disagree. Each term: weight × sin(kx·x + kz·z +
+        // offset + roll × P + drift × Q).
+        var WAVE_SUM = M.WAVES.map(function (w) {
+          return (
+            glslFloat(w[0]) +
+            " * sin(" +
+            [
+              glslFloat(w[1]) + " * x",
+              glslFloat(w[2]) + " * z",
+              glslFloat(w[3]),
+              glslFloat(w[4]) + " * P",
+              glslFloat(w[5]) + " * Q",
+            ].join(" + ") +
+            ")"
+          );
+        }).join(" + ");
+
+        // Each dot: a place on the grid (u across, v into the distance). Rows are spaced
+        // geometrically (each one a little further than the last), so the grid's cells stay
+        // square in perspective. The camera sits CAM_Y above the calm sea, pitched down so the
+        // horizon lands at HORIZON_Y.
+        var DOT_VS = [
+          "precision highp float;",
+          "const float SOFT = 4.0;",
+          "attribute vec2 g;",
+          "uniform sampler2D spec;",
+          "uniform float P, Q, amp, ripple, crest;",
+          "uniform float camY, pitchS, pitchC, rollS, rollC, focal, aspect;",
+          "uniform float zNear, zLog, zFar, sizeMul, ripDepth;",
+          "varying float vBright; varying float vCrest;",
+          // about how much light a soft dot this many pixels across gives
+          "float dotLight(float p){ return max(0.196 * p * p, 0.6); }",
+          "void main(){",
+          "  float z = zNear * exp(g.y * zLog);",
+          "  float x = (g.x - 0.5) * 2.0 * (2.0 + 1.85 * z);",
+          "  float hs = " + WAVE_SUM + ";",
+          // the spectrum ripple: bass in the middle, the newest row at the front
+          "  float rv = texture2D(spec, vec2(0.01 + abs(g.x - 0.5) * 1.98, clamp(g.y / ripDepth, 0.0, 1.0))).r;",
+          "  float rip = rv * ripple * (1.0 - smoothstep(0.4, 1.0, g.y / ripDepth));",
+          // calmer right in front of the camera, so a crest never rises into it
+          "  float calm = 0.3 + 0.7 * smoothstep(zNear, zNear + 6.0, z);",
+          "  float h = (hs * amp + rip) * calm;",
+          "  vec3 d = vec3(x, h - camY, z);",
+          "  float zc = d.z * pitchC - d.y * pitchS;",
+          "  float yc = d.y * pitchC + d.z * pitchS;",
+          "  if (zc < 0.25) { gl_Position = vec4(3.0, 3.0, 0.0, 1.0); gl_PointSize = 1.0; vBright = 0.0; vCrest = 0.0; return; }",
+          // the camera is rolled a little, so the hills rise from lower left to upper right
+          "  vec2 s = vec2(x, yc) / zc * focal;",
+          "  s = vec2(s.x * rollC - s.y * rollS, s.x * rollS + s.y * rollC);",
+          "  gl_Position = vec4(s.x / aspect, s.y, 0.0, 1.0);",
+          "  float size = clamp(11.0 / zc, 1.3, 8.0);",
+          // far dots are drawn wider and dimmer (soft focus): the distance becomes a fine glow
+          // rather than a shimmer of single pixels, which also keeps video files small
+          "  float pt = max(max(size, SOFT) * sizeMul, 1.0);",
+          "  gl_PointSize = pt;",
+          // in the small live preview a dot can't shrink below a pixel: dim it by the light it
+          // gained, so the preview is as bright as the render (exports draw dots as given)
+          "  float preview = dotLight(size) * sizeMul * sizeMul / dotLight(pt);",
+          // lit from the horizon: the upper part of each wave catches the light, troughs fall
+          // dark; the crests turn to the accent colour as the music gets louder
+          "  float lit = smoothstep(-0.1, 0.95, hs) + rv * 0.5 * step(0.001, ripple);",
+          "  lit = clamp(lit, 0.0, 1.0);",
+          "  vCrest = clamp(lit * lit * (0.25 + 0.55 * crest), 0.0, 1.0);",
+          "  float fog = 1.0 - smoothstep(zFar * 0.25, zFar * 0.75, z);",
+          "  float near = clamp((zc - 0.6) / 3.0, 0.25, 1.0);", // near dots are big and soft: dimmer
+          "  vBright = fog * near * preview * (0.22 + 0.8 * lit + 0.9 * crest * lit * lit);",
+          "}",
+        ].join("\n");
+        var DOT_FS = [
+          "precision highp float;",
+          "uniform vec3 mainCol, hiCol;",
+          "varying float vBright; varying float vCrest;",
+          "void main(){",
+          "  vec2 d = gl_PointCoord - 0.5; float a = exp(-dot(d, d) * 12.0);",
+          "  vec3 col = mix(mainCol, hiCol, vCrest);",
+          "  gl_FragColor = vec4(col * a * vBright, 1.0);",
+          "}",
+        ].join("\n");
+        var QUAD_VS =
+          "attribute vec2 p; varying vec2 uv; void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }";
+        var COPY_FS =
+          "precision highp float; uniform sampler2D src; varying vec2 uv; void main(){ gl_FragColor = texture2D(src, uv); }";
+        var BLUR_FS = [
+          "precision highp float;",
+          "uniform sampler2D src; uniform vec2 dir; varying vec2 uv;",
+          "void main(){",
+          "  vec3 c = texture2D(src, uv).rgb * 0.227027;",
+          "  c += texture2D(src, uv + dir * 1.3846).rgb * 0.316216; c += texture2D(src, uv - dir * 1.3846).rgb * 0.316216;",
+          "  c += texture2D(src, uv + dir * 3.2308).rgb * 0.070270; c += texture2D(src, uv - dir * 3.2308).rgb * 0.070270;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+        // The navy sky and haze, the horizon glow, the dots and their glow, a soft light behind
+        // the logo, the title area kept readable, the bokeh orbs in front, a vignette and a tiny
+        // fixed dither against banding.
+        var COMPOSITE_FS = [
+          "precision highp float;",
+          "uniform sampler2D scene, bloomA, bloomB;",
+          "uniform vec3 mainCol, hiCol;",
+          "uniform float loud, env, horizonN, rollS, rollC, glow, orbOn;",
+          "uniform vec2 logoPos;",
+          "uniform float textY;",
+          "uniform vec4 orbs[" + M.ORB_COUNT + "];",
+          "varying vec2 uv;",
+          "float hash(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(127.1, 311.7))) * 43758.5453); }",
+          "void main(){",
+          "  vec2 px = vec2(uv.x * 1920.0, (1.0 - uv.y) * 1080.0);",
+          "  vec2 sp = vec2((uv.x * 2.0 - 1.0) * 1.7778, uv.y * 2.0 - 1.0);",
+          // undo the camera's roll: dy is the height above the horizon line, bx the way along it
+          "  float dy = (-sp.x * rollS + sp.y * rollC - horizonN) * 0.5;",
+          "  float bx = (sp.x * rollC + sp.y * rollS) * 0.37;",
+          "  vec3 navy = vec3(0.006, 0.012, 0.034);",
+          "  vec3 haze = mainCol * 0.09 + navy;",
+          "  vec3 sky = mix(haze, navy * 0.55, smoothstep(0.0, 0.3, dy));",
+          "  vec3 sea = mix(haze * 0.8, navy * 0.45, smoothstep(0.0, 0.55, -dy));",
+          "  vec3 c = mix(sea, sky, step(0.0, dy));",
+          "  float band = exp(-(dy * 8.0) * (dy * 8.0) - bx * bx);",
+          "  c += mainCol * band * (0.14 + 0.16 * loud);",
+          "  float line = exp(-(dy * 60.0) * (dy * 60.0) - 4.0 * bx * bx);",
+          "  c += hiCol * line * (0.07 + 0.1 * loud);",
+          "  c += texture2D(scene, uv).rgb + (texture2D(bloomA, uv).rgb * 0.8 + texture2D(bloomB, uv).rgb * 1.1) * glow;",
+          "  vec2 tq = (px - vec2(960.0, textY)) / vec2(780.0, 110.0);",
+          "  c *= 1.0 - 0.35 * exp(-dot(tq, tq));",
+          "  vec2 lq = (px - logoPos) / 175.0;",
+          "  c += mainCol * exp(-dot(lq, lq)) * (0.05 + 0.14 * env);",
+          "  for (int i = 0; i < " + M.ORB_COUNT + "; i++) {",
+          "    vec4 o = orbs[i];",
+          "    float dd = length(px - o.xy) / max(o.z, 1.0);",
+          // small orbs are sharper, big ones softer (further out of focus)
+          "    float soft = mix(0.86, 0.2, smoothstep(30.0, 180.0, o.z));",
+          "    float disc = 1.0 - smoothstep(soft, 1.0, dd);",
+          "    float rim = 0.65 + 0.35 * smoothstep(0.45, 0.96, dd);",
+          "    float small = 1.0 - smoothstep(15.0, 60.0, o.z);",
+          "    vec3 oc = mix(mainCol, hiCol, 0.2 + 0.4 * fract(float(i) * 0.618) + 0.4 * small);",
+          "    c += oc * disc * rim * o.w * (0.3 + 0.2 * small) * orbOn;",
+          "  }",
+          "  c = vec3(1.0) - exp(-c * 1.5);",
+          "  c *= mix(0.6, 1.0, smoothstep(1.2, 0.35, length((uv - 0.5) * vec2(1.15, 1.0))));",
+          "  c += (hash(floor(uv * vec2(1920.0, 1080.0)) + vec2(5.0, 9.0)) - 0.5) / 255.0;",
+          "  gl_FragColor = vec4(c, 1.0);",
+          "}",
+        ].join("\n");
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        // The camera: height above the calm sea and focal length (world units); its pitch is
+        // whatever puts the horizon at HORIZON_Y.
+        var CAM_Y = 2.6,
+          FOCAL = 1.0;
+        var ROLL = (6 * Math.PI) / 180; // the horizon rises 6° to the right
+        var Z_NEAR = 1.0,
+          Z_FAR = 48;
+        // Many dots along each row, fewer rows: the rows read almost as fine lines of dots.
+        var COLS = 520,
+          ROWS = 115;
+        var HIST_ROWS = 48,
+          HIST_DT = 0.05; // the ripple's history: one row per 0.05 s into the past
+        var RIP_DEPTH = 0.55; // how far into the sea (0..1 of the rows) the history reaches
+
+        function setup() {
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var INT = Math.max(0.2, Math.min(2, Number(setting("intensity")) || 1));
+          var BASE = M.baseHeight(Number(setting("waveHeight")));
+          var FLOW = Number(setting("flowSpeed"));
+          var BOKEH = setting("showBokeh") === true;
+          var opts = {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+          };
+          opts.spectrumCount = 32;
+          var audio = V.createAudio(window.AUDIO_DATA, opts);
+          var NPTS = M.ripplePoints(Number(setting("bandCount")));
+          opts.spectrumCount = NPTS;
+          var ripAudio = V.createAudio(window.AUDIO_DATA, opts);
+          var lowBuf = new Float32Array(32);
+          var means = new Float32Array(M.LOW_AGES.length);
+          var ripRow = new Float32Array(NPTS);
+          var ripBytes = new Uint8Array(NPTS * HIST_ROWS);
+          var orbData = new Float32Array(M.ORB_COUNT * 4);
+
+          var W = Math.round(1920 * PREVIEW_SCALE),
+            H = Math.round(1080 * PREVIEW_SCALE);
+          var canvas = document.getElementById("viz");
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          var rawGl = canvas.getContext("webgl", {
+            preserveDrawingBuffer: true,
+            antialias: false,
+            alpha: false,
+          });
+          if (!rawGl) throw new Error("WebGL is not available in this browser");
+          // Everything made through `gl` is freed by dispose(), so live changes don't leak.
+          var tracked = V.trackGl(rawGl);
+          var gl = tracked.gl;
+
+          var scene = V.createTarget(gl, W, H);
+          var hA = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2)),
+            hB = V.createTarget(gl, Math.round(W / 2), Math.round(H / 2));
+          var eA = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8)),
+            eB = V.createTarget(gl, Math.round(W / 8), Math.round(H / 8));
+
+          var specTex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, specTex);
+          gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+          // The grid: columns across, rows into the distance.
+          var grid = new Float32Array(COLS * ROWS * 2);
+          for (var r = 0; r < ROWS; r++)
+            for (var c = 0; c < COLS; c++) {
+              var o = (r * COLS + c) * 2;
+              grid[o] = c / (COLS - 1);
+              grid[o + 1] = r / (ROWS - 1);
+            }
+          var gridBuf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
+          gl.bufferData(gl.ARRAY_BUFFER, grid, gl.STATIC_DRAW);
+
+          var dotProg = V.createProgram(gl, DOT_VS, DOT_FS);
+          var copyProg = V.createProgram(gl, QUAD_VS, COPY_FS);
+          var blurProg = V.createProgram(gl, QUAD_VS, BLUR_FS);
+          var compProg = V.createProgram(gl, QUAD_VS, COMPOSITE_FS);
+
+          var horizonNdc = (540 - HORIZON_Y) / 540;
+          var pitch = Math.atan(horizonNdc / FOCAL);
+
+          function bindTarget(tg) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tg ? tg.fb : null);
+            gl.viewport(0, 0, tg ? tg.w : W, tg ? tg.h : H);
+          }
+          function copy(src, dst) {
+            bindTarget(dst);
+            gl.useProgram(copyProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, src.tex);
+            gl.uniform1i(copyProg.u.src, 0);
+            V.drawQuad(gl, copyProg);
+          }
+
+          function renderAt(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            // the swell: the spectrum range's energy, now and a moment ago
+            for (var i = 0; i < M.LOW_AGES.length; i++)
+              means[i] = M.rangeMean(audio.spectrum(t - M.LOW_AGES[i], lowBuf));
+            var low = M.lowLevel(means);
+            var amp = M.swellHeight(BASE, low, INT);
+            var phases = M.flowPhases(songTime, FLOW);
+            var crest = M.crestGain(a.loud, INT);
+            var env = V.beatEnvelope(audio, t, M.PULSE_RELEASE);
+
+            // the ripple's history, shaped (silent before the song begins)
+            for (var row = 0; row < HIST_ROWS; row++) {
+              ripAudio.spectrum(t - row * HIST_DT, ripRow);
+              for (var k = 0; k < NPTS; k++)
+                ripBytes[row * NPTS + k] = Math.round(M.rippleShape(ripRow[k]) * 255);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, specTex);
+            gl.texImage2D(
+              gl.TEXTURE_2D,
+              0,
+              gl.LUMINANCE,
+              NPTS,
+              HIST_ROWS,
+              0,
+              gl.LUMINANCE,
+              gl.UNSIGNED_BYTE,
+              ripBytes,
+            );
+
+            // the orbs (only drawn when on)
+            if (BOKEH) {
+              var list = M.orbs(songTime, a.loud, V.mulberry32);
+              for (var n = 0; n < list.length; n++) {
+                orbData[n * 4] = list[n].x;
+                orbData[n * 4 + 1] = list[n].y;
+                orbData[n * 4 + 2] = list[n].r;
+                orbData[n * 4 + 3] = list[n].alpha;
+              }
+            }
+
+            // the logo's pulse (setting a style is fine here; measuring is not)
+            var tf = "scale(" + M.logoScale(env).toFixed(4) + ")";
+            if (logoCanvas.style.transform !== tf) logoCanvas.style.transform = tf;
+
+            // 1. the dots, added together as light
+            bindTarget(scene);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.ONE, gl.ONE);
+            gl.useProgram(dotProg);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, specTex);
+            gl.uniform1i(dotProg.u.spec, 0);
+            gl.uniform1f(dotProg.u.P, phases[0]);
+            gl.uniform1f(dotProg.u.Q, phases[1]);
+            gl.uniform1f(dotProg.u.amp, amp);
+            gl.uniform1f(dotProg.u.ripple, BASE * 0.45 * Math.min(1.5, INT));
+            gl.uniform1f(dotProg.u.crest, crest);
+            gl.uniform1f(dotProg.u.camY, CAM_Y);
+            gl.uniform1f(dotProg.u.pitchS, Math.sin(pitch));
+            gl.uniform1f(dotProg.u.pitchC, Math.cos(pitch));
+            gl.uniform1f(dotProg.u.rollS, Math.sin(ROLL));
+            gl.uniform1f(dotProg.u.rollC, Math.cos(ROLL));
+            gl.uniform1f(dotProg.u.focal, FOCAL);
+            gl.uniform1f(dotProg.u.aspect, 1920 / 1080);
+            gl.uniform1f(dotProg.u.zNear, Z_NEAR);
+            gl.uniform1f(dotProg.u.zLog, Math.log(Z_FAR / Z_NEAR));
+            gl.uniform1f(dotProg.u.zFar, Z_FAR);
+            gl.uniform1f(dotProg.u.sizeMul, PREVIEW_SCALE);
+            gl.uniform1f(dotProg.u.ripDepth, RIP_DEPTH);
+            gl.uniform3fv(dotProg.u.mainCol, MAIN);
+            gl.uniform3fv(dotProg.u.hiCol, ACC);
+            gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
+            var loc = gl.getAttribLocation(dotProg, "g");
+            gl.enableVertexAttribArray(loc);
+            gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+            gl.drawArrays(gl.POINTS, 0, COLS * ROWS);
+            gl.disableVertexAttribArray(loc);
+            gl.disable(gl.BLEND);
+
+            // 2. glow: half-size medium, eighth-size wide (radii kept in 1080p terms)
+            copy(scene, hA);
+            V.blur(gl, blurProg, hA, hB, 1.5 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, hA, hB, 3.0 * PREVIEW_SCALE);
+            copy(hA, eA);
+            V.blur(gl, blurProg, eA, eB, 2.0 * PREVIEW_SCALE);
+            V.blur(gl, blurProg, eA, eB, 4.0 * PREVIEW_SCALE);
+
+            // 3. sky, haze, glow and orbs onto the screen
+            bindTarget(null);
+            gl.useProgram(compProg);
+            var units = [
+              ["scene", scene.tex],
+              ["bloomA", hA.tex],
+              ["bloomB", eA.tex],
+            ];
+            for (var u = 0; u < units.length; u++) {
+              gl.activeTexture(gl.TEXTURE0 + u);
+              gl.bindTexture(gl.TEXTURE_2D, units[u][1]);
+              gl.uniform1i(compProg.u[units[u][0]], u);
+            }
+            gl.uniform3fv(compProg.u.mainCol, MAIN);
+            gl.uniform3fv(compProg.u.hiCol, ACC);
+            gl.uniform1f(compProg.u.loud, a.loud);
+            gl.uniform1f(compProg.u.env, env);
+            gl.uniform1f(compProg.u.horizonN, (540 - HORIZON_Y) / 540);
+            gl.uniform1f(compProg.u.rollS, Math.sin(ROLL));
+            gl.uniform1f(compProg.u.rollC, Math.cos(ROLL));
+            gl.uniform1f(compProg.u.glow, (0.7 + 0.8 * a.loud) * Math.min(1.5, INT));
+            gl.uniform1f(compProg.u.orbOn, BOKEH ? 1 : 0);
+            gl.uniform2f(compProg.u.logoPos, LOGO_X, LOGO_Y);
+            gl.uniform1f(compProg.u.textY, TEXT_Y);
+            gl.uniform4fv(compProg.u.orbs, orbData);
+            V.drawQuad(gl, compProg);
+            gl.activeTexture(gl.TEXTURE0);
+          }
+          return { render: renderAt, dispose: tracked.dispose };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings, freeing what came before. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        fitTitles();
+        draw(0);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitles);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", function () {
+            fitTitles();
+          });
+        }
+        window.addEventListener("hf-seek", function (e) {
+          fitTitles(); // titles are measured here, not in the timeline callback below
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            document.getElementById("songTitle").textContent = setting("title");
+            document.getElementById("songArtist").textContent = setting("artist");
+            setLogo(setting("logo"));
+            paintLogo();
+            applyPage();
+            fitTitles();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            paintLogo();
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The overlay fades in; the whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.fromTo(
+          "#overlay",
+          { opacity: 0, y: 10 },
+          { opacity: 1, y: 0, duration: 1.6, ease: "power2.out" },
+          0.3,
+        );
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

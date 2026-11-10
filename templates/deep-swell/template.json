@@ -1,0 +1,46 @@
+{
+  "name": "Deep Swell",
+  "description": "A close, steep view of a rolling blue particle sea that swells with the bass, with your logo in the middle.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["logo"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "waveHeight", "flowSpeed", "showBokeh"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": [
+    "mainColor",
+    "accentColor",
+    "intensity",
+    "waveHeight",
+    "flowSpeed",
+    "showBokeh",
+    "font"
+  ],
+  "content": ["title", "artist", "logo"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#2a6dff", "accentColor": "#9ad8ff" }
+    },
+    {
+      "name": "Bokeh",
+      "thumbnail": "presets/bokeh.jpg",
+      "values": { "mainColor": "#2a6dff", "accentColor": "#9ad8ff", "showBokeh": true }
+    },
+    {
+      "name": "Aurora",
+      "thumbnail": "presets/aurora.jpg",
+      "values": { "mainColor": "#18d9a0", "accentColor": "#c8ffe8" }
+    },
+    {
+      "name": "Violet",
+      "thumbnail": "presets/violet.jpg",
+      "values": { "mainColor": "#7a3cff", "accentColor": "#f0b8ff" }
+    }
+  ]
+}
