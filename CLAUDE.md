@@ -49,11 +49,15 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       change; the owner decides)
 - [x] M8 ten more templates (spec `docs/superpowers/specs/2026-11-10-m8-ten-templates-design.md`,
       plan `docs/superpowers/plans/2026-11-10-m8-ten-templates.md`), one branch and pull request
-      each, built overnight 2026-11-10 for the owner to review (all ten built; awaiting the
-      owner's review, not merged):
+      each, built overnight 2026-11-10 (all ten merged, PRs #16–#25):
   - [x] Song clock and line kit (toolkit)
   - [x] Sky Pillar · [x] Afterglow · [x] Red Letter · [x] Signal Dish · [x] Moon Tide ·
         [x] Neon Coil · [x] World Orbit · [x] Ember Mesh · [x] Black Crown · [x] Cube Core
+- [ ] M9 the last eight catalog templates (spec
+      `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
+      `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
+      [ ] Deep Swell · [ ] Silk Lights · [ ] Late Show · [ ] Night Flight · [ ] Live Wire ·
+      [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
