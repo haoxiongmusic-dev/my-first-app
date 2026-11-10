@@ -99,7 +99,10 @@ function minutesSeconds(total: number): string {
   return `${Math.floor(s / 60)}.${String(s % 60).padStart(2, "0")}`;
 }
 
-/** "<artist> - <title> (<Template name>)[ <start>-<end>].mp4", safe as a Windows file name. */
+/**
+ * "<artist> - <title> (<Template name>)[ <start>-<end>].mp4", safe as a Windows file name.
+ * A template with no artist setting at all (Late Show) gives "<title> (<Template name>)…".
+ */
 export function outputName(
   values: TemplateValues,
   templateName: string,
@@ -108,7 +111,10 @@ export function outputName(
 ): string {
   const artist = String(values.artist ?? "").trim() || "Untitled";
   const title = String(values.title ?? "").trim() || "Untitled";
-  let name = `${artist} - ${title} (${templateName})`;
+  let name =
+    values.artist === undefined
+      ? `${title} (${templateName})`
+      : `${artist} - ${title} (${templateName})`;
   if (start !== undefined || end !== undefined) {
     name += ` ${minutesSeconds(start ?? 0)}-${end === undefined ? "end" : minutesSeconds(end)}`;
   }

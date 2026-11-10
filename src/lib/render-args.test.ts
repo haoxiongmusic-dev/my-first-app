@@ -55,6 +55,15 @@ describe("outputName", () => {
     expect(outputName(values, "Particle Horizon")).toBe("AXIOM - T-REX (Particle Horizon).mp4");
   });
 
+  it("leaves the artist out for a template without one, and says Untitled for an empty one", () => {
+    expect(outputName({ title: "T-REX", tagline: "AXIOM" }, "Late Show", 60, 90)).toBe(
+      "T-REX (Late Show) 1.00-1.30.mp4",
+    );
+    expect(outputName({ artist: " ", title: "T-REX" }, "Halo Rings")).toBe(
+      "Untitled - T-REX (Halo Rings).mp4",
+    );
+  });
+
   it("replaces characters Windows forbids", () => {
     expect(outputName({ artist: "A/B", title: 'Why? "Now"' }, "Particle Horizon")).toBe(
       "A_B - Why_ _Now_ (Particle Horizon).mp4",
