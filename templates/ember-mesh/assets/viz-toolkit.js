@@ -436,6 +436,94 @@
     return out;
   }
 
+  // ---------- lightning: jagged bolts (Live Wire's arcs, Static Tower's strikes) ----------
+
+  function finiteOr(x, fallback) {
+    return typeof x === "number" && isFinite(x) ? x : fallback;
+  }
+
+  /**
+   * A jagged lightning bolt from (x0, y0) to (x1, y1): 2^detail + 1 points ([x, y]), the first
+   * and last exactly the given ends. Midpoint displacement: each level moves its segments'
+   * middles sideways by up to `jag` × the segment's length (default 0.22), so the bolt is jagged
+   * at every scale, steps steadily from one end to the other, and never strays more than
+   * 2 × jag × its length from the straight line. Seeded (mulberry32(seed)): the same seed gives
+   * the same bolt. detail is clamped to 0..8; a zero-length bolt gives its point repeated.
+   */
+  function lightningPath(x0, y0, x1, y1, seed, detail, jag) {
+    var ax = finiteOr(x0, 0),
+      ay = finiteOr(y0, 0),
+      bx = finiteOr(x1, ax),
+      by = finiteOr(y1, ay);
+    var d = Math.max(0, Math.min(8, Math.floor(finiteOr(detail, 0))));
+    var rough = Math.max(0, Math.min(1, finiteOr(jag, 0.22)));
+    var n = 1 << d;
+    var dx = bx - ax,
+      dy = by - ay;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    var nx = len > 0 ? -dy / len : 0,
+      ny = len > 0 ? dx / len : 0;
+    var off = new Float64Array(n + 1);
+    var rnd = mulberry32(finiteOr(seed, 0) | 0);
+    for (var step = n; step > 1; step >>= 1) {
+      var half = step >> 1;
+      var amp = (rough * len * step) / n;
+      for (var i = 0; i < n; i += step) {
+        off[i + half] = (off[i] + off[i + step]) / 2 + (rnd() * 2 - 1) * amp;
+      }
+    }
+    var pts = new Array(n + 1);
+    for (var k = 0; k <= n; k++) {
+      var f = k / n;
+      pts[k] = [ax + dx * f + nx * off[k], ay + dy * f + ny * off[k]];
+    }
+    pts[0] = [ax, ay];
+    pts[n] = [bx, by];
+    return pts;
+  }
+
+  /**
+   * `count` forks off a bolt's points (from lightningPath): each starts at one of its points away
+   * from the ends and heads on the bolt's way, turned 20–50° to a seeded side, 20–45 % as long as
+   * the bolt, itself a lightningPath of 2^detail + 1 points. Seeded like lightningPath.
+   */
+  function lightningBranches(points, seed, count, detail, jag) {
+    var out = [];
+    var n = points ? points.length : 0;
+    var c = Math.max(0, Math.floor(finiteOr(count, 0)));
+    if (n < 3 || c === 0) return out;
+    var a = points[0],
+      b = points[n - 1];
+    var dx = b[0] - a[0],
+      dy = b[1] - a[1];
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (!(len > 0)) return out;
+    var rnd = mulberry32((finiteOr(seed, 0) | 0) + 7919);
+    var first = Math.max(1, Math.floor(n * 0.2)),
+      last = Math.min(n - 2, Math.ceil(n * 0.8));
+    for (var k = 0; k < c; k++) {
+      var at = points[first + Math.floor(rnd() * (last - first + 1))];
+      var turn = (((20 + 30 * rnd()) * Math.PI) / 180) * (rnd() < 0.5 ? -1 : 1);
+      var reach = len * (0.2 + 0.25 * rnd());
+      var cs = Math.cos(turn),
+        sn = Math.sin(turn);
+      var ux = (dx * cs - dy * sn) / len,
+        uy = (dx * sn + dy * cs) / len;
+      out.push(
+        lightningPath(
+          at[0],
+          at[1],
+          at[0] + ux * reach,
+          at[1] + uy * reach,
+          (finiteOr(seed, 0) | 0) + 101 * (k + 1),
+          detail,
+          jag,
+        ),
+      );
+    }
+    return out;
+  }
+
   // ---------- WebGL helpers ----------
 
   /** Browser shader logs can end in invisible null characters; drop them. */
@@ -640,5 +728,7 @@
     mirrorBars: mirrorBars,
     smoothSpectrum: smoothSpectrum,
     scopeLine: scopeLine,
+    lightningPath: lightningPath,
+    lightningBranches: lightningBranches,
   };
 });

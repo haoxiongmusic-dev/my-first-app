@@ -103,6 +103,27 @@ export interface VizToolkit {
   smoothSpectrum(spectrum: ArrayLike<number>, radius: number): Float32Array;
   /** -1..1 spikes for an oscilloscope line, seeded by the song frame; zeros in silence */
   scopeLine(audio: ToolkitAudio, t: number, count: number, seed: number): Float32Array;
+  /**
+   * a seeded jagged bolt from (x0, y0) to (x1, y1): 2^detail + 1 points (detail 0..8), exactly
+   * at both ends, its sideways jag in proportion to its length (`jag`, default 0.22)
+   */
+  lightningPath(
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    seed: number,
+    detail: number,
+    jag?: number,
+  ): [number, number][];
+  /** `count` seeded forks off a bolt's points, each a lightningPath 20–45 % of its length */
+  lightningBranches(
+    points: [number, number][],
+    seed: number,
+    count: number,
+    detail: number,
+    jag?: number,
+  ): [number, number][][];
 }
 
 export type RingShape = "circle" | "rounded";

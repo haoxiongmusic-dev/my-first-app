@@ -56,7 +56,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [ ] M9 the last eight catalog templates (spec
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
-      [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [ ] Live Wire ·
+      [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [x] Live Wire ·
       [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
@@ -122,6 +122,10 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   whole-song seconds (a section's analysis carries `songDuration`), `formatClock(s)`;
   `mirrorBars(spectrum, count, fromCentre)`, `smoothSpectrum(spectrum, radius)`,
   `scopeLine(audio, t, count, seed)` (seeded by the song frame, so sections match).
+- **Lightning** (toolkit): `lightningPath(x0, y0, x1, y1, seed, detail, jag?)` → `2^detail + 1`
+  `[x, y]` points, exactly at both ends (seeded midpoint displacement, sideways jag ∝ length,
+  default 0.22, never past 2 × jag × length); `lightningBranches(points, seed, count, detail)`
+  → forks off a bolt. Live Wire chains short bolts along its cables; Static Tower's strikes.
 - **three.js templates** load `assets/three-kit.js` (`npm run build:three`, then
   `npm run sync:toolkit`, which copies it only into templates that reference it). The bundle
   swaps three.js's own `Math.random`/frame loop for a seeded generator so `hyperframes check`
@@ -225,6 +229,11 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   2 min 9 s ≈ 4.3×), 14.8 MB per 30 s (the phone copy 15.6 MB). The beat shake moves in whole
   pixels: sub-pixel shifts blurred every voxel seam and made the files 30 % bigger and the
   render 40 s slower.
+- Live Wire (three.js: the wall as one shader drawn once into an 8-bit target and only copied each
+  frame; 2,000 Lambert-lit voxels for the speaker; the arcs re-built 12 times a second as additive
+  ribbons): a 30 s Final section of T-REX took 5 min 17 s in total with the phone copy (frame
+  capture 2 min 11 s ≈ 4.4×), 15.0 MB per 30 s (the phone copy 15.3 MB). A strong fine grain
+  on the wall seemed to slow frame capture (one 10 s test: 70 s, 53 s without), so it is subtle.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).
