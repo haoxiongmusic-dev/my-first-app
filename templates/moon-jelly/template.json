@@ -1,0 +1,37 @@
+{
+  "name": "Moon Jelly",
+  "description": "Glowing voxel jellyfish drifting up through deep blue water under a shimmering surface and swaying light shafts, swimming on the beat.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "ripple", "jellyCount", "water", "showTimer"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "jellyCount", "ripple", "showTimer", "font"],
+  "content": ["title", "artist"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#ff7ad8", "accentColor": "#7ad8ff", "water": "bright" }
+    },
+    {
+      "name": "Glow",
+      "thumbnail": "presets/glow.jpg",
+      "values": { "mainColor": "#7affd8", "accentColor": "#d8ff7a", "water": "bright" }
+    },
+    {
+      "name": "Abyss",
+      "thumbnail": "presets/abyss.jpg",
+      "values": { "mainColor": "#7a8aff", "accentColor": "#ff7ad8", "water": "dark" }
+    },
+    {
+      "name": "Coral",
+      "thumbnail": "presets/coral.jpg",
+      "values": { "mainColor": "#ffb07a", "accentColor": "#ff7a8a", "water": "bright" }
+    }
+  ]
+}

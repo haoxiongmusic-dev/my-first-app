@@ -75,6 +75,8 @@ describe(".gitignore keeps private files out of the public repo", () => {
     "templates/static-tower/assets/song.wav",
     "templates/hyper-tunnel/assets/audio-data.js",
     "templates/hyper-tunnel/assets/song.wav",
+    "templates/moon-jelly/assets/audio-data.js",
+    "templates/moon-jelly/assets/song.wav",
   ])("ignores %s", (path) => {
     expect(isIgnored(path)).toBe(true);
   });
