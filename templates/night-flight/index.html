@@ -1,0 +1,1260 @@
+<!doctype html>
+<!--
+  Night Flight: flying fast just above a sea of moonlit clouds at night, seen from a dark cockpit.
+  The clouds rush toward you under a very bright blue glow along the horizon; a big pale cratered
+  moon hangs ahead and to the right, partly behind the haze; faint stars and fine scratches on the
+  glass. The cockpit, built from voxels: two thick window struts rising from the dashboard out to
+  the top corners (a V), a dark dashboard with your cover on a small centre screen (no cover: a
+  glowing crosshair), two gauges whose needles follow the music, lit buttons, a level meter and
+  the timer's panel. In the sky, centred: a HUD of three thin rings, the outer two made of
+  spectrum ticks, a glowing dot in the middle; the title above it in spaced capitals, the artist
+  under the title.
+  Spec: docs/superpowers/specs/2026-11-10-m9-final-templates-design.md §5.4
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials).
+    1. The sky, the moon and the clouds: one full-screen shader drawn into its own 8-bit target.
+    2. The cockpit: the voxel parts (assets/cockpit-voxels.js) as instanced cubes, matt and dark,
+       lit faintly by the moon and the horizon's glow; the cover screen is a textured quad, the
+       needles are their own small meshes turned every frame. The sky is drawn behind it, with
+       the glass's scratches.
+    3. The HUD, the title and the timer: a 2D canvas over it all.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/flight-motion.js (unit-tested).
+
+  The cover arrives as a picture location (assets/images/cover.jpg in an export, the image
+  route in the preview) or "": no cover shows a glowing crosshair on the dashboard's screen.
+  With the cockpit off, the cover sits in the middle of the HUD instead.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Outfit","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"cover","type":"image","label":"Cover art","default":"","fit":"square"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#8ad8ff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ffffff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"shakeOnBeat","type":"boolean","label":"Shake on beat","default":true},
+    {"id":"showCockpit","type":"boolean","label":"Show cockpit","default":true},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"8","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":100,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/cockpit-voxels.js"></script>
+    <script src="assets/flight-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz,
+      #hud {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #coverImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fontPreload b {
+        font-weight: 600;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <canvas id="hud" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="coverImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat">Aa<b>Aa</b></span
+      ><span class="f-inter">Aa<b>Aa</b></span> <span class="f-outfit">Aa<b>Aa</b></span
+      ><span class="f-poppins">Aa<b>Aa</b></span> <span class="f-lato">Aa<b>Aa</b></span
+      ><span class="f-oswald">Aa<b>Aa</b></span> <span class="f-playfair">Aa<b>Aa</b></span
+      ><span class="f-garamond">Aa<b>Aa</b></span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.FlightMotion;
+        var CP = window.NightFlightCockpit;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // ---------- the layout (1080p pixels, y down) ----------
+        var HORIZON = 594; // the horizon's glow, 55 % down
+        var FOCAL = 1250; // px: the sky's lens (the camera flies one cloud-sea unit up)
+        var MOON = { x: 1330, y: 418, r: 132 };
+        var HUD = { x: 960, y: 470, inner: 62, middle: 112, outer: 152, inTick: 32, outTick: 44 };
+        var TITLE = { top: 46, bottom: 184, width: 1240 };
+        var ARTIST = { y: 222, size: 26, width: 1000 };
+        var CLEAR_TIMER = { x: 960, y: 1032, size: 28 }; // the timer without the cockpit
+        var COVER_R = 54; // the cover in the HUD's middle, without the cockpit
+        var BEAT_RELEASE = 0.2; // the rings' pulse, the shake and the screen's glow
+        var SKY_RES = 1; // the sky's drawing size, as a share of the frame's
+        var DRIFT = 0.18; // cloud-sea units a second the clouds drift sideways (wind)
+        var SCRATCH_GAIN = 0.07;
+
+        // ---------- the cockpit (voxel units; 12 px each at z = 0) ----------
+        var CAM_FOV = 30;
+        var VIEW_HALF_H = 45; // half the frame's height at z = 0
+        var CAM_DIST = VIEW_HALF_H / Math.tan(((CAM_FOV / 2) * Math.PI) / 180);
+        var METAL = [0.78, 0.84, 1.0]; // a cool gunmetal tint
+
+        /** [r, g, b] 0..1 mixes. */
+        function mix(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function scale3(a, k) {
+          return [a[0] * k, a[1] * k, a[2] * k];
+        }
+        function add3(a, b) {
+          return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+        }
+        function css(rgb, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, rgb[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+        var WHITE = [1, 1, 1];
+
+        // ---------- the cover picture ----------
+        // The location is set at once, so the page's own loading waits for it; the frame is
+        // drawn again when it arrives. A picture that fails to load is simply left out.
+        var coverImg = document.getElementById("coverImg");
+        var coverSrc = "";
+        var coverLoaded = false;
+        var onCover = null; // set by setup(): uploads the picture
+        coverImg.addEventListener("load", function () {
+          coverLoaded = true;
+          if (onCover) onCover();
+          draw(Math.max(0, lastTime));
+        });
+        coverImg.addEventListener("error", function () {
+          coverLoaded = false;
+          if (onCover) onCover();
+          draw(Math.max(0, lastTime));
+        });
+        function setCover(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === coverSrc) return;
+          coverSrc = src;
+          coverLoaded = false;
+          if (onCover) onCover();
+          if (src) coverImg.src = src;
+          else coverImg.removeAttribute("src");
+        }
+        setCover(setting("cover"));
+        function hasCover() {
+          return coverLoaded && coverImg.naturalWidth > 0;
+        }
+
+        // ---------- shaders ----------
+        var QUAD_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+        // 1. The sky, the moon and the cloud sea, in 1080p pixels (y down). The view is shaken
+        // (shake) and banked (roll, about the frame's centre). Below the horizon each pixel looks
+        // down onto the cloud tops one unit below the camera: seeded value noise whose finer
+        // layers fade out where a pixel covers more than they can show (so the distance stays
+        // soft), shaded lighter on the side facing the light, melting into the horizon's glow.
+        var SKY_FS = [
+          "uniform vec3 skyTop, skyMid, glowCol, glowCore, cloudLo, cloudHi, moonCol, hazeCol, starCol;",
+          "uniform vec3 moon;",
+          "uniform vec2 shake, travel;",
+          "uniform float roll, horizon, focal, px, freq, lvGlow, lvCloud, lvMoon;",
+          "varying vec2 vUv;",
+          "float hash2(vec2 p){ return fract(sin(dot(mod(p, 256.0), vec2(12.9898, 78.233))) * 43758.5453); }",
+          "float vnoise(vec2 p){",
+          "  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);",
+          "  float a = hash2(i), b = hash2(i + vec2(1.0, 0.0));",
+          "  float c = hash2(i + vec2(0.0, 1.0)), d = hash2(i + vec2(1.0, 1.0));",
+          "  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);",
+          "}",
+          // the cloud pattern at w (cloud-sea units); foot: how much of it one pixel covers
+          "float clouds(vec2 w, float foot, int layers){",
+          "  float sum = 0.0, amp = 0.6, f = 1.0;",
+          "  vec2 q = w * freq;",
+          "  for (int k = 0; k < 4; k++) {",
+          "    if (k >= layers) break;",
+          "    float fade = clamp(1.6 - foot * freq * f * 4.0, 0.0, 1.0);",
+          "    float n = vnoise(q + vec2(float(k) * 37.0, float(k) * 11.0));",
+          // the big layers billow (round tops with creases between them)
+          "    sum += amp * mix(0.5, n, fade);",
+          "    q = q * 2.0; f *= 2.0; amp *= 0.42;",
+          "  }",
+          "  return sum;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0) - shake;",
+          "  float cr = cos(roll), sr = sin(roll);",
+          "  vec2 c0 = p - vec2(960.0, 540.0);",
+          "  vec2 q = vec2(960.0, 540.0) + vec2(cr * c0.x - sr * c0.y, sr * c0.x + cr * c0.y);",
+          "  float dy = q.y - horizon;",
+          "  vec3 col;",
+          "  if (dy > 0.0) {",
+          "    float z = focal / max(dy, 0.5);",
+          "    float foot = z * z / focal * px;",
+          "    vec2 w = vec2((q.x - 960.0) / focal * z + travel.x, z + travel.y);",
+          "    float d = clouds(w, foot, 4) / 1.0023;",
+          // soft-edged cloud masses with dark gaps between them, brightest on their tops
+          "    float c = smoothstep(0.42, 0.62, d);",
+          "    float top = smoothstep(0.5, 0.85, d);",
+          // light from ahead: the large shapes' far side is lit (compared with a sample nearer it)
+          "    float d2 = clouds(w + vec2(0.45, 0.9), foot * 2.0, 2) / 0.852;",
+          "    float lit = clamp(0.55 + (d - d2) * 2.6, 0.0, 1.0);",
+          "    vec3 cl = (cloudLo + (cloudHi - cloudLo) * c * (0.35 + 0.45 * top + 0.45 * lit)) * lvCloud;",
+          // the moon's light on the cloud tops below it
+          "    float sx = (q.x - moon.x) / (190.0 + dy * 1.3);",
+          "    cl += moonCol * 0.38 * c * (0.3 + 0.7 * lit) * exp(-sx * sx) * exp(-dy / 320.0) * lvMoon;",
+          // far away the clouds melt into the horizon's haze
+          "    float fog = exp(-z / 30.0);",
+          "    col = mix(hazeCol * (0.75 + 0.25 * lvGlow), cl, fog);",
+          "    col += glowCol * lvGlow * (0.55 * exp(-dy / 9.0) + 0.3 * exp(-dy / 50.0) + 0.06 * exp(-dy / 200.0));",
+          "  } else {",
+          "    float a = -dy;",
+          "    float t = clamp(q.y / horizon, 0.0, 1.0);",
+          "    col = mix(skyTop, skyMid, t * t);",
+          "    col += glowCol * lvGlow * (0.6 * exp(-a / 22.0) + 0.28 * exp(-a / 90.0) + 0.1 * exp(-a / 300.0));",
+          // faint stars: one in some 24 px cells, fading toward the horizon
+          "    vec2 cell = floor(q / 24.0);",
+          "    float r = hash2(cell + 97.0);",
+          "    if (r > 0.9) {",
+          "      vec2 sp = (cell + vec2(0.2) + 0.6 * vec2(hash2(cell + 17.0), hash2(cell + 41.0))) * 24.0;",
+          "      float b = (r - 0.9) / 0.1;",
+          "      float sd = length(q - sp);",
+          "      col += starCol * clamp((0.8 + 0.6 * b - sd) / px, 0.0, 1.0) * (0.12 + 0.5 * b) * (1.0 - t) * (1.0 - t);",
+          "    }",
+          // the moon: a pale disc with seas and craters, lit from the upper right, and a halo
+          "    vec2 mq = (q - moon.xy) / moon.z;",
+          "    float mr = length(mq);",
+          "    col += moonCol * lvMoon * (0.13 * exp(-max(mr - 1.0, 0.0) * moon.z / 60.0) + 0.05 * exp(-max(mr - 1.0, 0.0) * moon.z / 260.0));",
+          "    if (mr < 1.02) {",
+          "      float disc = clamp((1.0 - mr) * moon.z / px + 0.5, 0.0, 1.0);",
+          "      float limb = sqrt(max(1.0 - mr * mr, 0.0));",
+          "      float mare = 0.17 * smoothstep(0.42, 0.75, vnoise(mq * 2.0 + 5.0)) + 0.07 * smoothstep(0.5, 0.8, vnoise(mq * 4.6 + 17.0));",
+          "      float crater = 0.0;",
+          "      for (int g = 0; g < 2; g++) {",
+          "        float s = g == 0 ? 2.6 : 5.5;",
+          "        vec2 cg = mq * s + 7.0 + float(g) * 31.0;",
+          "        vec2 ci = floor(cg); vec2 cf = fract(cg);",
+          "        vec2 cc = 0.3 + 0.4 * vec2(hash2(ci + 13.0), hash2(ci + 29.0));",
+          "        float rad = 0.14 + 0.16 * hash2(ci + 41.0);",
+          "        vec2 cv = (cf - cc) / rad;",
+          "        float cd = length(cv);",
+          "        float side = dot(cv / max(cd, 0.001), vec2(0.7071, -0.7071));",
+          "        float inside = 1.0 - smoothstep(0.65, 1.0, cd);",
+          "        float rim = smoothstep(0.75, 1.0, cd) * (1.0 - smoothstep(1.0, 1.3, cd));",
+          "        crater += step(g == 0 ? 0.62 : 0.8, hash2(ci + 3.0)) * (-0.07 * inside * (0.7 - 0.5 * side) + 0.05 * rim * side);",
+          "      }",
+          "      float lightSide = 0.86 + 0.14 * dot(mq, vec2(0.7071, -0.7071));",
+          "      vec3 mc = moonCol * lvMoon * (0.8 + 0.2 * limb - mare + crater) * lightSide;",
+          "      col = mix(col, mc, disc);",
+          "    }",
+          // haze: thin bands lying along the horizon, in front of the moon's lower part
+          "    float band = vnoise(vec2(q.x / 460.0 + 3.0, a / 26.0)) * 0.6 + vnoise(vec2(q.x / 170.0, a / 11.0)) * 0.4;",
+          "    float hz = exp(-a / 95.0) * (0.4 + 0.85 * band);",
+          "    col = mix(col, hazeCol * (0.75 + 0.25 * lvGlow), clamp(hz, 0.0, 0.92));",
+          // thin dark wisps of cloud drifting across the low sky (and the moon), moonlit at the top
+          "    float wv = vnoise(vec2(q.x / 330.0 + travel.x * 0.05, a / 17.0 + 4.0)) * 0.65 + vnoise(vec2(q.x / 120.0, a / 7.0)) * 0.35;",
+          "    float wisp = smoothstep(0.56, 0.8, wv) * smoothstep(20.0, 60.0, a) * exp(-a / 170.0);",
+          "    float wtop = smoothstep(0.62, 0.8, vnoise(vec2(q.x / 330.0 + travel.x * 0.05, (a + 4.0) / 17.0 + 4.0)) * 0.65 + vnoise(vec2(q.x / 120.0, (a + 4.0) / 7.0)) * 0.35);",
+          "    col = mix(col, hazeCol * 0.42, clamp(wisp * 1.1, 0.0, 0.85));",
+          "    col += moonCol * lvMoon * 0.1 * wisp * (1.0 - wtop) * exp(-length(q - moon.xy) / 300.0);",
+          "  }",
+          // the horizon itself: a very bright line
+          "  col += glowCore * lvGlow * (0.9 * exp(-abs(dy) / 3.0) + 0.25 * exp(-abs(dy) / 12.0));",
+          "  gl_FragColor = vec4(max(col, 0.0), 1.0);",
+          "}",
+        ].join("\n");
+
+        // 2. The window: the sky behind the cockpit, with fine scratches on the glass that catch
+        // the light (they move with the cockpit's shake, not with the bank).
+        var WINDOW_FS = [
+          "uniform sampler2D skyTex, scratchTex;",
+          "uniform vec2 scratchShift;",
+          "uniform float scratchGain;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  vec3 col = texture2D(skyTex, vUv).rgb;",
+          "  float s = texture2D(scratchTex, vUv - scratchShift).r;",
+          "  float l = dot(col, vec3(0.3, 0.5, 0.2));",
+          "  col += vec3(0.85, 0.92, 1.0) * s * scratchGain * (0.3 + 1.6 * l);",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        // 3. The dashboard's screen: the cover, or a glowing crosshair on dark glass.
+        var SCREEN_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+        ].join("\n");
+        var SCREEN_FS = [
+          "uniform sampler2D coverTex;",
+          "uniform float hasCover, glow;",
+          "uniform vec3 mainCol;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  vec2 p = vUv - 0.5;",
+          "  float r = length(p);",
+          "  vec3 col;",
+          "  if (hasCover > 0.5) {",
+          "    col = texture2D(coverTex, vUv).rgb * (0.88 + 0.14 * glow);",
+          "  } else {",
+          "    float ax = abs(p.x), ay = abs(p.y);",
+          "    float arms = (exp(-ax * 150.0) * step(0.07, ay) + exp(-ay * 150.0) * step(0.07, ax)) * step(r, 0.4);",
+          "    float ring = exp(-abs(r - 0.24) * 110.0);",
+          "    float ticks = exp(-abs(r - 0.33) * 140.0) * step(0.86, abs(cos(atan(p.y, p.x) * 4.0)));",
+          "    float dot = exp(-r * r * 1400.0);",
+          "    col = vec3(0.008, 0.016, 0.026) + mainCol * (0.1 * exp(-r * 5.0) + (0.9 * arms + 0.7 * ring + 0.6 * ticks + dot) * (0.7 + 0.4 * glow));",
+          "  }",
+          // faint lines and a sheen on the glass
+          "  col *= 0.95 + 0.05 * cos(vUv.y * 6.2831853 * 54.0);",
+          "  col += vec3(0.05, 0.06, 0.08) * smoothstep(0.2, 0.0, abs(vUv.x - vUv.y * 0.6 - 0.62));",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        /** A soft round glow texture (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 64;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.3, "rgba(255,255,255,0.35)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 64, 64);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** Each voxel face: full brightness, darker at its edges (the voxel seams). */
+        function seamTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 32;
+          var g = c.getContext("2d");
+          g.fillStyle = "rgb(120,120,120)";
+          g.fillRect(0, 0, 32, 32);
+          g.fillStyle = "rgb(190,190,190)";
+          g.fillRect(1, 1, 30, 30);
+          g.fillStyle = "rgb(255,255,255)";
+          g.fillRect(3, 3, 26, 26);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** Fine scratches on the glass: long faint wiper arcs and short nicks, the same every time. */
+        function drawScratches(c) {
+          var g = c.getContext("2d");
+          g.fillStyle = "#000";
+          g.fillRect(0, 0, c.width, c.height);
+          var rng = V.mulberry32(M.SEED + 5);
+          g.lineCap = "round";
+          for (var i = 0; i < 46; i++) {
+            var cx = 960 + (rng() - 0.5) * 1400;
+            var cy = 1250 + rng() * 700;
+            var r = 500 + rng() * 900;
+            var a0 = -Math.PI / 2 + (rng() - 0.5) * 1.6;
+            var span = 0.05 + rng() * 0.22;
+            g.strokeStyle = "rgba(255,255,255," + (0.12 + 0.3 * rng()).toFixed(3) + ")";
+            g.lineWidth = 0.6 + 0.7 * rng();
+            g.beginPath();
+            g.arc(cx, cy, r, a0, a0 + span);
+            g.stroke();
+          }
+          for (var j = 0; j < 140; j++) {
+            var x = rng() * 1920,
+              y = rng() * 1080;
+            var ang = rng() * Math.PI;
+            var len = 6 + rng() * 46;
+            g.strokeStyle = "rgba(255,255,255," + (0.15 + 0.4 * rng()).toFixed(3) + ")";
+            g.lineWidth = 0.5 + 0.6 * rng();
+            g.beginPath();
+            g.moveTo(x, y);
+            g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+            g.stroke();
+          }
+        }
+
+        // ---------- the HUD's text (title and artist), drawn once per settings change ----------
+        var textCanvas = document.createElement("canvas");
+        textCanvas.width = 1920;
+        textCanvas.height = 300;
+        var tctx = textCanvas.getContext("2d");
+        function spaced(ctx, px) {
+          if ("letterSpacing" in ctx) ctx.letterSpacing = px.toFixed(1) + "px";
+        }
+        function drawText() {
+          var ctx = tctx;
+          var font = '"' + setting("font") + '", sans-serif';
+          var main = V.hexToRGB(setting("mainColor"));
+          var acc = V.hexToRGB(setting("accentColor"));
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+
+          // the title: spaced capitals, as big as fits on one line, else two, shrinking as needed
+          var SPACE = 0.2;
+          var title = String(setting("title") || "")
+            .toUpperCase()
+            .trim();
+          var measure = function (s) {
+            ctx.font = "600 100px " + font;
+            spaced(ctx, SPACE * 100);
+            return ctx.measureText(s).width / 100;
+          };
+          var fit = M.fitTitle(title, measure, TITLE.width, 1, 76, 46);
+          if (fit.lines.length > 1) fit = M.fitTitle(title, measure, TITLE.width, 2, 56, 24);
+          var size = fit.size;
+          var lineH = size * 1.18;
+          var widest = 0;
+          for (var w = 0; w < fit.lines.length; w++)
+            widest = Math.max(widest, measure(fit.lines[w]) * size);
+          var boxH = TITLE.bottom - TITLE.top;
+          var k = Math.min(1, boxH / Math.max(fit.lines.length * lineH, 1), TITLE.width / widest);
+          ctx.font = "600 " + size + "px " + font;
+          spaced(ctx, SPACE * size);
+          var cy = (TITLE.top + TITLE.bottom) / 2;
+          for (var i = 0; i < fit.lines.length; i++) {
+            var ly = cy + (i - (fit.lines.length - 1) / 2) * lineH * k;
+            // (letter spacing trails the last letter: shift by half of it to stay centred)
+            ctx.setTransform(k, 0, 0, k, 960 + (SPACE * size * k) / 2, ly);
+            ctx.shadowColor = css(main, 0.9);
+            ctx.shadowBlur = 26 * k;
+            ctx.fillStyle = css(mix(acc, WHITE, 0.25), 1);
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.shadowBlur = 8 * k;
+            ctx.fillText(fit.lines[i], 0, 0);
+          }
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+          // the artist: smaller, wider spaced, in the main colour, under the title
+          var artist = String(setting("artist") || "")
+            .toUpperCase()
+            .trim();
+          if (artist) {
+            var asize = ARTIST.size;
+            var aspace = 0.42;
+            var aw = function (s) {
+              ctx.font = "400 " + s + "px " + font;
+              spaced(ctx, aspace * s);
+              return ctx.measureText(artist).width;
+            };
+            while (aw(asize) > ARTIST.width && asize > 14) asize -= 1;
+            var squeeze = Math.min(1, ARTIST.width / Math.max(aw(asize), 1));
+            ctx.setTransform(squeeze, 0, 0, 1, 960 + (aspace * asize * squeeze) / 2, ARTIST.y);
+            ctx.shadowColor = css(main, 0.85);
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = css(mix(main, WHITE, 0.45), 0.95);
+            ctx.fillText(artist, 0, 0);
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = "transparent";
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          spaced(ctx, 0);
+        }
+
+        // the cover as a circle, for the HUD's middle without the cockpit (drawn when it changes)
+        var coverDisc = document.createElement("canvas");
+        coverDisc.width = coverDisc.height = COVER_R * 2;
+        function drawCoverDisc() {
+          var g = coverDisc.getContext("2d");
+          g.clearRect(0, 0, coverDisc.width, coverDisc.height);
+          if (!hasCover()) return;
+          g.save();
+          g.beginPath();
+          g.arc(COVER_R, COVER_R, COVER_R, 0, 2 * Math.PI);
+          g.clip();
+          g.drawImage(coverImg, 0, 0, COVER_R * 2, COVER_R * 2);
+          g.restore();
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials, audio
+         * and the text (apply), and a new preview size only resizes (resize), so the live
+         * preview never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var hudCanvas = document.getElementById("hud");
+          var hctx = hudCanvas.getContext("2d");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.setClearColor(0x000000, 1);
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var flatCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+          // ----- 1. the sky, drawn into its own 8-bit target -----
+          var skyTarget = keep(
+            new THREE.WebGLRenderTarget(1920, 1080, {
+              type: THREE.UnsignedByteType,
+              depthBuffer: false,
+              generateMipmaps: false,
+              minFilter: THREE.LinearFilter,
+              magFilter: THREE.LinearFilter,
+            }),
+          );
+          var skyMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: SKY_FS,
+              uniforms: {
+                skyTop: { value: new THREE.Color() },
+                skyMid: { value: new THREE.Color() },
+                glowCol: { value: new THREE.Color() },
+                glowCore: { value: new THREE.Color() },
+                cloudLo: { value: new THREE.Color() },
+                cloudHi: { value: new THREE.Color() },
+                moonCol: { value: new THREE.Color() },
+                hazeCol: { value: new THREE.Color() },
+                starCol: { value: new THREE.Color() },
+                moon: { value: new THREE.Vector3(MOON.x, MOON.y, MOON.r) },
+                shake: { value: new THREE.Vector2(0, 0) },
+                travel: { value: new THREE.Vector2(0, 0) },
+                roll: { value: 0 },
+                horizon: { value: HORIZON },
+                focal: { value: FOCAL },
+                px: { value: 1 },
+                freq: { value: M.CLOUD_FREQ },
+                lvGlow: { value: 1 },
+                lvCloud: { value: 1 },
+                lvMoon: { value: 1 },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var skyQuad = new THREE.Mesh(quad, skyMat);
+          skyQuad.frustumCulled = false;
+          var skyScene = new THREE.Scene();
+          skyScene.add(skyQuad);
+
+          // ----- 2. the cockpit, with the window (sky and scratches) behind it -----
+          var scene = new THREE.Scene();
+          var camera = new THREE.PerspectiveCamera(CAM_FOV, 1920 / 1080, 10, 600);
+          camera.position.set(0, 0, CAM_DIST);
+          camera.lookAt(0, 0, 0);
+
+          var scratchCanvas = document.createElement("canvas");
+          scratchCanvas.width = 1920;
+          scratchCanvas.height = 1080;
+          drawScratches(scratchCanvas);
+          var scratchTex = keep(new THREE.CanvasTexture(scratchCanvas));
+          scratchTex.minFilter = THREE.LinearFilter;
+          scratchTex.generateMipmaps = false;
+          var windowMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: WINDOW_FS,
+              uniforms: {
+                skyTex: { value: skyTarget.texture },
+                scratchTex: { value: scratchTex },
+                scratchShift: { value: new THREE.Vector2(0, 0) },
+                scratchGain: { value: SCRATCH_GAIN },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var windowQuad = new THREE.Mesh(quad, windowMat);
+          windowQuad.frustumCulled = false;
+          windowQuad.renderOrder = -10;
+          scene.add(windowQuad);
+
+          var cockpit = new THREE.Group();
+          scene.add(cockpit);
+          var parts = CP.buildCockpit();
+          var box = keep(new THREE.BoxGeometry(1, 1, 1));
+          var seams = keep(seamTexture());
+          seams.minFilter = THREE.LinearMipmapLinearFilter;
+          var metal = keep(new THREE.MeshLambertMaterial({ color: 0xffffff, map: seams }));
+          var litMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, map: seams }));
+          var rng = V.mulberry32(M.SEED + 3);
+          function voxels(list, material, colour) {
+            var mesh = new THREE.InstancedMesh(box, material, list.length);
+            var m = new THREE.Matrix4();
+            var c = new THREE.Color();
+            for (var i = 0; i < list.length; i++) {
+              var v = list[i];
+              m.makeTranslation(v[0], v[1], v[2]);
+              mesh.setMatrixAt(i, m);
+              var rgb = colour(v);
+              mesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2]));
+            }
+            keep(mesh);
+            cockpit.add(mesh);
+            return mesh;
+          }
+          function shaded(v) {
+            var s = CP.SHADES[v[3]] * (0.94 + 0.06 * rng());
+            return scale3(METAL, s);
+          }
+          voxels(parts.struts, metal, shaded);
+          voxels(parts.dash, metal, shaded);
+          // the lit parts: their colours follow the settings (apply)
+          var LIGHT_RGB = {
+            amber: [1.0, 0.62, 0.18],
+            green: [0.35, 1.0, 0.55],
+            red: [1.0, 0.25, 0.22],
+            white: [0.95, 0.97, 1.0],
+          };
+          function lightRGB(key, main) {
+            return key === "main" ? main : LIGHT_RGB[key];
+          }
+          var tickMesh = voxels(parts.ticks, litMat, function () {
+            return WHITE;
+          });
+          var buttonMesh = voxels(parts.buttons, litMat, function () {
+            return WHITE;
+          });
+          var meterMesh = voxels(parts.meter, litMat, function () {
+            return WHITE;
+          });
+          // the needles: half-size voxels, each turned about its gauge's centre
+          var needleMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          var needles = parts.gauges.map(function (g, i) {
+            var pivot = new THREE.Group();
+            pivot.position.set(g.x, g.y, g.z);
+            pivot.scale.setScalar(CP.NEEDLE_SCALE);
+            var mesh = new THREE.InstancedMesh(box, needleMat, parts.needles[i].length);
+            var m = new THREE.Matrix4();
+            parts.needles[i].forEach(function (v, j) {
+              mesh.setMatrixAt(j, m.makeTranslation(v[0], v[1], v[2]));
+            });
+            keep(mesh);
+            pivot.add(mesh);
+            cockpit.add(pivot);
+            return pivot;
+          });
+          // the cover screen
+          var coverTex = keep(new THREE.Texture(coverImg));
+          coverTex.minFilter = THREE.LinearFilter;
+          coverTex.generateMipmaps = false;
+          var S = parts.screen;
+          var screenMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: SCREEN_VS,
+              fragmentShader: SCREEN_FS,
+              uniforms: {
+                coverTex: { value: coverTex },
+                hasCover: { value: 0 },
+                glow: { value: 0 },
+                mainCol: { value: new THREE.Color() },
+              },
+            }),
+          );
+          var screen = new THREE.Mesh(
+            keep(new THREE.PlaneGeometry(2 * S.half + 0.6, 2 * S.half + 0.6)),
+            screenMat,
+          );
+          screen.position.set(S.x, S.y, S.z);
+          cockpit.add(screen);
+          onCover = function () {
+            coverTex.needsUpdate = hasCover();
+            drawCoverDisc();
+          };
+          onCover();
+
+          // glows: coloured light can't rely on 8-bit bloom, so each gets an additive sprite
+          var glowTex = keep(glowTexture());
+          function glowSprite(rgb, x, y, z, size, opacity) {
+            var mat = keep(
+              new THREE.SpriteMaterial({
+                map: glowTex,
+                color: new THREE.Color(rgb[0], rgb[1], rgb[2]),
+                blending: THREE.AdditiveBlending,
+                transparent: true,
+                depthWrite: false,
+                opacity: opacity,
+              }),
+            );
+            var sprite = new THREE.Sprite(mat);
+            sprite.position.set(x, y, z);
+            sprite.scale.set(size, size, 1);
+            cockpit.add(sprite);
+            return sprite;
+          }
+          var buttonGlows = [];
+          for (var b = 0; b < parts.buttons.length; b += 2) {
+            var bv = parts.buttons[b];
+            buttonGlows.push({
+              key: CP.LIGHTS[bv[3]],
+              sprite: glowSprite(WHITE, bv[0] + 0.5, bv[1], bv[2] + 0.8, 4.2, 0.45),
+            });
+          }
+          var meterGlows = parts.meter.map(function (v) {
+            return glowSprite(WHITE, v[0], v[1], v[2] + 0.8, 3.4, 0.5);
+          });
+          var screenGlow = glowSprite(WHITE, S.x, S.y, S.z + 1.5, 2 * S.half * 2.4, 0.18);
+
+          // light: faint moonlight from ahead and up to the right, the horizon's glow from below
+          // ahead, a dim fill so the faces facing you still show, and the screen's own light
+          // (three.js's matt material divides by π: these are π times the brightness wanted)
+          var hemi = new THREE.HemisphereLight(0xffffff, 0x000000, 1.3);
+          scene.add(hemi);
+          var moonLight = new THREE.DirectionalLight(0xffffff, 6);
+          moonLight.position.set(60, 45, -100);
+          scene.add(moonLight);
+          var glowLight = new THREE.DirectionalLight(0xffffff, 4.5);
+          glowLight.position.set(-10, -40, -100);
+          scene.add(glowLight);
+          var fill = new THREE.DirectionalLight(0xffffff, 0.9);
+          fill.position.set(0, 25, 100);
+          scene.add(fill);
+          var screenLight = new THREE.PointLight(0xffffff, 0, 0, 1.6);
+          screenLight.position.set(S.x, S.y, S.z + 6);
+          scene.add(screenLight);
+
+          // where the timer's panel is on screen (the cockpit never moves but for the shake)
+          var L = parts.lcd;
+          var lcdAt = new THREE.Vector3(L.x, L.y, L.z).project(camera);
+          var lcdEdge = new THREE.Vector3(L.x + L.halfW, L.y + L.halfH, L.z).project(camera);
+          var LCD = {
+            x: (lcdAt.x + 1) * 960,
+            y: (1 - lcdAt.y) * 540,
+            w: (lcdEdge.x - lcdAt.x) * 960 * 2,
+            h: (lcdEdge.y - lcdAt.y) * 540 * 2,
+          };
+
+          var W = 1920,
+            H = 1080,
+            SCALE = 1;
+          function resize(scale) {
+            SCALE = scale;
+            W = Math.round(1920 * scale);
+            H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            skyTarget.setSize(Math.round(W * SKY_RES), Math.round(H * SKY_RES));
+            skyMat.uniforms.px.value = 1 / (scale * SKY_RES);
+            hudCanvas.width = W;
+            hudCanvas.height = H;
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio, text (no new WebGL objects) -----
+          var audio, specAudio, INT, BOOST, LOUD, MAIN, ACC, SHAKE_ON, COCKPIT, TIMER;
+          var ANGLES_MID, ANGLES_OUT;
+          var loudTableFor = null;
+          function apply() {
+            INT = Number(setting("intensity"));
+            if (!(INT >= 0)) INT = 1;
+            BOOST = Number(setting("spectrumBoost")) || 1;
+            SHAKE_ON = setting("shakeOnBeat") === true;
+            COCKPIT = setting("showCockpit") === true;
+            TIMER = setting("showTimer") === true;
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            specAudio = V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: Number(setting("spectrumLow")),
+              spectrumHigh: Number(setting("spectrumHigh")),
+              spectrumBoost: 1, // the ticks' shape is unboosted; the boost sets their height
+              spectrumCount: 48,
+            });
+            ANGLES_MID = V.ringAngles(V.bandsToRingCount(Number(setting("bandCount")), 72), 360);
+            ANGLES_OUT = V.ringAngles(V.bandsToRingCount(Number(setting("bandCount")), 120), 360);
+            // the running loudness total for the clouds' travel (once per song)
+            if (loudTableFor !== window.AUDIO_DATA) {
+              LOUD = M.loudTable(window.AUDIO_DATA.frames, window.AUDIO_DATA.fps);
+              loudTableFor = window.AUDIO_DATA;
+            }
+            var main = V.hexToRGB(setting("mainColor"));
+            var acc = V.hexToRGB(setting("accentColor"));
+            MAIN = main;
+            ACC = acc;
+            var u = skyMat.uniforms;
+            function set(name, rgb) {
+              u[name].value.setRGB(rgb[0], rgb[1], rgb[2]);
+            }
+            var navy = [0.012, 0.022, 0.06];
+            set("skyTop", add3([0.003, 0.005, 0.016], scale3(main, 0.02)));
+            set("skyMid", add3(scale3(navy, 1.3), scale3(main, 0.11)));
+            set("glowCol", main);
+            set("glowCore", mix(main, WHITE, 0.62));
+            set("cloudLo", add3([0.005, 0.009, 0.024], scale3(main, 0.05)));
+            set("cloudHi", add3([0.02, 0.025, 0.05], scale3(mix(main, acc, 0.3), 0.55)));
+            set("hazeCol", add3([0.02, 0.025, 0.05], scale3(main, 0.45)));
+            var moonRGB = scale3(mix(acc, WHITE, 0.55), 0.93);
+            set("moonCol", moonRGB);
+            set("starCol", mix(acc, WHITE, 0.6));
+            // the cockpit's light: the moon's pale light, the horizon's glow colour
+            moonLight.color.setRGB(moonRGB[0], moonRGB[1], moonRGB[2]);
+            glowLight.color.setRGB(main[0], main[1], main[2]);
+            var sky = mix(main, navy, 0.55);
+            hemi.color.setRGB(sky[0], sky[1], sky[2]);
+            screenLight.color.setRGB(main[0], main[1], main[2]);
+            screenMat.uniforms.mainCol.value.setRGB(main[0], main[1], main[2]);
+            var c = new THREE.Color();
+            parts.ticks.forEach(function (v, i) {
+              var rgb = scale3(lightRGB(CP.LIGHTS[v[3]], main), 0.85);
+              tickMesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2]));
+            });
+            tickMesh.instanceColor.needsUpdate = true;
+            parts.buttons.forEach(function (v, i) {
+              var rgb = scale3(lightRGB(CP.LIGHTS[v[3]], main), 0.8);
+              buttonMesh.setColorAt(i, c.setRGB(rgb[0], rgb[1], rgb[2]));
+            });
+            buttonMesh.instanceColor.needsUpdate = true;
+            buttonGlows.forEach(function (g) {
+              var rgb = lightRGB(g.key, main);
+              g.sprite.material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+            });
+            var needleRGB = mix(acc, main, 0.25);
+            needleMat.color.setRGB(needleRGB[0], needleRGB[1], needleRGB[2]);
+            screenGlow.material.color.setRGB(main[0], main[1], main[2]);
+            cockpit.visible = COCKPIT;
+            drawText();
+          }
+          apply();
+
+          /** The meter's LED colours, left to right: green, then amber, then red. */
+          function meterRGB(i, n) {
+            var f = i / Math.max(1, n - 1);
+            return f < 0.62 ? LIGHT_RGB.green : f < 0.82 ? LIGHT_RGB.amber : LIGHT_RGB.red;
+          }
+
+          // ----- the HUD (2D) -----
+          function ringPath(ctx, angles, radius, lens, dir) {
+            for (var k = 0; k < angles.length; k++) {
+              var p = V.ringPoint(angles[k], "circle");
+              var len = lens[k];
+              if (!(len > 0.4)) continue;
+              ctx.moveTo(HUD.x + p[0] * radius, HUD.y + p[1] * radius);
+              ctx.lineTo(HUD.x + p[0] * (radius + dir * len), HUD.y + p[1] * (radius + dir * len));
+            }
+          }
+          function glowStroke(ctx, rgb, width, alpha, level) {
+            var thin = Math.max(width, 1.1 / SCALE);
+            ctx.strokeStyle = css(rgb, 0.16 * alpha * level);
+            ctx.lineWidth = thin * 4;
+            ctx.stroke();
+            ctx.strokeStyle = css(mix(rgb, WHITE, 0.25), alpha * Math.min(1, level));
+            ctx.lineWidth = thin;
+            ctx.stroke();
+          }
+          function drawHud(t, songTime, shake, env, lv) {
+            var ctx = hctx;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            ctx.setTransform(SCALE, 0, 0, SCALE, shake[0] * SCALE, shake[1] * SCALE);
+            ctx.lineCap = "round";
+            var pulse = M.ringPulse(env);
+            var level = lv.hud;
+            var spec = specAudio.spectrum(t);
+
+            // the outer two rings: spectrum ticks round a thin circle (outward, then inward)
+            var rOut = HUD.outer * pulse,
+              rMid = HUD.middle * pulse;
+            var outLens = M.tickLengths(
+              V.ringValues(spec, ANGLES_OUT, 360),
+              INT,
+              BOOST,
+              HUD.outTick,
+            );
+            var midLens = M.tickLengths(
+              V.ringValues(spec, ANGLES_MID, 360),
+              INT,
+              BOOST,
+              HUD.inTick,
+            );
+            ctx.beginPath();
+            ctx.arc(HUD.x, HUD.y, rOut, 0, 2 * Math.PI);
+            ctx.moveTo(HUD.x + rMid, HUD.y);
+            ctx.arc(HUD.x, HUD.y, rMid, 0, 2 * Math.PI);
+            glowStroke(ctx, MAIN, 1.4, 0.7, level);
+            ctx.beginPath();
+            ringPath(ctx, ANGLES_OUT, rOut + 3, outLens, 1);
+            glowStroke(ctx, mix(MAIN, ACC, 0.2), 2.6, 0.95, level);
+            ctx.beginPath();
+            ringPath(ctx, ANGLES_MID, rMid - 3, midLens, -1);
+            glowStroke(ctx, mix(MAIN, ACC, 0.35), 2.2, 0.9, level);
+
+            // the inner ring: three arcs and three markers, turning slowly
+            var turn = M.innerTurn(songTime);
+            var rIn = HUD.inner * pulse;
+            ctx.beginPath();
+            for (var s = 0; s < 3; s++) {
+              var a0 = turn + (s * 2 * Math.PI) / 3 + 0.16;
+              ctx.moveTo(HUD.x + Math.cos(a0) * rIn, HUD.y + Math.sin(a0) * rIn);
+              ctx.arc(HUD.x, HUD.y, rIn, a0, a0 + (2 * Math.PI) / 3 - 0.32);
+              var am = turn + (s * 2 * Math.PI) / 3;
+              ctx.moveTo(HUD.x + Math.cos(am) * (rIn - 7), HUD.y + Math.sin(am) * (rIn - 7));
+              ctx.lineTo(HUD.x + Math.cos(am) * (rIn + 7), HUD.y + Math.sin(am) * (rIn + 7));
+            }
+            glowStroke(ctx, MAIN, 1.8, 0.85, level);
+            // four fixed marks on the outer ring, like a gunsight
+            ctx.beginPath();
+            for (var q = 0; q < 4; q++) {
+              var aq = (q * Math.PI) / 2;
+              ctx.moveTo(HUD.x + Math.cos(aq) * (rOut - 10), HUD.y + Math.sin(aq) * (rOut - 10));
+              ctx.lineTo(HUD.x + Math.cos(aq) * (rOut - 3), HUD.y + Math.sin(aq) * (rOut - 3));
+            }
+            glowStroke(ctx, MAIN, 1.6, 0.6, level);
+
+            // the middle: the cover (no cockpit) or a glowing dot
+            if (!COCKPIT && hasCover()) {
+              var cr = COVER_R * pulse;
+              ctx.drawImage(coverDisc, HUD.x - cr, HUD.y - cr, 2 * cr, 2 * cr);
+              ctx.beginPath();
+              ctx.arc(HUD.x, HUD.y, cr + 1, 0, 2 * Math.PI);
+              glowStroke(ctx, mix(MAIN, WHITE, 0.3), 1.6, 0.9, level);
+            } else {
+              var dotR = 26 * (1 + 0.35 * env);
+              var g = ctx.createRadialGradient(HUD.x, HUD.y, 0, HUD.x, HUD.y, dotR);
+              g.addColorStop(0, css(mix(MAIN, WHITE, 0.85), 0.95));
+              g.addColorStop(0.18, css(mix(MAIN, WHITE, 0.4), 0.7 * level));
+              g.addColorStop(0.45, css(MAIN, 0.18 * level));
+              g.addColorStop(1, css(MAIN, 0));
+              ctx.fillStyle = g;
+              ctx.beginPath();
+              ctx.arc(HUD.x, HUD.y, dotR, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+
+            // the title and the artist
+            ctx.drawImage(textCanvas, 0, 0);
+
+            // the timer: on the dashboard's panel, or at the bottom without the cockpit
+            if (TIMER) {
+              var clock = V.songClock(audio, t);
+              var text = V.formatClock(clock.elapsed) + " / " + V.formatClock(clock.total);
+              var font = '"' + setting("font") + '", sans-serif';
+              var at = COCKPIT
+                ? { x: LCD.x, y: LCD.y, size: Math.round(LCD.h * 0.62), width: LCD.w * 0.86 }
+                : { x: CLEAR_TIMER.x, y: CLEAR_TIMER.y, size: CLEAR_TIMER.size, width: 600 };
+              ctx.font = "600 " + at.size + "px " + font;
+              spaced(ctx, at.size * 0.12);
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              var tw = ctx.measureText(text).width;
+              var sq = Math.min(1, at.width / Math.max(tw, 1));
+              ctx.save();
+              ctx.translate(at.x + at.size * 0.06, at.y);
+              ctx.scale(sq, 1);
+              // a soft glow without a blur (blurring every frame is slow): a wide faint outline
+              ctx.lineJoin = "round";
+              ctx.strokeStyle = css(MAIN, 0.14);
+              ctx.lineWidth = at.size * 0.32;
+              ctx.strokeText(text, 0, 0);
+              ctx.strokeStyle = css(MAIN, 0.3);
+              ctx.lineWidth = at.size * 0.12;
+              ctx.strokeText(text, 0, 0);
+              ctx.fillStyle = css(mix(MAIN, WHITE, 0.5), 0.95);
+              ctx.fillText(text, 0, 0);
+              ctx.restore();
+              spaced(ctx, 0);
+            }
+          }
+
+          var lit = new THREE.Color();
+          function render(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, BEAT_RELEASE);
+            var lv = M.skyLevels(a.loud, env, INT);
+            var shake = M.shakeOffset(env, INT, songTime, SHAKE_ON, V.mulberry32);
+            var u = skyMat.uniforms;
+            u.lvGlow.value = lv.glow;
+            u.lvCloud.value = lv.cloud;
+            u.lvMoon.value = lv.moon;
+            u.shake.value.set(shake[0], shake[1]);
+            u.roll.value = M.bankAngle(songTime, V.mulberry32);
+            // the distance flown (only its repeat shows, so the shader never sees big numbers)
+            var data = window.AUDIO_DATA;
+            var travel = M.cloudTravel(
+              songTime,
+              M.loudSeconds(LOUD, data.fps, audio.offset, t, data.loudBefore || 0),
+              INT,
+            );
+            u.travel.value.set(
+              M.wrap(DRIFT * songTime, M.CLOUD_PERIOD),
+              M.wrap(travel, M.CLOUD_PERIOD),
+            );
+            windowMat.uniforms.scratchShift.value.set(shake[0] / 1920, -shake[1] / 1080);
+
+            if (COCKPIT) {
+              // the cockpit shakes with the view
+              camera.setViewOffset(1920, 1080, -shake[0], -shake[1], 1920, 1080);
+              var level = M.levels(audio, t);
+              needles[0].rotation.z = -M.needleAngle(level.loud);
+              needles[1].rotation.z = -M.needleAngle(level.low);
+              var on = M.meterLit(level.loud, parts.meter.length);
+              for (var i = 0; i < parts.meter.length; i++) {
+                var rgb = meterRGB(i, parts.meter.length);
+                var k = i < on ? 0.95 : 0.1;
+                meterMesh.setColorAt(i, lit.setRGB(rgb[0] * k, rgb[1] * k, rgb[2] * k));
+                meterGlows[i].visible = i < on;
+                meterGlows[i].material.color.setRGB(rgb[0], rgb[1], rgb[2]);
+              }
+              meterMesh.instanceColor.needsUpdate = true;
+              var has = hasCover();
+              screenMat.uniforms.hasCover.value = has ? 1 : 0;
+              screenMat.uniforms.glow.value = env;
+              screenLight.intensity = 700 * (0.75 + 0.35 * env);
+              screenGlow.material.opacity = 0.16 + 0.1 * env;
+            }
+
+            renderer.setRenderTarget(skyTarget);
+            renderer.render(skyScene, flatCam);
+            renderer.setRenderTarget(null);
+            renderer.render(scene, camera);
+            drawHud(t, songTime, shake, env, lv);
+          }
+          function textChanged() {
+            drawText();
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return {
+            render: render,
+            dispose: dispose,
+            apply: apply,
+            resize: resize,
+            textChanged: textChanged,
+          };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale), textChanged() }
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        // The text is drawn on a canvas: draw it again whenever a font arrives.
+        function fontsChanged() {
+          if (drawing) drawing.textChanged();
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            setCover(setting("cover"));
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>

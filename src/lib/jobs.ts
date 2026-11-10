@@ -84,18 +84,28 @@ export function sliceAnalysis(
   start: number,
   end: number,
   preroll: number = SECTION_PREROLL,
-): Analysis & { offset: number; sectionStart: number; songDuration: number } {
+): Analysis & {
+  offset: number;
+  sectionStart: number;
+  songDuration: number;
+  loudBefore: number;
+} {
   const fps = analysis.fps;
   const first = Math.max(0, Math.round((start - preroll) * fps));
   const last = Math.min(analysis.frames.length - 1, Math.round(end * fps));
   const from = first / fps;
   const round = (x: number) => Math.round(x * 1e6) / 1e6;
+  // The loudness so far (loud-seconds) before the kept analysis, for motion that travels with it.
+  let loudBefore = 0;
+  for (let i = 0; i < first; i++)
+    loudBefore += Math.max(0, Math.min(1, analysis.frames[i].l)) / fps;
   return {
     ...analysis,
     duration: round(end - start),
     offset: round(start - from),
     sectionStart: round(start),
     songDuration: round(analysis.duration),
+    loudBefore: round(loudBefore),
     frames: analysis.frames.slice(first, last + 1),
     hits: analysis.hits
       .filter(([t]) => t >= from && t <= end)

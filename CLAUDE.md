@@ -56,7 +56,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
 - [ ] M9 the last eight catalog templates (spec
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
-      [x] Deep Swell · [x] Silk Lights · [x] Late Show · [ ] Night Flight · [ ] Live Wire ·
+      [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [ ] Live Wire ·
       [ ] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
@@ -219,6 +219,12 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   (frame capture ≈ 2 min 36 s ≈ 5.2×), 25.1 MB per 30 s (the phone copy 15.5 MB). It sits at the
   6 min limit: the always-moving grid makes big files (≈ 2 min of encoding after the render);
   the camera drift and scanlines add only ≈ 10 % and 8 %.
+- Night Flight (three.js: the sky, moon and cloud sea as one full-screen shader into an 8-bit
+  target; 7,800 Lambert-lit voxels for the cockpit; the HUD on a 2D canvas over it): a 30 s Final
+  section of T-REX with a cover took 5 min 47 s in total with the phone copy (frame capture
+  2 min 9 s ≈ 4.3×), 14.8 MB per 30 s (the phone copy 15.6 MB). The beat shake moves in whole
+  pixels: sub-pixel shifts blurred every voxel seam and made the files 30 % bigger and the
+  render 40 s slower.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).

@@ -15,6 +15,8 @@ export type ToolkitAnalysis = {
   songDuration?: number;
   /** for a section: each Hz beat range's scale over the whole song (see beatScales) */
   beatScales?: Record<string, number>;
+  /** for a section: the loudness summed over the frames before the kept analysis (loud-seconds) */
+  loudBefore?: number;
 };
 
 export type BeatRange = { value: string; label: string; low?: number; high?: number };

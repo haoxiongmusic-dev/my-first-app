@@ -247,6 +247,16 @@ describe("sliceAnalysis", () => {
     expect(part.frames[0].l).toBe(0);
     expect(part.duration).toBe(3);
   });
+
+  it("records the loudness summed over the frames before the kept analysis", () => {
+    // loud-seconds: each frame's loudness (0..1) for 1/fps
+    const quiet = frames.map((f) => ({ ...f, l: 0.5 }));
+    const part = sliceAnalysis({ ...full, frames: quiet }, 7, 9);
+    expect(part.loudBefore).toBeCloseTo(0.5 * 1, 6); // 30 frames before 1 s
+    expect(sliceAnalysis({ ...full, frames: quiet }, 2, 5).loudBefore).toBe(0);
+    // values outside 0..1 count as 0..1
+    expect(sliceAnalysis(full, 7, 9).loudBefore).toBeCloseTo(1 - 1 / 30, 6);
+  });
 });
 
 describe("prepareJob with a section", () => {
