@@ -1,0 +1,38 @@
+{
+  "name": "Static Tower",
+  "description": "A narrow tower of old voxel TVs showing your picture under a stormy sky, lightning striking the top set on the hits, hairline spectrum lines along the horizon.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["picture"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "react"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "react", "font"],
+  "content": ["title", "artist", "picture"],
+  "presets": [
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#2affd8", "accentColor": "#ffffff", "react": "centre" }
+    },
+    {
+      "name": "Broadcast",
+      "thumbnail": "presets/broadcast.jpg",
+      "values": { "mainColor": "#ff3a3a", "accentColor": "#ffd0d0", "react": "all" }
+    },
+    {
+      "name": "Amber",
+      "thumbnail": "presets/amber.jpg",
+      "values": { "mainColor": "#ffb02a", "accentColor": "#fff0c0", "react": "centre" }
+    },
+    {
+      "name": "Ghost",
+      "thumbnail": "presets/ghost.jpg",
+      "values": { "mainColor": "#b0c0ff", "accentColor": "#ffffff", "react": "all" }
+    }
+  ]
+}
