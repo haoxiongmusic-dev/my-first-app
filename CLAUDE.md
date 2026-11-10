@@ -57,7 +57,7 @@ _why_ of choices in plain language, avoid jargon, and keep steps small.
       `docs/superpowers/specs/2026-11-10-m9-final-templates-design.md`, plan
       `docs/superpowers/plans/2026-11-10-m9-final-templates.md`), one branch and pull request each:
       [x] Deep Swell · [x] Silk Lights · [x] Late Show · [x] Night Flight · [x] Live Wire ·
-      [x] Static Tower · [ ] Hyper Tunnel · [ ] Moon Jelly
+      [x] Static Tower · [x] Hyper Tunnel · [ ] Moon Jelly
 - Roadmap after M6: an installable desktop app (Electron), then an online web version.
   **Project paused (2026-11-09).** Full online version options and the open questions:
   `docs/research/2026-11-09-full-online-version-options.md`.
@@ -241,6 +241,13 @@ Each milestone gets its own plan in `docs/superpowers/plans/` before any code is
   (frame capture 1 min 56 s ≈ 3.9×), 15.0 MB per 30 s (the phone copy 15.2 MB). An earlier run with
   the clouds drifting by sub-pixels and the stack swaying every frame took 6 min 5 s (partly
   run-to-run noise: HyperFrames' setup and audio steps vary by ≈ 20 s between runs).
+- Hyper Tunnel (three.js: the tunnel's walls as one full-screen shader that works out the octagon
+  per pixel, its neon lines as additive ribbons in 1080p pixels; 9,800 voxels for the robot with
+  a chrome "matcap" picture instead of real reflections; the HUD drawn in WebGL, its still parts as
+  one picture): a 30 s Final section of T-REX with a logo took 5 min 46 s in total with the phone
+  copy (frame capture 2 min 11 s ≈ 4.4×), 30.7 MB per 30 s (the phone copy 15.4 MB). Earlier runs
+  took 6:05–6:31: a full-size 2D-canvas HUD redrawn every frame slowed frame capture, and busier
+  walls, a faster tunnel and a robot that moved 6 times a second made bigger files.
 - RunPod (online test, 2026-11-09): the start-up check reports "graphics chip"; a 30 s Final
   section took ≈ 5 min in total, about the same as this PC (setup is a fixed ≈ 1.5 min, so the
   GPU should pull ahead on full songs; not measured yet).

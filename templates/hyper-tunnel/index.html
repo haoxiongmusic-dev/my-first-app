@@ -1,0 +1,1494 @@
+<!doctype html>
+<!--
+  Hyper Tunnel: a chrome voxel robot, waist up, wearing a chunky VR headset, stands in a neon
+  sci-fi tunnel rushing toward you. The tunnel: octagonal frames receding to a bright vanishing
+  point behind the robot's head, thin neon lines (the frames' edges, lit corner lines, jagged
+  circuit traces) on dark metal panels, cables sagging across its ceiling. Each frame's neon
+  follows a band of the spectrum (the nearest frames the lowest), so the spectrum runs down the
+  tunnel; on the beat the edges flash, the visor flares and the robot nods; on strong beats a soft
+  accent-coloured flare sweeps across from one side. The robot's head turns slowly and its arms
+  sway. Over everything a HUD frame: a thin rounded border (accent colour, main-colour corners),
+  bar meters at the top, thin side text, the artist and title at the bottom left, a vertical timer
+  on the right edge and your logo (if any) at the top right.
+  Spec: docs/superpowers/specs/2026-11-10-m9-final-templates-design.md §5.7
+
+  Built with three.js, following Prism Heart's rules: colour management off, no tone mapping and
+  linear output (preset colours come out exactly as picked), every render target 8-bit (half
+  float renders blank on this PC), the renderer built once (settings only update materials).
+    1. The tunnel: one full-screen shader works out which wall each pixel sees (an octagonal
+       prism, straight down the camera's view) and shades its dark panels, lit by the frames'
+       neon and fading into the vanishing point's glow. The neon lines are ribbons in 1080p
+       pixels, added on (a soft wide copy, then a thin bright core); the cables are dark ribbons.
+    2. The robot: its voxels (assets/robot-voxels.js) as instanced cubes a little smaller than
+       the grid, one mesh per part (head, visor, cable, torso, arms), drawn with a chrome "matcap"
+       (a small picture of a chrome ball in the tunnel's light, drawn once per settings change):
+       glossy reflections without real ones, cheap to draw.
+    3. The flare: one soft band of accent light added over everything.
+    4. The HUD, drawn last in WebGL: the still parts (border, corners, side text, title, logo)
+       drawn on a 2D canvas only when settings, fonts or the logo change and shown as one
+       picture; the meters and the crawling ticks as small quads each frame; the timer as a
+       little picture redrawn when its text changes. (A full-size 2D canvas redrawn every frame
+       made the render slower.)
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion maths lives in
+  assets/tunnel-motion.js (unit-tested).
+  The logo arrives as a picture location (assets/images/logo.jpg in an export, the image route in
+  the preview) or "": no logo shows nothing there.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Orbitron","options":[
+      {"value":"Orbitron","label":"Orbitron"},
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"logo","type":"image","label":"Logo","default":"","fit":"square"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#2ad9ff"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#ff2abf"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"finish","type":"enum","label":"Robot finish","default":"silver","options":[
+      {"value":"silver","label":"Silver"},
+      {"value":"gold","label":"Gold"}]},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"4","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":30,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/three-kit.js"></script>
+    <script src="assets/robot-voxels.js"></script>
+    <script src="assets/tunnel-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Orbitron";
+        font-weight: 400;
+        src: url("assets/fonts/orbitron-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Orbitron";
+        font-weight: 700;
+        src: url("assets/fonts/orbitron-700.woff2") format("woff2");
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #logoImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family lets HyperFrames bundle them all for the Font setting. */
+      .f-orbitron {
+        font-family: "Orbitron";
+      }
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      #fontPreload b {
+        font-weight: 700;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="2"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="logoImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-orbitron">Aa1<b>Aa1</b></span
+      ><span class="f-montserrat">Aa1<b>Aa1</b></span
+      ><span class="f-inter">Aa1<b>Aa1</b></span> <span class="f-outfit">Aa1<b>Aa1</b></span
+      ><span class="f-poppins">Aa1<b>Aa1</b></span> <span class="f-lato">Aa1<b>Aa1</b></span
+      ><span class="f-oswald">Aa1<b>Aa1</b></span> <span class="f-playfair">Aa1<b>Aa1</b></span
+      ><span class="f-garamond">Aa1<b>Aa1</b></span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var K = window.THREE_KIT;
+        var THREE = K.THREE;
+        var M = window.TunnelMotion;
+        var ROBOT = window.HyperTunnelRobot;
+        // Colours are plain display values, as in the other WebGL templates.
+        THREE.ColorManagement.enabled = false;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        // ---------- the layout (1080p pixels, y down) ----------
+        var VP = { x: 960, y: 300 }; // the tunnel's vanishing point, behind the robot's head
+        var FOCAL = 700; // the tunnel camera's focal length, px
+        var CAM = { x: 0, y: 0.9 }; // the tunnel camera, off the tunnel's axis (tunnel units)
+        var NEAR_CLIP = 0.7; // tunnel units: lines nearer than this are cut off
+        var INSET = 20; // the HUD border's inset
+        var TITLE = { x: 66, bottom: 1012, width: 700 };
+        var ARTIST = { size: 24, width: 700 };
+        var METER = { count: 28, x: 960, base: 74, bar: 6, gap: 5, max: 34 };
+        var LOGO = { x: 1764, y: 46, size: 110 };
+        var TIMER = { x: 1873, y: 640, size: 20 };
+        var FRAMES = M.FRAME_COUNT;
+        var R = M.APOTHEM;
+        var D = M.FRAME_SPACING;
+        var WHITE = [1, 1, 1];
+
+        // ---------- the robot's place (robot voxel units; about 11 px each at its middle) ----------
+        var ROBOT_FOV = 26;
+        var ROBOT_DIST = 540 / 11 / Math.tan(((ROBOT_FOV / 2) * Math.PI) / 180);
+        var ROBOT_CAM_Y = 44; // a little above the head: the shoulders' tops catch the light
+        var ROBOT_SHIFT = 282; // px: the picture moves up so the head sits ≈ 30 % from the top
+        var BODY_TURN = (-15 * Math.PI) / 180; // three-quarter pose
+        var VOXEL = 0.94; // cube size: the gaps read as voxel seams
+        var PARTS = ROBOT.buildRobot();
+
+        /** [r, g, b] 0..1 mixes. */
+        function mix(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        function scale3(a, k) {
+          return [a[0] * k, a[1] * k, a[2] * k];
+        }
+        function css(rgb, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, rgb[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, rgb[2])) * 255) +
+            "," +
+            alpha +
+            ")"
+          );
+        }
+
+        // ---------- the logo ----------
+        // The location is set at once, so the page's own loading waits for it; the HUD is drawn
+        // again when it arrives. A logo that fails to load is simply left out.
+        var logoImg = document.getElementById("logoImg");
+        var logoSrc = "";
+        var logoLoaded = false;
+        var onLogo = null; // set below: redraws the still HUD
+        logoImg.addEventListener("load", function () {
+          logoLoaded = true;
+          if (onLogo) onLogo();
+          draw(Math.max(0, lastTime));
+        });
+        logoImg.addEventListener("error", function () {
+          logoLoaded = false;
+          if (onLogo) onLogo();
+          draw(Math.max(0, lastTime));
+        });
+        function setLogo(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === logoSrc) return;
+          logoSrc = src;
+          logoLoaded = false;
+          if (onLogo) onLogo();
+          if (src) logoImg.src = src;
+          else logoImg.removeAttribute("src");
+        }
+        function hasLogo() {
+          return logoLoaded && logoImg.naturalWidth > 0;
+        }
+        setLogo(setting("logo"));
+
+        // ---------- shaders ----------
+        var QUAD_VS = [
+          "varying vec2 vUv;",
+          "void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+        ].join("\n");
+
+        // 1. The tunnel's walls: each pixel's ray from the tunnel camera (looking straight down
+        // the tunnel, its vanishing point at vp) meets one of the octagon's eight walls; the walls
+        // are dark metal panels between the frames, lit by the frames' neon, fading into the
+        // vanishing point's glow far away.
+        var TUNNEL_FS = [
+          "uniform vec2 vp, cam;",
+          "uniform float focal, apothem, spacing, d0, wash, vpGlow;",
+          "uniform float levels[" + FRAMES + "];",
+          "uniform vec3 mainCol, accCol, vpCol;",
+          "varying vec2 vUv;",
+          "float levelAt(float k){",
+          "  float v = 0.0;",
+          "  for (int i = 0; i < " +
+            FRAMES +
+            "; i++) { if (abs(float(i) - k) < 0.5) v = levels[i]; }",
+          "  return v;",
+          "}",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  vec2 d = vec2(p.x - vp.x, vp.y - p.y) / focal;",
+          "  float t = 400.0;",
+          "  vec2 nrm = vec2(1.0, 0.0);",
+          "  for (int i = 0; i < 8; i++) {",
+          "    float a = float(i) * 0.78539816;",
+          "    vec2 n = vec2(cos(a), sin(a));",
+          "    float dn = dot(d, n);",
+          "    if (dn > 1e-5) {",
+          "      float ti = (apothem - dot(cam, n)) / dn;",
+          "      if (ti < t) { t = ti; nrm = n; }",
+          "    }",
+          "  }",
+          // the panels: dark smooth metal, the floor a little lighter (kept plain: the whole
+          // tunnel moves every frame, and the neon lines carry that motion)
+          "  vec3 col = vec3(0.024, 0.028, 0.036) * (1.0 - 0.38 * nrm.y);",
+          // the neon of the frames either side lights the panels near them
+          "  float kf = (t - d0) / spacing;",
+          "  float k1 = ceil(kf);",
+          "  float k0 = k1 - 1.0;",
+          "  float l0 = k0 >= 0.0 ? levelAt(k0) : levelAt(0.0);",
+          "  float l1 = levelAt(min(k1, " + (FRAMES - 1).toFixed(1) + "));",
+          "  float near0 = t - (d0 + k0 * spacing);",
+          "  float near1 = (d0 + k1 * spacing) - t;",
+          "  float g = l0 * exp(-max(near0, 0.0) / 1.4) + l1 * exp(-max(near1, 0.0) / 1.4);",
+          "  col += mainCol * g * 0.16;",
+          // a soft accent wash on the left walls (and from the flares)
+          "  col += accCol * wash * max(0.0, -nrm.x * 0.8 - nrm.y * 0.3) * exp(-t / 30.0);",
+          // far away the walls fade into the vanishing point's light
+          "  float fog = 1.0 - exp(-t / 48.0);",
+          "  col = mix(col, vpCol * 0.32, fog);",
+          "  vec2 q = p - vp;",
+          "  float r2 = dot(q, q);",
+          "  col += vpCol * vpGlow * (0.95 * exp(-r2 / 7200.0) + 0.3 * exp(-r2 / 90000.0));",
+          "  vec2 v = (p - vec2(960.0, 560.0)) / vec2(960.0, 560.0);",
+          "  col *= 1.0 - 0.35 * smoothstep(0.6, 1.5, length(v));",
+          "  gl_FragColor = vec4(col, 1.0);",
+          "}",
+        ].join("\n");
+
+        // Lines: ribbons in 1080p pixels, each vertex knowing which side of the line it is on
+        // (edge -1..1) and how sharp the line's edge is; added on (neon) or blended (cables).
+        var LINE_VS = [
+          "attribute float edge;",
+          "attribute float sharp;",
+          "attribute vec4 tint;",
+          "varying float vEdge;",
+          "varying float vSharp;",
+          "varying vec4 vTint;",
+          "void main(){",
+          "  vEdge = edge; vSharp = sharp; vTint = tint;",
+          "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);",
+          "}",
+        ].join("\n");
+        var NEON_FS = [
+          "varying float vEdge;",
+          "varying float vSharp;",
+          "varying vec4 vTint;",
+          "void main(){",
+          "  float d = clamp(abs(vEdge), 0.0, 1.0);",
+          "  float prof = pow(max(1.0 - d, 0.0), vSharp);",
+          "  gl_FragColor = vec4(vTint.rgb * prof, 1.0);",
+          "}",
+        ].join("\n");
+        var CABLE_FS = [
+          "varying float vEdge;",
+          "varying float vSharp;",
+          "varying vec4 vTint;",
+          "void main(){",
+          "  float d = clamp(abs(vEdge), 0.0, 1.0);",
+          "  float a = 1.0 - smoothstep(1.0 - vSharp, 1.0, d);",
+          "  gl_FragColor = vec4(vTint.rgb, vTint.a * a);",
+          "}",
+        ].join("\n");
+
+        // 3. The flare: a soft band of accent light leaning by `angle`, its middle at x = pos.
+        var FLARE_FS = [
+          "uniform vec3 col;",
+          "uniform float bright, pos, angle;",
+          "varying vec2 vUv;",
+          "void main(){",
+          "  vec2 p = vec2(vUv.x * 1920.0, (1.0 - vUv.y) * 1080.0);",
+          "  float d = (p.x - pos) * cos(angle) - (p.y - 540.0) * sin(angle);",
+          "  float k = 0.5 * exp(-d * d / 96800.0) + 0.22 * exp(-d * d / 980000.0) + 0.35 * exp(-d * d / 3200.0);",
+          "  gl_FragColor = vec4(col * bright * k, 1.0);",
+          "}",
+        ].join("\n");
+
+        /** Each voxel face: full brightness, darker at its edges (the voxel seams). */
+        function seamTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 32;
+          var g = c.getContext("2d");
+          g.fillStyle = "rgb(110,110,110)";
+          g.fillRect(0, 0, 32, 32);
+          g.fillStyle = "rgb(200,200,200)";
+          g.fillRect(2, 2, 28, 28);
+          g.fillStyle = "rgb(255,255,255)";
+          g.fillRect(4, 4, 24, 24);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /** A soft round glow (drawn once, the same every time). */
+        function glowTexture() {
+          var c = document.createElement("canvas");
+          c.width = c.height = 64;
+          var g = c.getContext("2d");
+          var grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+          grad.addColorStop(0, "rgba(255,255,255,1)");
+          grad.addColorStop(0.3, "rgba(255,255,255,0.4)");
+          grad.addColorStop(1, "rgba(255,255,255,0)");
+          g.fillStyle = grad;
+          g.fillRect(0, 0, 64, 64);
+          return new THREE.CanvasTexture(c);
+        }
+
+        /**
+         * The chrome: a picture of a glossy chrome ball standing in the tunnel (a "matcap"; each
+         * voxel face shows the part of it its direction points at). The tops see a bright
+         * ceiling; the fronts see a sharp horizon (light above, near black below, as chrome does),
+         * so a bright line runs across the chest; lower down they pick up the neon floor; the
+         * sides reflect the neon walls (main colour on the right, accent on the left); a couple
+         * of glints cross the middle and slide over the head as it turns. Gold tints it.
+         */
+        function drawMatcap(c, main, acc, gold) {
+          var S = c.width;
+          var g = c.getContext("2d");
+          g.setTransform(1, 0, 0, 1, 0, 0);
+          g.globalCompositeOperation = "source-over";
+          var base = g.createLinearGradient(0, 0, 0, S);
+          base.addColorStop(0, "rgb(255,255,255)");
+          base.addColorStop(0.24, "rgb(212,218,230)");
+          base.addColorStop(0.46, "rgb(150,158,172)");
+          base.addColorStop(0.585, "rgb(88,94,108)");
+          base.addColorStop(0.6, "rgb(9,10,14)");
+          base.addColorStop(0.72, "rgb(14,16,21)");
+          base.addColorStop(1, "rgb(30,33,42)");
+          g.fillStyle = base;
+          g.fillRect(0, 0, S, S);
+          g.globalCompositeOperation = "lighter";
+          // the neon floor and walls reflected below the horizon: accent on the left, main on
+          // the right, brighter toward the bottom
+          var across = g.createLinearGradient(0, 0, S, 0);
+          across.addColorStop(0, css(acc, 0.32));
+          across.addColorStop(0.45, css(mix(acc, main, 0.5), 0.1));
+          across.addColorStop(1, css(main, 0.36));
+          g.fillStyle = across;
+          g.fillRect(0, S * 0.64, S, S * 0.36);
+          var fl = g.createLinearGradient(0, S * 0.8, 0, S);
+          fl.addColorStop(0, css(main, 0));
+          fl.addColorStop(1, css(mix(main, WHITE, 0.25), 0.6));
+          g.fillStyle = fl;
+          g.fillRect(0, S * 0.8, S, S * 0.2);
+          // the neon walls in the sides
+          function side(x0, rgb, a) {
+            var gr = g.createRadialGradient(x0, S * 0.56, 0, x0, S * 0.56, S * 0.34);
+            gr.addColorStop(0, css(mix(rgb, WHITE, 0.2), a));
+            gr.addColorStop(0.5, css(rgb, a * 0.5));
+            gr.addColorStop(1, css(rgb, 0));
+            g.fillStyle = gr;
+            g.fillRect(0, 0, S, S);
+          }
+          side(S * 1.0, main, 0.95);
+          side(0, acc, 0.85);
+          // glints crossing the middle
+          g.save();
+          g.translate(S * 0.5, S * 0.5);
+          g.rotate(-0.45);
+          [
+            [-0.05, 0.022, 0.55],
+            [0.09, 0.012, 0.35],
+          ].forEach(function (k) {
+            var x = k[0] * S,
+              hw = k[1] * S;
+            var gl = g.createLinearGradient(x - hw, 0, x + hw, 0);
+            gl.addColorStop(0, "rgba(255,255,255,0)");
+            gl.addColorStop(0.5, "rgba(255,255,255," + k[2] + ")");
+            gl.addColorStop(1, "rgba(255,255,255,0)");
+            g.fillStyle = gl;
+            g.fillRect(x - hw, -S * 0.32, 2 * hw, S * 0.5);
+          });
+          g.restore();
+          g.globalCompositeOperation = "source-over";
+          if (gold) {
+            // gold: the brightness through a warm ramp, a little of the neon kept
+            var img = g.getImageData(0, 0, S, S);
+            var px = img.data;
+            for (var i = 0; i < px.length; i += 4) {
+              var r = px[i] / 255,
+                gg = px[i + 1] / 255,
+                b = px[i + 2] / 255;
+              var L = 0.3 * r + 0.55 * gg + 0.15 * b;
+              var gr2 = Math.min(1, L * 1.1),
+                gg2 = Math.min(1, L * 0.86),
+                gb2 = Math.min(1, L * 0.42 * L + 0.02);
+              px[i] = Math.round((0.82 * gr2 + 0.18 * r) * 255);
+              px[i + 1] = Math.round((0.82 * gg2 + 0.18 * gg) * 255);
+              px[i + 2] = Math.round((0.82 * gb2 + 0.18 * b) * 255);
+            }
+            g.putImageData(img, 0, 0);
+          }
+        }
+
+        // ---------- the HUD's still parts, drawn on settings, font and logo changes ----------
+        var stillCanvas = document.createElement("canvas");
+        stillCanvas.width = 1920;
+        stillCanvas.height = 1080;
+        function spaced(ctx, px) {
+          if ("letterSpacing" in ctx) ctx.letterSpacing = px.toFixed(1) + "px";
+        }
+        function fontOf(weight, size) {
+          return weight + " " + size + 'px "' + setting("font") + '", sans-serif';
+        }
+        /** A rounded rectangle's path. */
+        function roundRect(ctx, x, y, w, h, r) {
+          ctx.beginPath();
+          ctx.moveTo(x + r, y);
+          ctx.lineTo(x + w - r, y);
+          ctx.arcTo(x + w, y, x + w, y + r, r);
+          ctx.lineTo(x + w, y + h - r);
+          ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+          ctx.lineTo(x + r, y + h);
+          ctx.arcTo(x, y + h, x, y + h - r, r);
+          ctx.lineTo(x, y + r);
+          ctx.arcTo(x, y, x + r, y, r);
+          ctx.closePath();
+        }
+        /** A glowing stroke of the current path: a wide faint pass, then the line. */
+        function glowStroke(ctx, rgb, width, alpha, scale) {
+          var thin = Math.max(width, 1.1 / scale);
+          ctx.strokeStyle = css(rgb, 0.14 * alpha);
+          ctx.lineWidth = thin * 5;
+          ctx.stroke();
+          ctx.strokeStyle = css(rgb, 0.3 * alpha);
+          ctx.lineWidth = thin * 2.2;
+          ctx.stroke();
+          ctx.strokeStyle = css(mix(rgb, WHITE, 0.3), alpha);
+          ctx.lineWidth = thin;
+          ctx.stroke();
+        }
+        function drawStill(scale) {
+          var ctx = stillCanvas.getContext("2d");
+          var main = V.hexToRGB(setting("mainColor"));
+          var acc = V.hexToRGB(setting("accentColor"));
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, stillCanvas.width, stillCanvas.height);
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          // the border: a thin rounded rectangle in the accent colour …
+          var x0 = INSET,
+            y0 = INSET,
+            w = 1920 - 2 * INSET,
+            h = 1080 - 2 * INSET,
+            rr = 22;
+          roundRect(ctx, x0, y0, w, h, rr);
+          glowStroke(ctx, acc, 1.6, 0.6, scale);
+          // … with brackets in the main colour round its corners
+          var leg = 84;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0 + rr + leg);
+          ctx.lineTo(x0, y0 + rr);
+          ctx.arcTo(x0, y0, x0 + rr, y0, rr);
+          ctx.lineTo(x0 + rr + leg, y0);
+          ctx.moveTo(x0 + w - rr - leg, y0);
+          ctx.lineTo(x0 + w - rr, y0);
+          ctx.arcTo(x0 + w, y0, x0 + w, y0 + rr, rr);
+          ctx.lineTo(x0 + w, y0 + rr + leg);
+          ctx.moveTo(x0 + w, y0 + h - rr - leg);
+          ctx.lineTo(x0 + w, y0 + h - rr);
+          ctx.arcTo(x0 + w, y0 + h, x0 + w - rr, y0 + h, rr);
+          ctx.lineTo(x0 + w - rr - leg, y0 + h);
+          ctx.moveTo(x0 + rr + leg, y0 + h);
+          ctx.lineTo(x0 + rr, y0 + h);
+          ctx.arcTo(x0, y0 + h, x0, y0 + h - rr, rr);
+          ctx.lineTo(x0, y0 + h - rr - leg);
+          glowStroke(ctx, main, 4, 0.95, scale);
+          // the tab at the top middle that holds the meters
+          var half = METER.count * (METER.bar + METER.gap) * 0.5 + 34;
+          ctx.beginPath();
+          ctx.moveTo(960 - half - 34, y0);
+          ctx.lineTo(960 - half, METER.base + 14);
+          ctx.lineTo(960 + half, METER.base + 14);
+          ctx.lineTo(960 + half + 34, y0);
+          glowStroke(ctx, acc, 1.4, 0.55, scale);
+          ctx.beginPath();
+          ctx.moveTo(960 - half + 10, METER.base + 22);
+          ctx.lineTo(960 - 40, METER.base + 22);
+          ctx.moveTo(960 + 40, METER.base + 22);
+          ctx.lineTo(960 + half - 10, METER.base + 22);
+          glowStroke(ctx, main, 1.2, 0.5, scale);
+
+          // thin side text: up the left edge, and a label at the top left
+          ctx.textBaseline = "middle";
+          ctx.save();
+          ctx.translate(INSET + 22, 540);
+          ctx.rotate(-Math.PI / 2);
+          ctx.textAlign = "center";
+          ctx.font = fontOf(400, 13);
+          spaced(ctx, 4);
+          ctx.fillStyle = css(mix(main, WHITE, 0.25), 0.62);
+          ctx.fillText("NEURAL LINK  //  SYNC STABLE  //  SECTOR 07", 0, 0);
+          ctx.restore();
+          ctx.textAlign = "left";
+          ctx.font = fontOf(700, 14);
+          spaced(ctx, 3.5);
+          ctx.fillStyle = css(mix(main, WHITE, 0.35), 0.85);
+          ctx.fillText("VR LINK", INSET + 44, INSET + 34);
+          ctx.fillStyle = css(acc, 0.9);
+          ctx.beginPath();
+          ctx.arc(INSET + 36, INSET + 34, 4, 0, 2 * Math.PI);
+          ctx.fill();
+          ctx.font = fontOf(400, 12);
+          spaced(ctx, 3);
+          ctx.fillStyle = css(mix(main, WHITE, 0.2), 0.55);
+          ctx.fillText("ONLINE  ▸  HT-07", INSET + 44, INSET + 56);
+          spaced(ctx, 0);
+
+          // the logo, small, at the top right (none: nothing)
+          if (hasLogo()) {
+            ctx.save();
+            roundRect(ctx, LOGO.x, LOGO.y, LOGO.size, LOGO.size, 10);
+            ctx.clip();
+            ctx.drawImage(logoImg, LOGO.x, LOGO.y, LOGO.size, LOGO.size);
+            ctx.restore();
+            roundRect(ctx, LOGO.x, LOGO.y, LOGO.size, LOGO.size, 10);
+            glowStroke(ctx, main, 1.4, 0.8, scale);
+          }
+
+          // the artist (small) over the title (big), bottom left
+          drawTitles(ctx, main, acc);
+        }
+
+        function drawTitles(ctx, main, acc) {
+          var title = String(setting("title") || "")
+            .toUpperCase()
+            .trim();
+          var artist = String(setting("artist") || "")
+            .toUpperCase()
+            .trim();
+          var SPACE = 0.06;
+          var measure = function (s) {
+            ctx.font = fontOf(700, 100);
+            spaced(ctx, SPACE * 100);
+            return ctx.measureText(s).width / 100;
+          };
+          var fit = M.fitTitle(title, measure, TITLE.width, 1, 66, 44);
+          if (fit.lines.length > 1) fit = M.fitTitle(title, measure, TITLE.width, 2, 50, 22);
+          var size = fit.size;
+          var lineH = size * 1.14;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+          var face = mix(acc, WHITE, 0.82);
+          for (var i = 0; i < fit.lines.length; i++) {
+            var y = TITLE.bottom - (fit.lines.length - 1 - i) * lineH;
+            // squeezed if a line still runs wide (a long word at the smallest size)
+            var wide = measure(fit.lines[i]) * size;
+            var k = Math.min(1, TITLE.width / Math.max(wide, 1));
+            ctx.save();
+            ctx.translate(TITLE.x, y);
+            ctx.scale(k, 1);
+            ctx.font = fontOf(700, size);
+            spaced(ctx, SPACE * size);
+            ctx.shadowColor = "rgba(0,0,0,0.85)";
+            ctx.shadowBlur = size * 0.35;
+            ctx.fillStyle = css(face, 1);
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.shadowColor = css(main, 0.9);
+            ctx.shadowBlur = size * 0.3;
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.shadowBlur = 0;
+            ctx.shadowColor = "transparent";
+            ctx.fillStyle = css(face, 1);
+            ctx.fillText(fit.lines[i], 0, 0);
+            ctx.restore();
+          }
+          var titleTop = TITLE.bottom - (fit.lines.length - 1) * lineH - size * 0.78;
+          if (artist) {
+            var asize = ARTIST.size;
+            var aspace = 0.32;
+            var aw = function (s) {
+              ctx.font = fontOf(400, s);
+              spaced(ctx, aspace * s);
+              return ctx.measureText(artist).width;
+            };
+            while (aw(asize) > ARTIST.width && asize > 14) asize -= 1;
+            var squeeze = Math.min(1, ARTIST.width / Math.max(aw(asize), 1));
+            ctx.save();
+            ctx.translate(TITLE.x + 2, titleTop - 16);
+            ctx.scale(squeeze, 1);
+            ctx.font = fontOf(400, asize);
+            spaced(ctx, aspace * asize);
+            ctx.shadowColor = "rgba(0,0,0,0.9)";
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = css(mix(main, WHITE, 0.45), 0.95);
+            ctx.fillText(artist, 0, 0);
+            ctx.restore();
+          }
+          spaced(ctx, 0);
+        }
+
+        /**
+         * Build the renderer and the scene once. Settings changes only update materials, audio
+         * and the HUD (apply), and a new preview size only resizes (resize), so the live preview
+         * never piles up WebGL contexts.
+         */
+        function setup() {
+          var canvas = document.getElementById("viz");
+          var renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true,
+          });
+          renderer.debug.onShaderError = function (gl, program, vs, fs) {
+            throw new Error(
+              "A three.js shader failed to compile: " +
+                (gl.getShaderInfoLog(vs) || "") +
+                (gl.getShaderInfoLog(fs) || "") +
+                (gl.getProgramInfoLog(program) || ""),
+            );
+          };
+          renderer.setPixelRatio(1);
+          renderer.toneMapping = THREE.NoToneMapping;
+          renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+          renderer.setClearColor(0x000000, 1);
+          renderer.autoClear = false;
+          var disposables = [];
+          function keep(thing) {
+            disposables.push(thing);
+            return thing;
+          }
+          var quad = keep(new THREE.PlaneGeometry(2, 2));
+          var flatCam = new THREE.OrthographicCamera(0, 1920, 0, 1080, -10, 10);
+
+          // ----- 1. the tunnel: its walls, the neon lines, the cables -----
+          var tunnelScene = new THREE.Scene();
+          var levelValues = [];
+          for (var li = 0; li < FRAMES; li++) levelValues.push(0);
+          var tunnelMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: TUNNEL_FS,
+              uniforms: {
+                vp: { value: new THREE.Vector2(VP.x, VP.y) },
+                cam: { value: new THREE.Vector2(CAM.x, CAM.y) },
+                focal: { value: FOCAL },
+                apothem: { value: R },
+                spacing: { value: D },
+                d0: { value: D },
+                wash: { value: 0 },
+                vpGlow: { value: 1 },
+                levels: { value: levelValues },
+                mainCol: { value: new THREE.Color() },
+                accCol: { value: new THREE.Color() },
+                vpCol: { value: new THREE.Color() },
+              },
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var tunnelQuad = new THREE.Mesh(quad, tunnelMat);
+          tunnelQuad.frustumCulled = false;
+          tunnelQuad.renderOrder = 0;
+          tunnelScene.add(tunnelQuad);
+
+          /** A buffer of ribbons (polylines `width` px across), drawn in one go. */
+          function lineSet(maxVerts, fragment, blending, order) {
+            var pos = new Float32Array(maxVerts * 3);
+            var edge = new Float32Array(maxVerts);
+            var sharp = new Float32Array(maxVerts);
+            var tint = new Float32Array(maxVerts * 4);
+            var geo = keep(new THREE.BufferGeometry());
+            var attrs = [
+              ["position", new THREE.BufferAttribute(pos, 3)],
+              ["edge", new THREE.BufferAttribute(edge, 1)],
+              ["sharp", new THREE.BufferAttribute(sharp, 1)],
+              ["tint", new THREE.BufferAttribute(tint, 4)],
+            ];
+            attrs.forEach(function (a) {
+              a[1].setUsage(THREE.DynamicDrawUsage);
+              geo.setAttribute(a[0], a[1]);
+            });
+            geo.setDrawRange(0, 0);
+            var mat = keep(
+              new THREE.ShaderMaterial({
+                vertexShader: LINE_VS,
+                fragmentShader: fragment,
+                blending: blending,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              }),
+            );
+            var mesh = new THREE.Mesh(geo, mat);
+            mesh.frustumCulled = false;
+            mesh.renderOrder = order;
+            var n = 0;
+            function vert(x, y, e, s, rgb, a) {
+              var i = n++;
+              pos[i * 3] = x;
+              pos[i * 3 + 1] = y;
+              pos[i * 3 + 2] = 0;
+              edge[i] = e;
+              sharp[i] = s;
+              tint[i * 4] = rgb[0];
+              tint[i * 4 + 1] = rgb[1];
+              tint[i * 4 + 2] = rgb[2];
+              tint[i * 4 + 3] = a;
+            }
+            /** A polyline as a ribbon `width` px across (mitred joins). */
+            function ribbon(pts, width, s, rgb, a) {
+              var count = pts.length;
+              if (count < 2 || n + (count - 1) * 6 > maxVerts) return;
+              var halfW = width / 2;
+              var Lp = new Array(count),
+                Rp = new Array(count);
+              for (var i = 0; i < count; i++) {
+                var p0 = pts[Math.max(0, i - 1)],
+                  p1 = pts[i],
+                  p2 = pts[Math.min(count - 1, i + 1)];
+                var d0x = p1[0] - p0[0],
+                  d0y = p1[1] - p0[1],
+                  d1x = p2[0] - p1[0],
+                  d1y = p2[1] - p1[1];
+                var l0 = Math.hypot(d0x, d0y) || 1,
+                  l1 = Math.hypot(d1x, d1y) || 1;
+                var n0x = -d0y / l0,
+                  n0y = d0x / l0,
+                  n1x = -d1y / l1,
+                  n1y = d1x / l1;
+                if (i === 0) ((n0x = n1x), (n0y = n1y));
+                if (i === count - 1) ((n1x = n0x), (n1y = n0y));
+                var mx = n0x + n1x,
+                  my = n0y + n1y;
+                var ml = Math.hypot(mx, my);
+                if (ml < 1e-6) ((mx = n1x), (my = n1y), (ml = 1));
+                mx /= ml;
+                my /= ml;
+                var k = 1 / Math.max(0.5, mx * n1x + my * n1y);
+                Lp[i] = [p1[0] + mx * halfW * k, p1[1] + my * halfW * k];
+                Rp[i] = [p1[0] - mx * halfW * k, p1[1] - my * halfW * k];
+              }
+              for (var sgi = 0; sgi < count - 1; sgi++) {
+                vert(Lp[sgi][0], Lp[sgi][1], 1, s, rgb, a);
+                vert(Rp[sgi][0], Rp[sgi][1], -1, s, rgb, a);
+                vert(Lp[sgi + 1][0], Lp[sgi + 1][1], 1, s, rgb, a);
+                vert(Rp[sgi][0], Rp[sgi][1], -1, s, rgb, a);
+                vert(Rp[sgi + 1][0], Rp[sgi + 1][1], -1, s, rgb, a);
+                vert(Lp[sgi + 1][0], Lp[sgi + 1][1], 1, s, rgb, a);
+              }
+            }
+            return {
+              mesh: mesh,
+              ribbon: ribbon,
+              begin: function () {
+                n = 0;
+              },
+              finish: function () {
+                attrs.forEach(function (a) {
+                  var attr = a[1];
+                  attr.needsUpdate = true;
+                  attr.clearUpdateRanges();
+                  attr.addUpdateRange(0, n * attr.itemSize);
+                });
+                geo.setDrawRange(0, n);
+              },
+            };
+          }
+          var neon = lineSet(90000, NEON_FS, THREE.AdditiveBlending, 1);
+          tunnelScene.add(neon.mesh);
+          var cables = lineSet(6000, CABLE_FS, THREE.NormalBlending, 2);
+          tunnelScene.add(cables.mesh);
+
+          // ----- 2. the robot -----
+          var robotScene = new THREE.Scene();
+          var robotCam = new THREE.PerspectiveCamera(
+            ROBOT_FOV,
+            1920 / 1080,
+            ROBOT_DIST * 0.5,
+            ROBOT_DIST * 2,
+          );
+          robotCam.position.set(0, ROBOT_CAM_Y, ROBOT_DIST);
+          robotCam.lookAt(0, ROBOT_CAM_Y, 0);
+          robotCam.setViewOffset(1920, 1080, 0, ROBOT_SHIFT, 1920, 1080);
+          var box = keep(new THREE.BoxGeometry(VOXEL, VOXEL, VOXEL));
+          var seams = keep(seamTexture());
+          seams.minFilter = THREE.LinearMipmapLinearFilter;
+          var matcapCanvas = document.createElement("canvas");
+          matcapCanvas.width = matcapCanvas.height = 256;
+          var matcapTex = keep(new THREE.CanvasTexture(matcapCanvas));
+          var chrome = keep(
+            new THREE.MeshMatcapMaterial({ matcap: matcapTex, map: seams, color: 0xffffff }),
+          );
+          var visorMat = keep(new THREE.MeshBasicMaterial({ color: 0xffffff, map: seams }));
+          var rng = V.mulberry32(M.SEED + 3);
+          function voxels(list, material, pivot, shadeOf) {
+            var mesh = new THREE.InstancedMesh(box, material, list.length);
+            var m = new THREE.Matrix4();
+            var c = new THREE.Color();
+            for (var i = 0; i < list.length; i++) {
+              var v = list[i];
+              m.makeTranslation(v[0] - pivot[0], v[1] - pivot[1], v[2] - pivot[2]);
+              mesh.setMatrixAt(i, m);
+              var s = shadeOf(v);
+              mesh.setColorAt(i, c.setRGB(s, s, s));
+            }
+            keep(mesh);
+            return mesh;
+          }
+          function chromeShade(v) {
+            return ROBOT.SHADES[v[3]] * (0.9 + 0.1 * rng());
+          }
+          var body = new THREE.Group();
+          body.rotation.y = BODY_TURN;
+          robotScene.add(body);
+          body.add(voxels(PARTS.torso, chrome, [0, 0, 0], chromeShade));
+          var head = new THREE.Group();
+          head.position.fromArray(PARTS.headPivot);
+          body.add(head);
+          head.add(voxels(PARTS.head, chrome, PARTS.headPivot, chromeShade));
+          head.add(voxels(PARTS.cable, chrome, PARTS.headPivot, chromeShade));
+          var visorRows = PARTS.visor.map(function (v) {
+            return v[1];
+          });
+          var visorTop = Math.max.apply(null, visorRows);
+          var visorBottom = Math.min.apply(null, visorRows);
+          var visor = voxels(PARTS.visor, visorMat, PARTS.headPivot, function () {
+            return 1;
+          });
+          head.add(visor);
+          var glowTex = keep(glowTexture());
+          var visorGlowMat = keep(
+            new THREE.SpriteMaterial({
+              map: glowTex,
+              color: 0xffffff,
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          var visorGlow = new THREE.Sprite(visorGlowMat);
+          visorGlow.position.set(0, 41.5 - PARTS.headPivot[1], 18 - PARTS.headPivot[2]);
+          head.add(visorGlow);
+          var arms = [
+            [PARTS.armL, PARTS.shoulderL],
+            [PARTS.armR, PARTS.shoulderR],
+          ].map(function (a) {
+            var g = new THREE.Group();
+            g.position.fromArray(a[1]);
+            g.add(voxels(a[0], chrome, a[1], chromeShade));
+            body.add(g);
+            return g;
+          });
+
+          // ----- 3. the flare -----
+          var flareScene = new THREE.Scene();
+          var flareMat = keep(
+            new THREE.ShaderMaterial({
+              vertexShader: QUAD_VS,
+              fragmentShader: FLARE_FS,
+              uniforms: {
+                col: { value: new THREE.Color() },
+                bright: { value: 0 },
+                pos: { value: 0 },
+                angle: { value: 0 },
+              },
+              blending: THREE.AdditiveBlending,
+              transparent: true,
+              depthTest: false,
+              depthWrite: false,
+            }),
+          );
+          var flareQuad = new THREE.Mesh(quad, flareMat);
+          flareQuad.frustumCulled = false;
+          flareScene.add(flareQuad);
+
+          // ----- 4. the HUD: its still parts as one picture (redrawn only on changes), the
+          // meters and ticks as small quads, the timer as a little picture redrawn when its text
+          // changes (a full-size 2D canvas redrawn every frame slows the render down) -----
+          var hudScene = new THREE.Scene();
+          function hudQuad(tex, w, h, order) {
+            tex.flipY = false; // the HUD's y runs down, as the canvas's rows do
+            tex.minFilter = THREE.LinearFilter;
+            tex.generateMipmaps = false;
+            var mat = keep(
+              new THREE.MeshBasicMaterial({
+                map: tex,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              }),
+            );
+            var mesh = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, h)), mat);
+            mesh.frustumCulled = false;
+            mesh.renderOrder = order;
+            hudScene.add(mesh);
+            return mesh;
+          }
+          var stillTex = keep(new THREE.CanvasTexture(stillCanvas));
+          hudQuad(stillTex, 1920, 1080, 0).position.set(960, 540, 0);
+          var bars = lineSet(6000, CABLE_FS, THREE.NormalBlending, 1);
+          hudScene.add(bars.mesh);
+          var timerCanvas = document.createElement("canvas");
+          timerCanvas.width = 440;
+          timerCanvas.height = 48;
+          var timerTex = keep(new THREE.CanvasTexture(timerCanvas));
+          var timerQuad = hudQuad(timerTex, 440, 48, 2);
+          timerQuad.position.set(TIMER.x, TIMER.y, 0);
+          timerQuad.rotation.z = -Math.PI / 2; // reads up the right edge
+          var timerDrawn = "";
+          function redrawStill() {
+            drawStill(SCALE);
+            stillTex.needsUpdate = true;
+          }
+
+          var W = 1920,
+            H = 1080,
+            SCALE = 1;
+          function resize(scale) {
+            SCALE = scale;
+            W = Math.round(1920 * scale);
+            H = Math.round(1080 * scale);
+            renderer.setSize(W, H, false);
+            redrawStill();
+          }
+          resize(PREVIEW_SCALE);
+
+          // ----- settings: colours, audio, HUD (no new WebGL objects) -----
+          var audio, specAudio, INT, BOOST, LOUD, MAIN, ACC, TIMER_ON, BANDS;
+          var loudTableFor = null;
+          function apply() {
+            INT = Number(setting("intensity"));
+            if (!(INT >= 0)) INT = 1;
+            BOOST = Number(setting("spectrumBoost")) || 1;
+            TIMER_ON = setting("showTimer") === true;
+            audio = V.createAudio(window.AUDIO_DATA, { beatRange: setting("beatRange") });
+            BANDS = V.bandsToRingCount(Number(setting("bandCount")), 40);
+            specAudio = V.createAudio(window.AUDIO_DATA, {
+              spectrumLow: Number(setting("spectrumLow")),
+              spectrumHigh: Number(setting("spectrumHigh")),
+              spectrumBoost: 1, // the shape is unboosted; the boost sets the level
+              spectrumCount: BANDS,
+            });
+            // the running loudness total for the tunnel's travel (once per song)
+            if (loudTableFor !== window.AUDIO_DATA) {
+              LOUD = M.loudTable(window.AUDIO_DATA.frames, window.AUDIO_DATA.fps);
+              loudTableFor = window.AUDIO_DATA;
+            }
+            MAIN = V.hexToRGB(setting("mainColor"));
+            ACC = V.hexToRGB(setting("accentColor"));
+            var u = tunnelMat.uniforms;
+            u.mainCol.value.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            u.accCol.value.setRGB(ACC[0], ACC[1], ACC[2]);
+            var vp = mix(MAIN, WHITE, 0.45);
+            u.vpCol.value.setRGB(vp[0], vp[1], vp[2]);
+            flareMat.uniforms.col.value.setRGB(ACC[0], ACC[1], ACC[2]);
+            drawMatcap(matcapCanvas, MAIN, ACC, setting("finish") === "gold");
+            matcapTex.needsUpdate = true;
+            visorGlowMat.color.setRGB(MAIN[0], MAIN[1], MAIN[2]);
+            timerDrawn = "";
+            redrawStill();
+          }
+          apply();
+          onLogo = redrawStill;
+
+          // ----- the tunnel's lines -----
+          var CORNER_R = (R - 0.05) / Math.cos(Math.PI / 8);
+          /** A tunnel point (x, y across, depth ahead) on screen, 1080p px. */
+          function project(x, y, depth) {
+            return [VP.x + (FOCAL * (x - CAM.x)) / depth, VP.y - (FOCAL * (y - CAM.y)) / depth];
+          }
+          /** A wall point: wall `face`, `w` across it from its middle, at `depth`. */
+          function wallPoint(face, w, depth, inset) {
+            var a = (face * Math.PI) / 4;
+            var r = R - (inset || 0.04);
+            var c = Math.cos(a),
+              s = Math.sin(a);
+            return project(c * r - s * w, s * r + c * w, depth);
+          }
+          function cornerPoint(j, depth) {
+            var a = Math.PI / 8 + (j * Math.PI) / 4;
+            return project(Math.cos(a) * CORNER_R, Math.sin(a) * CORNER_R, depth);
+          }
+          /** A neon line: a soft wide glow, then a thin bright core. */
+          function neonLine(pts, width, rgb, level) {
+            if (!(level > 0.004)) return;
+            neon.ribbon(pts, width * 5, 2.2, scale3(rgb, 0.36 * level), 1);
+            neon.ribbon(
+              pts,
+              Math.max(width, 1.3 / SCALE),
+              0.5,
+              scale3(mix(rgb, WHITE, 0.4), level),
+              1,
+            );
+          }
+          /** The core line's width at a depth: thicker near the camera. */
+          function widthAt(depth) {
+            return Math.max(1.2, Math.min(4, 26 / Math.max(depth, 0.5)));
+          }
+          /** Points along a straight wall line from depth a to b (cut at the near clip). */
+          function alongDepth(fn, a, b, steps) {
+            var lo = Math.max(a, NEAR_CLIP);
+            if (!(b > lo)) return null;
+            var pts = [];
+            for (var i = 0; i <= steps; i++) pts.push(fn(lo + ((b - lo) * i) / steps));
+            return pts;
+          }
+
+          function drawTunnel(frames, levels, env) {
+            neon.begin();
+            cables.begin();
+            var lineRGB = MAIN;
+            // the gaps: one before the nearest frame (with the previous frame's details), then
+            // one behind each frame
+            for (var k = -1; k < frames.length; k++) {
+              var near = k < 0 ? frames[0].depth - D : frames[k].depth;
+              var index = k < 0 ? frames[0].index - 1 : frames[k].index;
+              var lv = levels[Math.max(0, k)];
+              var fade = M.frameFade(near + D * 0.5);
+              var bright = M.edgeLevel(lv, env, INT) * fade;
+              if (!(bright > 0.004) || near + D < NEAR_CLIP) continue;
+              var gap = M.gapLayout(index, V.mulberry32);
+              var wdt = widthAt(Math.max(near, NEAR_CLIP) + 2);
+              // lit corner lines along the gap
+              for (var j = 0; j < 8; j++) {
+                if (!gap.corners[j]) continue;
+                (function (jj) {
+                  var pts = alongDepth(
+                    function (d) {
+                      return cornerPoint(jj, d);
+                    },
+                    near + 0.45,
+                    near + D - 0.45,
+                    3,
+                  );
+                  if (pts) neonLine(pts, wdt * 0.8, lineRGB, bright * 0.75);
+                })(j);
+              }
+              // circuit traces: along the tunnel, a 45° jog across, along again
+              for (var ti = 0; ti < gap.traces.length; ti++) {
+                var tr = gap.traces[ti];
+                var dA = near + 0.42,
+                  dJ0 = near + tr.a * D,
+                  dJ1 = near + tr.b * D,
+                  dB = near + D - 0.42;
+                var raw = [
+                  [tr.w0, dA],
+                  [tr.w0, dJ0],
+                  [tr.w1, dJ1],
+                  [tr.w1, dB],
+                ];
+                var pts = [];
+                for (var q = 0; q < raw.length; q++) {
+                  if (raw[q][1] < NEAR_CLIP) continue;
+                  pts.push(wallPoint(tr.face, raw[q][0], raw[q][1]));
+                }
+                if (pts.length >= 2) neonLine(pts, wdt * 0.65, lineRGB, bright * 0.8);
+              }
+              // a cable sagging across the ceiling, shown only near the camera (further off it
+              // would hang behind the robot's head)
+              if (gap.cable) {
+                var cd = near + gap.cable.at * D;
+                if (cd > 2.2 && cd < 13) {
+                  var a0 = (3 * Math.PI) / 4,
+                    a1 = Math.PI / 4;
+                  var cpts = [];
+                  for (var ci = 0; ci <= 14; ci++) {
+                    var u = ci / 14;
+                    var x = Math.cos(a0) * R * (1 - u) + Math.cos(a1) * R * u;
+                    var y = Math.sin(a0) * R - gap.cable.sag * 4 * u * (1 - u);
+                    cpts.push(project(x, y, cd));
+                  }
+                  var cw = (FOCAL * 0.28) / cd;
+                  var vis = Math.min(1, (cd - 2.2) / 2, (13 - cd) / 3);
+                  cables.ribbon(cpts, cw, 0.25, [0.012, 0.014, 0.02], 0.96 * vis);
+                  // its glossy top catches the neon
+                  var hl = cpts.map(function (pt) {
+                    return [pt[0], pt[1] - cw * 0.22];
+                  });
+                  neonLine(hl, Math.max(1, cw * 0.12), lineRGB, 0.35 * vis * (0.4 + 0.6 * bright));
+                }
+              }
+            }
+            // the frames: an octagon of neon at each
+            for (var f = 0; f < frames.length; f++) {
+              var fd = frames[f].depth;
+              if (fd < NEAR_CLIP) continue;
+              var fb = M.edgeLevel(levels[f], env, INT) * M.frameFade(fd);
+              if (!(fb > 0.004)) continue;
+              var ring = [];
+              for (var c = 0; c <= 8; c++) ring.push(cornerPoint(c % 8, fd));
+              var fw = widthAt(fd);
+              neonLine(ring, fw * 1.25, lineRGB, fb);
+            }
+            neon.finish();
+            cables.finish();
+          }
+
+          // ----- the HUD's moving parts -----
+          var meterSpec = new Float32Array(BANDS || 12);
+          /** A filled rectangle among the HUD's quads (a ribbon with a crisp edge). */
+          function rect(x, y, w, h, rgb, alpha) {
+            bars.ribbon(
+              [
+                [x + w / 2, y],
+                [x + w / 2, y + h],
+              ],
+              w,
+              0.04,
+              rgb,
+              alpha,
+            );
+          }
+          /** The timer's little picture: its text with a soft glow, centred. */
+          function drawTimer(text) {
+            var ctx = timerCanvas.getContext("2d");
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, timerCanvas.width, timerCanvas.height);
+            ctx.font = fontOf(700, TIMER.size);
+            spaced(ctx, TIMER.size * 0.22);
+            var k = Math.min(1, 400 / Math.max(1, ctx.measureText(text).width));
+            ctx.translate(timerCanvas.width / 2 + TIMER.size * 0.11, timerCanvas.height / 2);
+            ctx.scale(k, 1);
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.lineJoin = "round";
+            ctx.strokeStyle = css(MAIN, 0.16);
+            ctx.lineWidth = TIMER.size * 0.36;
+            ctx.strokeText(text, 0, 0);
+            ctx.strokeStyle = css(MAIN, 0.32);
+            ctx.lineWidth = TIMER.size * 0.14;
+            ctx.strokeText(text, 0, 0);
+            ctx.fillStyle = css(mix(MAIN, WHITE, 0.55), 0.95);
+            ctx.fillText(text, 0, 0);
+            spaced(ctx, 0);
+          }
+          function drawHud(t, songTime) {
+            bars.begin();
+            // the meters: bars from the middle out (bass in the middle)
+            if (meterSpec.length !== BANDS) meterSpec = new Float32Array(BANDS);
+            specAudio.spectrum(t, meterSpec);
+            var hts = M.meterHeights(
+              V.mirrorBars(meterSpec, METER.count, true),
+              INT,
+              BOOST,
+              METER.max,
+            );
+            var pitch = METER.bar + METER.gap;
+            var left = METER.x - (METER.count * pitch - METER.gap) / 2;
+            var barRGB = mix(MAIN, WHITE, 0.15),
+              capRGB = mix(ACC, WHITE, 0.3);
+            for (var i = 0; i < METER.count; i++) {
+              var h = Math.max(2, Math.round(hts[i]));
+              rect(left + i * pitch, METER.base - h, METER.bar, h, barRGB, 0.9);
+              if (h > 4) rect(left + i * pitch, METER.base - h - 4, METER.bar, 2, capRGB, 0.95);
+            }
+            // the ticks along the top and bottom edges crawl slowly toward the middle (every
+            // fourth one longer: the pattern repeats every 48 px, as the crawl does)
+            var crawl = M.hudCrawl(songTime, 48);
+            var tickRGB = mix(ACC, WHITE, 0.2);
+            var tickW = Math.max(1.5, 1.1 / SCALE);
+            for (var row = 0; row < 2; row++) {
+              for (var k = -4; k < 40; k++) {
+                var off = k * 12 + crawl;
+                if (off < 0 || off >= 470) continue;
+                var len = (k + 4) % 4 === 0 ? 9 : 5;
+                var y = row === 0 ? INSET + 4 : 1080 - INSET - 4 - len;
+                rect(150 + off, y, tickW, len, tickRGB, 0.5);
+                rect(1770 - off, y, tickW, len, tickRGB, 0.5);
+              }
+            }
+            bars.finish();
+            // the timer, up the right edge (its picture redrawn only when the text changes)
+            timerQuad.visible = TIMER_ON;
+            if (TIMER_ON) {
+              var clock = V.songClock(audio, t);
+              var text = V.formatClock(clock.elapsed) + "  /  " + V.formatClock(clock.total);
+              if (text !== timerDrawn) {
+                drawTimer(text);
+                timerTex.needsUpdate = true;
+                timerDrawn = text;
+              }
+            }
+          }
+
+          /** x rounded to steps of `size`: big soft areas then stay exactly still between steps. */
+          function step(x, size) {
+            return Math.round(x / size) * size;
+          }
+          var specBuf = new Float32Array(64);
+          function render(t) {
+            var songTime = t + audio.songStart;
+            var a = audio.sample(t);
+            var envEdge = V.beatEnvelope(audio, t, M.EDGE_RELEASE);
+            var envNod = V.beatEnvelope(audio, t, M.NOD_RELEASE);
+            var data = window.AUDIO_DATA;
+            var travel = M.tunnelTravel(
+              songTime,
+              M.loudSeconds(LOUD, data.fps, audio.offset, t, data.loudBefore || 0),
+              INT,
+            );
+            var frames = M.tunnelFrames(travel);
+            if (specBuf.length !== BANDS) specBuf = new Float32Array(BANDS);
+            specAudio.spectrum(t, specBuf);
+            var levels = M.frameLevels(specBuf, frames, INT, BOOST);
+            var fl = M.flare(M.hitEvents(audio, t), INT, V.mulberry32);
+
+            // the walls
+            var u = tunnelMat.uniforms;
+            u.d0.value = frames[0].depth;
+            for (var i = 0; i < FRAMES; i++) {
+              levelValues[i] = M.edgeLevel(levels[i], envEdge, INT) * M.frameFade(frames[i].depth);
+            }
+            u.wash.value = step(0.05 + 0.1 * a.loud + (fl ? 0.5 * fl.bright : 0), 0.02);
+            u.vpGlow.value = step(0.75 + 0.35 * a.loud + 0.25 * envEdge, 0.05);
+            drawTunnel(frames, levels, envEdge);
+
+            // the robot
+            head.rotation.set(M.headNod(envNod, INT), M.headTurn(songTime, V.mulberry32), 0);
+            var sway = M.armSway(songTime, V.mulberry32);
+            arms[0].rotation.z = -sway[0];
+            arms[1].rotation.z = sway[1];
+            var vl = M.visorLevel(a.loud, envNod, INT);
+            // the visor's scan lines: lit and dim rows, a bright row stepping down it
+            var scanRow =
+              visorTop - (Math.floor(songTime * 3 + 1e-6) % (visorTop - visorBottom + 1));
+            var vc = new THREE.Color();
+            for (var vi = 0; vi < PARTS.visor.length; vi++) {
+              var vv = PARTS.visor[vi];
+              var s = vv[3] === 1 ? 1 : 0.5;
+              if (vv[1] === scanRow) s = 1.35;
+              visor.setColorAt(vi, vc.setRGB(s, s, s));
+            }
+            visor.instanceColor.needsUpdate = true;
+            var core = mix(MAIN, WHITE, 0.25 + 0.2 * envNod);
+            visorMat.color.setRGB(core[0] * vl.core, core[1] * vl.core, core[2] * vl.core);
+            visorGlow.scale.set(46 * (0.8 + 0.35 * vl.glow), 22 * (0.8 + 0.35 * vl.glow), 1);
+            visorGlowMat.opacity = Math.min(1, 0.35 * vl.glow);
+
+            renderer.setRenderTarget(null);
+            renderer.clear();
+            renderer.render(tunnelScene, flatCam);
+            renderer.clearDepth();
+            renderer.render(robotScene, robotCam);
+            if (fl && fl.bright > 0.003) {
+              var fu = flareMat.uniforms;
+              fu.bright.value = fl.bright * 0.9;
+              fu.angle.value = fl.angle;
+              // in from its side, across the frame
+              var from = fl.side < 0 ? -260 : 2180;
+              var to = fl.side < 0 ? 2180 : -260;
+              fu.pos.value = from + (to - from) * (1 - Math.pow(1 - fl.progress, 2));
+              renderer.render(flareScene, flatCam);
+            }
+            drawHud(t, songTime);
+            renderer.render(hudScene, flatCam);
+          }
+          function textChanged() {
+            timerDrawn = "";
+            redrawStill();
+          }
+          function dispose() {
+            for (var i = disposables.length - 1; i >= 0; i--) disposables[i].dispose();
+            renderer.dispose();
+          }
+          return {
+            render: render,
+            dispose: dispose,
+            apply: apply,
+            resize: resize,
+            textChanged: textChanged,
+          };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        var drawing = null; // { render(t), dispose(), apply(), resize(scale), textChanged() }
+        var lastTime = -1;
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        try {
+          drawing = setup();
+        } catch (error) {
+          fail(error);
+        }
+        draw(0);
+        // The text is drawn on a canvas: draw it again whenever a font arrives.
+        function fontsChanged() {
+          if (drawing) drawing.textChanged();
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            setLogo(setting("logo"));
+            if (drawing) drawing.apply();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            if (drawing) drawing.resize(scale);
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s.
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
