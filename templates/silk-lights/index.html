@@ -1,0 +1,1000 @@
+<!doctype html>
+<!--
+  Silk Lights: a black frame with a wide, heavily blurred band of neon light across the middle,
+  its brighter hot spots and long thin streaks streaming slowly sideways and shimmering, dark
+  at both ends; it swells and brightens with the music and flares on the beat. Across the
+  lower third a big smooth glowing wave line (a gradient from the main to the accent colour)
+  lies calm, raising tall soft peaks with the spectrum (bass at the left) up into the light; a
+  fainter, thinner copy hangs from the top. On the left: your cover art with rounded corners
+  (or a designed placeholder), a small hairline spectrum to its lower right, "ARTIST – TITLE",
+  up to five filled tag pills in two rows, and the song's clock.
+
+  Song inputs (fixed paths, placed by the job builder): assets/song.wav, assets/audio-data.js.
+  The committed root duration (20 s) matches the generated sample song; the job builder sets
+  every data-song-length element to the real song's length. The motion and layout maths lives
+  in assets/silk-motion.js, the line kit and song clock in the toolkit (all unit-tested).
+
+  The cover arrives as a picture location (assets/images/cover.jpg in an export, the image
+  route in the preview) or "" for none: it is set at startup and the frame is drawn again when
+  it loads; a picture that fails to load is simply left out, and the placeholder shows instead.
+
+  Everything is drawn on a 2D canvas. The glow (and the wave lines' halo) is drawn at a
+  quarter of the resolution, blurred there and scaled up: a cheap, very soft blur.
+-->
+<html
+  lang="en"
+  data-composition-variables='[
+    {"id":"title","type":"string","label":"Title","default":"SONG NAME","maxLength":60},
+    {"id":"artist","type":"string","label":"Artist","default":"ARTIST NAME","maxLength":60},
+    {"id":"font","type":"enum","label":"Font","default":"Poppins","options":[
+      {"value":"Montserrat","label":"Montserrat"},
+      {"value":"Inter","label":"Inter"},
+      {"value":"Outfit","label":"Outfit"},
+      {"value":"Poppins","label":"Poppins"},
+      {"value":"Lato","label":"Lato"},
+      {"value":"Oswald","label":"Oswald"},
+      {"value":"Playfair Display","label":"Playfair Display"},
+      {"value":"EB Garamond","label":"EB Garamond"}]},
+    {"id":"cover","type":"image","label":"Cover art","default":"","fit":"square"},
+    {"id":"tag1","type":"string","label":"Tag 1","default":"HIP HOP","maxLength":20,"placeholder":"Empty: no pill"},
+    {"id":"tag2","type":"string","label":"Tag 2","default":"NEW MUSIC","maxLength":20,"placeholder":"Empty: no pill"},
+    {"id":"tag3","type":"string","label":"Tag 3","default":"ELECTRONIC","maxLength":20,"placeholder":"Empty: no pill"},
+    {"id":"tag4","type":"string","label":"Tag 4","default":"","maxLength":20,"placeholder":"Empty: no pill"},
+    {"id":"tag5","type":"string","label":"Tag 5","default":"","maxLength":20,"placeholder":"Empty: no pill"},
+    {"id":"mainColor","type":"color","label":"Main color","default":"#ff2fb4"},
+    {"id":"accentColor","type":"color","label":"Accent color","default":"#2fd9ff"},
+    {"id":"intensity","type":"number","label":"Intensity","default":1,"min":0.2,"max":2,"step":0.1},
+    {"id":"showTimer","type":"boolean","label":"Show timer","default":true},
+    {"id":"beatRange","type":"enum","label":"Beat range","default":"kick","options":[
+      {"value":"kick","label":"Kick (auto)"},
+      {"value":"20-90","label":"20–90 Hz"},
+      {"value":"90-200","label":"90–200 Hz"},
+      {"value":"20-200","label":"20–200 Hz"},
+      {"value":"200-600","label":"200–600 Hz"},
+      {"value":"600-3000","label":"600–3000 Hz"},
+      {"value":"3000-8000","label":"3000–8000 Hz"},
+      {"value":"8000-20000","label":"8000–20000 Hz"},
+      {"value":"20-20000","label":"20–20000 Hz"}]},
+    {"id":"spectrumLow","type":"number","label":"Spectrum low","default":30,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumHigh","type":"number","label":"Spectrum high","default":1000,"min":30,"max":16000,"step":10,"unit":"Hz"},
+    {"id":"spectrumBoost","type":"enum","label":"Spectrum boost","default":"2","options":[
+      {"value":"1","label":"1×"},
+      {"value":"2","label":"2×"},
+      {"value":"4","label":"4×"},
+      {"value":"8","label":"8×"}]},
+    {"id":"bandCount","type":"number","label":"Bands","default":65,"min":10,"max":100,"step":1,"unit":"%"}
+  ]'
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="assets/audio-data.js"></script>
+    <script src="assets/viz-toolkit.js"></script>
+    <script src="assets/silk-motion.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        background: #000;
+      }
+      #viz {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1920px;
+        height: 1080px;
+      }
+      #coverImg,
+      #fontPreload {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+      }
+      /* Mentioning every font family (and the weights drawn) lets HyperFrames bundle them all
+         for the Font setting; the canvas text uses them once loaded. */
+      .f-montserrat {
+        font-family: "Montserrat";
+      }
+      .f-inter {
+        font-family: "Inter";
+      }
+      .f-outfit {
+        font-family: "Outfit";
+      }
+      .f-poppins {
+        font-family: "Poppins";
+      }
+      .f-lato {
+        font-family: "Lato";
+      }
+      .f-oswald {
+        font-family: "Oswald";
+      }
+      .f-playfair {
+        font-family: "Playfair Display";
+      }
+      .f-garamond {
+        font-family: "EB Garamond";
+      }
+      .w400 {
+        font-weight: 400;
+      }
+      .w500 {
+        font-weight: 500;
+      }
+      .w600 {
+        font-weight: 600;
+      }
+      #fade {
+        position: absolute;
+        inset: 0;
+        background: #000;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="20"
+      data-width="1920"
+      data-height="1080"
+    >
+      <canvas id="viz" width="1920" height="1080"></canvas>
+      <div
+        id="fade"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="0"
+      ></div>
+      <audio
+        id="music"
+        class="clip"
+        data-start="0"
+        data-duration="20"
+        data-song-length
+        data-track-index="1"
+        data-volume="1"
+        src="assets/song.wav"
+      ></audio>
+    </div>
+    <img id="coverImg" alt="" />
+    <div id="fontPreload" aria-hidden="true">
+      <span class="f-montserrat w400">Aa1</span><span class="f-montserrat w500">Aa1</span
+      ><span class="f-montserrat w600">Aa1</span><span class="f-inter w400">Aa1</span
+      ><span class="f-inter w500">Aa1</span><span class="f-inter w600">Aa1</span
+      ><span class="f-outfit w400">Aa1</span><span class="f-outfit w500">Aa1</span
+      ><span class="f-outfit w600">Aa1</span><span class="f-poppins w400">Aa1</span
+      ><span class="f-poppins w500">Aa1</span><span class="f-poppins w600">Aa1</span
+      ><span class="f-lato w400">Aa1</span><span class="f-lato w500">Aa1</span
+      ><span class="f-lato w600">Aa1</span><span class="f-oswald w400">Aa1</span
+      ><span class="f-oswald w500">Aa1</span><span class="f-oswald w600">Aa1</span
+      ><span class="f-playfair w400">Aa1</span><span class="f-playfair w500">Aa1</span
+      ><span class="f-playfair w600">Aa1</span><span class="f-garamond w400">Aa1</span
+      ><span class="f-garamond w500">Aa1</span><span class="f-garamond w600">Aa1</span>
+    </div>
+    <script>
+      (function () {
+        var V = window.VizToolkit;
+        var M = window.SilkMotion;
+        // Settings: the template's own declared defaults, overridden by the values HyperFrames
+        // passes in (render) and, in the editor's live preview, by runtime-data messages.
+        var DEFAULTS = V.declaredDefaults(
+          document.documentElement.getAttribute("data-composition-variables"),
+        );
+        var given =
+          window.__hyperframes && window.__hyperframes.getVariables
+            ? window.__hyperframes.getVariables()
+            : {};
+        var vars = {};
+        for (var id in DEFAULTS) vars[id] = DEFAULTS[id];
+        for (var key in given)
+          if (given[key] !== undefined && given[key] !== null) vars[key] = given[key];
+        function setting(id) {
+          return vars[id];
+        }
+        // Drawing resolution: always full size, except in the editor's preview (runtime data).
+        var PREVIEW_SCALE = 1;
+        // The glow is drawn at this share of the resolution, blurred there and scaled up.
+        var GLOW_RES = 0.25;
+        var DURATION =
+          parseFloat(document.getElementById("root").getAttribute("data-duration")) || 20;
+
+        var drawing = null; // { render(t), dispose() } from setup()
+        var lastTime = -1;
+        var fontEpoch = 0; // goes up when fonts finish loading, so text is measured again
+        var canvas = document.getElementById("viz");
+        // alpha: true keeps text antialiasing grey (an opaque canvas uses coloured subpixel
+        // antialiasing, which fringes in video); every frame covers the whole canvas anyway.
+        var ctx = canvas.getContext("2d", { alpha: true });
+
+        // ---------- the cover picture ----------
+        // The location is set at once, so the page's own loading waits for it; the frame is
+        // drawn again when it arrives. A picture that fails to load is simply left out.
+        var coverImg = document.getElementById("coverImg");
+        var coverSrc = "";
+        var coverLoaded = false;
+        coverImg.addEventListener("load", function () {
+          coverLoaded = true;
+          draw(Math.max(0, lastTime));
+        });
+        coverImg.addEventListener("error", function () {
+          coverLoaded = false;
+          draw(Math.max(0, lastTime));
+        });
+        function setCover(value) {
+          // HyperFrames hands an image setting over as text; accept { url } as well.
+          var src = value && typeof value === "object" ? value.url || "" : value || "";
+          if (src === coverSrc) return;
+          coverSrc = src;
+          coverLoaded = false;
+          if (src) coverImg.src = src;
+          else coverImg.removeAttribute("src");
+        }
+        setCover(setting("cover"));
+
+        function rgba(c, alpha) {
+          return (
+            "rgba(" +
+            Math.round(Math.max(0, Math.min(1, c[0])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[1])) * 255) +
+            "," +
+            Math.round(Math.max(0, Math.min(1, c[2])) * 255) +
+            "," +
+            Math.max(0, Math.min(1, alpha)).toFixed(4) +
+            ")"
+          );
+        }
+        function mixRGB(a, b, f) {
+          return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+        }
+        var WHITE = [1, 1, 1];
+        var BLACK = [0, 0, 0];
+
+        // ---------- set up drawing (any error is shown on the frame) ----------
+        function setup() {
+          var S = PREVIEW_SCALE;
+          var MAIN = V.hexToRGB(setting("mainColor"));
+          var ACC = V.hexToRGB(setting("accentColor"));
+          var MID = mixRGB(MAIN, ACC, 0.5);
+          var INT = Number(setting("intensity")) || 1;
+          var SHOW_TIMER = setting("showTimer") === true;
+          var FONT = String(setting("font"));
+          var TITLE = String(setting("title") || "").trim();
+          var ARTIST = String(setting("artist") || "").trim();
+          var TAGS = [];
+          for (var ti = 1; ti <= 5; ti++) {
+            var tag = String(setting("tag" + ti) || "").trim();
+            if (tag) TAGS.push({ text: tag, tint: M.pillTint(TAGS.length, MAIN, ACC) });
+          }
+          var audio = V.createAudio(window.AUDIO_DATA, {
+            beatRange: setting("beatRange"),
+            spectrumLow: setting("spectrumLow"),
+            spectrumHigh: setting("spectrumHigh"),
+            spectrumBoost: Number(setting("spectrumBoost")),
+            spectrumCount: 32,
+          });
+          var spec = new Float32Array(32);
+          var WAVE = M.WAVE,
+            TOP = M.TOP,
+            SLAB = M.SLAB;
+          var COUNT = M.waveCount(setting("bandCount"));
+          var SPOTS = M.glowSpots(1103, V.mulberry32);
+          var SPOT_COL = SPOTS.map(function (s) {
+            // a little more of the in-between violet than a straight mix, as in neon light
+            var c = mixRGB(MAIN, ACC, s.tone);
+            return { col: c, hot: mixRGB(c, WHITE, s.streak ? 0.5 : 0.3) };
+          });
+
+          var W = Math.round(1920 * S),
+            H = Math.round(1080 * S);
+          if (canvas.width !== W) canvas.width = W;
+          if (canvas.height !== H) canvas.height = H;
+          if (!ctx) throw new Error("The 2D canvas is not available in this browser");
+
+          /** A canvas this many times the frame's size, drawn in 1080p units. */
+          function layer(k) {
+            var c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(W * k));
+            c.height = Math.max(1, Math.round(H * k));
+            var x = c.getContext("2d");
+            return { canvas: c, ctx: x, k: S * k }; // k: canvas px per 1080p px
+          }
+          // the glow and the lines' halo, drawn small then blurred into a second small canvas;
+          // and an even smaller copy for the wide outer haze
+          var glowSrc = layer(GLOW_RES),
+            glowOut = layer(GLOW_RES),
+            haloSrc = layer(GLOW_RES),
+            haloOut = layer(GLOW_RES),
+            spotSrc = layer(GLOW_RES),
+            spotOut = layer(GLOW_RES),
+            hazeOut = layer(GLOW_RES / 4);
+          /** Blur one small canvas into another (px in 1080p units). */
+          function blurInto(dst, src, px) {
+            dst.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            dst.ctx.globalCompositeOperation = "source-over";
+            dst.ctx.globalAlpha = 1;
+            dst.ctx.clearRect(0, 0, dst.canvas.width, dst.canvas.height);
+            dst.ctx.filter = "blur(" + (px * dst.k).toFixed(2) + "px)";
+            dst.ctx.drawImage(src.canvas, 0, 0, dst.canvas.width, dst.canvas.height);
+            dst.ctx.filter = "none";
+          }
+
+          // ---------- shapes ----------
+          /**
+           * A line this many 1080p px wide, never thinner than about one screen pixel: a
+           * thinner line is drawn wider and dimmer, so the preview shows what the render shows.
+           */
+          function thin(width) {
+            var w = Math.max(width, 1.2 / S);
+            return [w, width / w];
+          }
+          function roundRect(c, x, y, w, h, r) {
+            r = Math.min(r, w / 2, h / 2);
+            c.beginPath();
+            c.moveTo(x + r, y);
+            c.arcTo(x + w, y, x + w, y + h, r);
+            c.arcTo(x + w, y + h, x, y + h, r);
+            c.arcTo(x, y + h, x, y, r);
+            c.arcTo(x, y, x + w, y, r);
+            c.closePath();
+          }
+          /** A soft elliptical glow: colour `inner` at the middle fading out to nothing. */
+          function softEllipse(c, x, y, rx, ry, inner, mid, alpha) {
+            if (alpha <= 0.002) return;
+            c.save();
+            c.translate(x, y);
+            c.scale(rx, ry);
+            var g = c.createRadialGradient(0, 0, 0, 0, 0, 1);
+            g.addColorStop(0, rgba(inner, alpha));
+            g.addColorStop(0.35, rgba(mid, alpha * 0.62));
+            g.addColorStop(0.7, rgba(mid, alpha * 0.18));
+            g.addColorStop(1, rgba(mid, 0));
+            c.fillStyle = g;
+            c.fillRect(-1, -1, 2, 2);
+            c.restore();
+          }
+
+          // ---------- the glow slab ----------
+          var SLAB_LEFT = SLAB.cx - SLAB.w / 2,
+            SLAB_RIGHT = SLAB.cx + SLAB.w / 2;
+          /** Dark at both ends: fades a small glow canvas out toward the slab's ends. */
+          function maskEnds(c, k) {
+            c.setTransform(k, 0, 0, k, 0, 0);
+            c.globalCompositeOperation = "destination-in";
+            var ends = c.createLinearGradient(SLAB_LEFT - 60, 0, SLAB_RIGHT + 60, 0);
+            ends.addColorStop(0, "rgba(0,0,0,0)");
+            ends.addColorStop(0.16, "rgba(0,0,0,0.5)");
+            ends.addColorStop(0.32, "rgba(0,0,0,1)");
+            ends.addColorStop(0.68, "rgba(0,0,0,1)");
+            ends.addColorStop(0.84, "rgba(0,0,0,0.5)");
+            ends.addColorStop(1, "rgba(0,0,0,0)");
+            c.fillStyle = ends;
+            c.fillRect(0, 0, 1920, 1080);
+            c.globalCompositeOperation = "source-over";
+          }
+          function clearLayer(l) {
+            l.ctx.setTransform(1, 0, 0, 1, 0, 0);
+            l.ctx.globalCompositeOperation = "source-over";
+            l.ctx.globalAlpha = 1;
+            l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height);
+          }
+          function drawGlow(songTime, level, height) {
+            var k = glowSrc.k;
+            // taller with the music, about the slab's middle
+            var tall = [k, 0, 0, k * height, 0, SLAB.cy * k * (1 - height)];
+            // the body: a long rounded slab (the blur softens it a lot), its colour cycling
+            // main → accent → main along it and sliding slowly sideways
+            var c = glowSrc.ctx;
+            clearLayer(glowSrc);
+            c.setTransform(tall[0], tall[1], tall[2], tall[3], tall[4], tall[5]);
+            var a = Math.min(1, 0.42 * level);
+            var body = c.createLinearGradient(SLAB_LEFT, 0, SLAB_RIGHT, 0);
+            for (var si = 0; si <= 16; si++) {
+              var u = si / 16;
+              var ph = (u * 1.5 - songTime * 0.018) % 1;
+              if (ph < 0) ph += 1;
+              var f = 0.5 - 0.5 * Math.cos(2 * Math.PI * ph);
+              body.addColorStop(u, rgba(mixRGB(MAIN, ACC, f), a));
+            }
+            var bh = SLAB.h * 0.66;
+            c.fillStyle = body;
+            roundRect(c, SLAB_LEFT, SLAB.cy - bh / 2, SLAB.w, bh, bh / 2);
+            c.fill();
+            maskEnds(c, k);
+            blurInto(glowOut, glowSrc, 26);
+            blurInto(hazeOut, glowOut, 60);
+            // the hot spots and streaks, light adding on, blurred less so they read
+            var sc = spotSrc.ctx;
+            clearLayer(spotSrc);
+            sc.setTransform(tall[0], tall[1], tall[2], tall[3], tall[4], tall[5]);
+            sc.globalCompositeOperation = "lighter";
+            var placed = M.spotsAt(SPOTS, songTime, spec, level);
+            for (var i = 0; i < placed.length; i++) {
+              var p = placed[i];
+              softEllipse(sc, p.x, p.y, p.rx, p.ry, SPOT_COL[i].hot, SPOT_COL[i].col, p.alpha);
+            }
+            maskEnds(sc, k);
+            blurInto(spotOut, spotSrc, 9);
+          }
+
+          // ---------- the wave lines ----------
+          var XS = new Float32Array(COUNT);
+          for (var xi = 0; xi < COUNT; xi++) {
+            XS[xi] = WAVE.left + (COUNT > 1 ? xi / (COUNT - 1) : 0) * (WAVE.right - WAVE.left);
+          }
+          /** The line's path: flat from the left edge, a smooth curve through the points. */
+          function wavePath(c, baseY, heights, sign, k) {
+            c.beginPath();
+            c.moveTo(-20, baseY);
+            c.lineTo(XS[0], baseY - sign * heights[0] * k);
+            for (var i = 1; i < COUNT; i++) {
+              var x0 = XS[i - 1],
+                y0 = baseY - sign * heights[i - 1] * k;
+              var x1 = XS[i],
+                y1 = baseY - sign * heights[i] * k;
+              c.quadraticCurveTo(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+            }
+            c.lineTo(XS[COUNT - 1], baseY - sign * heights[COUNT - 1] * k);
+            c.lineTo(1940, baseY);
+          }
+          function lineGradient(c, alpha) {
+            var g = c.createLinearGradient(0, 0, 1920, 0);
+            g.addColorStop(0, rgba(MAIN, 0));
+            g.addColorStop(0.1, rgba(MAIN, alpha * 0.55));
+            g.addColorStop(WAVE.left / 1920, rgba(MAIN, alpha));
+            g.addColorStop(0.72, rgba(mixRGB(MAIN, ACC, 0.6), alpha));
+            g.addColorStop(WAVE.right / 1920, rgba(ACC, alpha));
+            g.addColorStop(1, rgba(ACC, 0));
+            return g;
+          }
+          var TOP_K = TOP.max / WAVE.max;
+          function drawWaves(heights, level) {
+            // the halo: wide strokes drawn small, blurred, added on
+            var h = haloSrc.ctx;
+            h.setTransform(1, 0, 0, 1, 0, 0);
+            h.clearRect(0, 0, haloSrc.canvas.width, haloSrc.canvas.height);
+            h.setTransform(haloSrc.k, 0, 0, haloSrc.k, 0, 0);
+            h.lineJoin = "round";
+            h.lineCap = "round";
+            h.strokeStyle = lineGradient(h, 1);
+            h.lineWidth = 16;
+            wavePath(h, WAVE.y, heights, 1, 1);
+            h.stroke();
+            h.lineWidth = 8;
+            h.globalAlpha = 0.55;
+            wavePath(h, TOP.y, heights, -1, TOP_K);
+            h.stroke();
+            h.globalAlpha = 1;
+            blurInto(haloOut, haloSrc, 14);
+
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = "lighter";
+            ctx.globalAlpha = Math.min(1, 0.55 + 0.3 * level);
+            ctx.drawImage(haloOut.canvas, 0, 0, W, H);
+            ctx.globalAlpha = 1;
+            ctx.setTransform(S, 0, 0, S, 0, 0);
+            // a faint sheen under the big line
+            ctx.globalCompositeOperation = "lighter";
+            wavePath(ctx, WAVE.y, heights, 1, 1);
+            ctx.closePath();
+            var fill = ctx.createLinearGradient(0, WAVE.y - WAVE.max, 0, WAVE.y);
+            fill.addColorStop(0, rgba(MID, 0.16));
+            fill.addColorStop(1, rgba(MID, 0.02));
+            ctx.fillStyle = fill;
+            ctx.fill();
+            // its soft reflection below the baseline
+            ctx.save();
+            ctx.globalAlpha = 0.16;
+            ctx.strokeStyle = lineGradient(ctx, 1);
+            ctx.lineWidth = 2;
+            wavePath(ctx, WAVE.y + 4, heights, -1, 0.22);
+            ctx.stroke();
+            ctx.restore();
+            // the lines themselves: a coloured body and a bright core
+            ctx.globalCompositeOperation = "source-over";
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.strokeStyle = lineGradient(ctx, 1);
+            ctx.lineWidth = 4;
+            wavePath(ctx, WAVE.y, heights, 1, 1);
+            ctx.stroke();
+            ctx.globalCompositeOperation = "lighter";
+            ctx.strokeStyle = "rgba(255,255,255,0.45)";
+            ctx.lineWidth = 1.4;
+            ctx.stroke();
+            var top = thin(1.5);
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 0.5 * top[1];
+            ctx.strokeStyle = lineGradient(ctx, 1);
+            ctx.lineWidth = top[0];
+            wavePath(ctx, TOP.y, heights, -1, TOP_K);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+
+          // ---------- text ----------
+          function fontOf(weight, size) {
+            return weight + " " + size.toFixed(2) + 'px "' + FONT + '", sans-serif';
+          }
+          function setFont(weight, size, spacingEm) {
+            ctx.font = fontOf(weight, size);
+            ctx.letterSpacing = (spacingEm * size).toFixed(2) + "px";
+          }
+          /** Text width without the spacing after its last letter. */
+          function measure(text, size, spacingEm) {
+            return Math.max(0, ctx.measureText(text).width - (text ? spacingEm * size : 0));
+          }
+          var fits = {};
+          /**
+           * The size this text is drawn at so it fits maxWidth (shrinking from `size` to
+           * `minSize`), and a horizontal squeeze for anything still too wide at the smallest
+           * size, so nothing can ever overflow its space. `parts` are [text, weight] runs
+           * drawn one after another on one line. Measured once per text and font.
+           */
+          function fitText(parts, size, spacingEm, maxWidth, minSize) {
+            var key = JSON.stringify([parts, size, spacingEm, maxWidth, minSize, FONT, fontEpoch]);
+            if (fits[key]) return fits[key];
+            function widthAt(s) {
+              var w = 0;
+              for (var i = 0; i < parts.length; i++) {
+                setFont(parts[i][1], s, spacingEm);
+                w += ctx.measureText(parts[i][0]).width;
+              }
+              return Math.max(0, w - spacingEm * s);
+            }
+            var s = size;
+            var w = widthAt(s);
+            while (w > maxWidth && s > minSize) {
+              s = Math.max(minSize, Math.floor(s * 0.95));
+              w = widthAt(s);
+            }
+            fits[key] = { size: s, squeeze: w > maxWidth ? maxWidth / w : 1 };
+            return fits[key];
+          }
+          /** Runs of text on one line, left-aligned at x, centred vertically on y. */
+          function drawRuns(parts, x, y, fit, spacingEm, alpha) {
+            ctx.save();
+            ctx.translate(x, y + 0.35 * fit.size);
+            ctx.scale(fit.squeeze, 1);
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+            var cx = 0;
+            for (var i = 0; i < parts.length; i++) {
+              setFont(parts[i][1], fit.size, spacingEm);
+              ctx.globalAlpha = alpha * parts[i][2];
+              ctx.fillStyle = "#ffffff";
+              ctx.fillText(parts[i][0], cx, 0);
+              cx += ctx.measureText(parts[i][0]).width;
+            }
+            ctx.restore();
+          }
+          var cells = {};
+          /** A clock (like 1:07) with every digit in a cell of the same width; its width. */
+          function drawClock(text, x, y, size, alpha) {
+            setFont(500, size, 0);
+            var key = [size, FONT, fontEpoch].join("|");
+            if (!cells[key]) {
+              var widest = 0;
+              for (var d = 0; d <= 9; d++)
+                widest = Math.max(widest, ctx.measureText(String(d)).width);
+              cells[key] = { digit: widest, colon: ctx.measureText(":").width };
+            }
+            var cell = cells[key];
+            var cx = x;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "alphabetic";
+            for (var i = 0; i < text.length; i++) {
+              var cw = text[i] === ":" ? cell.colon : cell.digit;
+              if (alpha > 0) ctx.fillText(text[i], cx + cw / 2, y + 0.36 * size);
+              cx += cw;
+            }
+            ctx.restore();
+            return cx - x;
+          }
+
+          // ---------- the left block ----------
+          var CAPTION =
+            ARTIST && TITLE
+              ? [
+                  [ARTIST, 600, 1],
+                  ["  –  ", 300, 0.6],
+                  [TITLE, 400, 0.82],
+                ]
+              : [[ARTIST || TITLE, 600, 1]];
+          var PILL_SPACING = 0.08;
+          var block = null;
+          var blockEpoch = -1;
+          /** Where everything in the block goes (measured again once the fonts arrive). */
+          function layoutBlock() {
+            if (block && blockEpoch === fontEpoch) return block;
+            setFont(600, M.PILL.size, PILL_SPACING);
+            var widths = TAGS.map(function (tg) {
+              return measure(tg.text, M.PILL.size, PILL_SPACING);
+            });
+            var pills = M.pillLayout(widths, M.PILL.maxWidth);
+            var lay = M.blockLayout(pills.rows, pills.height, SHOW_TIMER);
+            // "ARTIST – TITLE" on one line; when that would have to be small, the artist and
+            // the title each get a line of their own instead
+            var cy = lay.caption.y;
+            var lines = [{ runs: CAPTION, y: cy, fit: null }];
+            lines[0].fit = fitText(CAPTION, lay.caption.size, 0.01, lay.caption.maxWidth, 14);
+            if (lines[0].fit.size < 22 && ARTIST && TITLE) {
+              var two = [[[ARTIST, 600, 1]], [[TITLE, 400, 0.82]]];
+              lines = two.map(function (runs, i) {
+                return {
+                  runs: runs,
+                  y: cy + (i === 0 ? -13 : 13),
+                  fit: fitText(runs, 20, 0.01, lay.caption.maxWidth, 13),
+                };
+              });
+            }
+            block = { pills: pills, lay: lay, caption: lines };
+            blockEpoch = fontEpoch;
+            return block;
+          }
+
+          /** No cover: a deep gradient square with a soft light and a music-note mark. */
+          function drawCoverFallback(x, y, size) {
+            var g = ctx.createLinearGradient(x, y, x + size, y + size);
+            g.addColorStop(0, rgba(mixRGB(MAIN, BLACK, 0.35), 1));
+            g.addColorStop(0.55, rgba(mixRGB(MID, BLACK, 0.55), 1));
+            g.addColorStop(1, rgba(mixRGB(ACC, BLACK, 0.4), 1));
+            ctx.fillStyle = g;
+            ctx.fillRect(x, y, size, size);
+            softEllipse(
+              ctx,
+              x + size * 0.28,
+              y + size * 0.22,
+              size * 0.7,
+              size * 0.55,
+              mixRGB(MAIN, WHITE, 0.25),
+              MAIN,
+              0.35,
+            );
+            softEllipse(
+              ctx,
+              x + size * 0.85,
+              y + size * 0.9,
+              size * 0.6,
+              size * 0.5,
+              mixRGB(ACC, WHITE, 0.2),
+              ACC,
+              0.3,
+            );
+            // two beamed quavers
+            var u = size / 100;
+            ctx.save();
+            ctx.translate(x + size / 2 - 2 * u, y + size / 2 + 2 * u);
+            ctx.fillStyle = "rgba(255,255,255,0.92)";
+            ctx.shadowColor = "rgba(0,0,0,0.25)";
+            ctx.shadowBlur = 8 * u * S;
+            function head(hx, hy) {
+              ctx.beginPath();
+              ctx.ellipse(hx, hy, 7.2 * u, 5.4 * u, -0.38, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            head(-10 * u, 16 * u);
+            head(14 * u, 11 * u);
+            ctx.fillRect(-4 * u, -18 * u, 2.6 * u, 34 * u);
+            ctx.fillRect(20 * u, -23 * u, 2.6 * u, 34 * u);
+            ctx.beginPath();
+            ctx.moveTo(-4 * u, -18 * u);
+            ctx.lineTo(22.6 * u, -23 * u);
+            ctx.lineTo(22.6 * u, -15 * u);
+            ctx.lineTo(-4 * u, -10 * u);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+
+          function drawCover(lay, env, fade) {
+            var cv = lay.cover;
+            var k = M.coverScale(env);
+            var size = cv.size * k;
+            var x = cv.x + cv.size / 2 - size / 2,
+              y = cv.y + cv.size / 2 - size / 2;
+            var r = cv.r * k;
+            // a coloured glow and a dark shadow behind it
+            ctx.save();
+            ctx.globalAlpha = fade;
+            ctx.globalCompositeOperation = "lighter";
+            softEllipse(
+              ctx,
+              x + size / 2,
+              y + size / 2 + 10,
+              size * 0.78,
+              size * 0.7,
+              MID,
+              MID,
+              0.16 + 0.12 * env,
+            );
+            ctx.globalCompositeOperation = "source-over";
+            ctx.shadowColor = "rgba(0,0,0,0.6)";
+            ctx.shadowBlur = 30 * S;
+            ctx.shadowOffsetY = 12 * S;
+            ctx.fillStyle = "#000";
+            roundRect(ctx, x, y, size, size, r);
+            ctx.fill();
+            ctx.shadowColor = "transparent";
+            // the picture (or the placeholder), clipped to its rounded square
+            ctx.save();
+            roundRect(ctx, x, y, size, size, r);
+            ctx.clip();
+            if (coverLoaded && coverImg.naturalWidth) {
+              var w = coverImg.naturalWidth,
+                h = coverImg.naturalHeight,
+                s = Math.min(w, h);
+              ctx.drawImage(coverImg, (w - s) / 2, (h - s) / 2, s, s, x, y, size, size);
+            } else {
+              drawCoverFallback(x, y, size);
+            }
+            // a glossy sheen across the top
+            var sheen = ctx.createLinearGradient(x, y, x + size * 0.6, y + size);
+            sheen.addColorStop(0, "rgba(255,255,255,0.14)");
+            sheen.addColorStop(0.42, "rgba(255,255,255,0.03)");
+            sheen.addColorStop(0.43, "rgba(255,255,255,0)");
+            ctx.fillStyle = sheen;
+            ctx.fillRect(x, y, size, size);
+            ctx.restore();
+            // a fine light rim
+            var rim = thin(1);
+            ctx.strokeStyle = "rgba(255,255,255," + (0.16 * rim[1]).toFixed(3) + ")";
+            ctx.lineWidth = rim[0];
+            roundRect(ctx, x + 0.5, y + 0.5, size - 1, size - 1, r);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          function drawMiniBars(lay, fade) {
+            var b = lay.bars;
+            var lens = M.miniBars(V.mirrorBars(spec, b.count, false), INT);
+            var bar = thin(b.width);
+            var off = (b.width - bar[0]) / 2;
+            var g = ctx.createLinearGradient(b.x, 0, b.x + b.count * (b.width + b.gap), 0);
+            g.addColorStop(0, rgba(mixRGB(MAIN, WHITE, 0.25), 1));
+            g.addColorStop(1, rgba(mixRGB(ACC, WHITE, 0.25), 1));
+            ctx.save();
+            ctx.globalAlpha = fade * 0.95 * bar[1];
+            ctx.fillStyle = g;
+            for (var i = 0; i < b.count; i++) {
+              var len = Math.max(2, lens[i]);
+              ctx.fillRect(b.x + i * (b.width + b.gap) + off, b.bottom - len, bar[0], len);
+            }
+            ctx.restore();
+          }
+
+          function drawPills(lay, pills, fade) {
+            if (!pills.rows) return;
+            var size = M.PILL.size * pills.scale;
+            ctx.save();
+            ctx.globalAlpha = fade;
+            for (var i = 0; i < pills.pills.length; i++) {
+              var p = pills.pills[i];
+              var tg = TAGS[p.index];
+              var x = lay.pills.x + p.x,
+                y = lay.pills.y + p.y;
+              roundRect(ctx, x, y, p.w, p.h, p.h / 2);
+              ctx.fillStyle = rgba(tg.tint, 0.94);
+              ctx.fill();
+              // a soft gloss on the upper half and a fine lighter rim
+              var gl = ctx.createLinearGradient(0, y, 0, y + p.h);
+              gl.addColorStop(0, "rgba(255,255,255,0.16)");
+              gl.addColorStop(0.5, "rgba(255,255,255,0.02)");
+              gl.addColorStop(1, "rgba(255,255,255,0)");
+              ctx.fillStyle = gl;
+              ctx.fill();
+              var rim = thin(1);
+              ctx.strokeStyle = rgba(mixRGB(tg.tint, WHITE, 0.5), 0.35 * rim[1]);
+              ctx.lineWidth = rim[0];
+              roundRect(ctx, x + 0.5, y + 0.5, p.w - 1, p.h - 1, p.h / 2 - 0.5);
+              ctx.stroke();
+              setFont(600, size, PILL_SPACING);
+              ctx.fillStyle = "#ffffff";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "alphabetic";
+              var tw = measure(tg.text, size, PILL_SPACING);
+              // squeeze anything that would still touch the pill's ends
+              var room = p.w - 2 * M.PILL.padX * pills.scale;
+              var sq = tw > room && tw > 0 ? room / tw : 1;
+              ctx.save();
+              ctx.translate(x + (p.w - tw * sq) / 2, y + p.h / 2 + 0.36 * size);
+              ctx.scale(sq, 1);
+              ctx.fillText(tg.text, 0, 0);
+              ctx.restore();
+            }
+            ctx.restore();
+          }
+
+          function drawTimer(lay, t, fade) {
+            if (!lay.timer) return;
+            var clock = V.songClock(audio, t);
+            var x = lay.timer.x,
+              y = lay.timer.y;
+            var size = 17;
+            var w1 = drawClock(V.formatClock(clock.elapsed), x, y, size, 0.85 * fade);
+            var tx = x + w1 + 14,
+              tw = 190;
+            var line = thin(2);
+            ctx.save();
+            ctx.globalAlpha = fade;
+            ctx.fillStyle = "rgba(255,255,255," + (0.18 * line[1]).toFixed(3) + ")";
+            ctx.fillRect(tx, y - line[0] / 2, tw, line[0]);
+            var fill = Math.max(0, Math.min(1, clock.fraction)) * tw;
+            if (fill > 0) {
+              var g = ctx.createLinearGradient(tx, 0, tx + tw, 0);
+              g.addColorStop(0, rgba(MAIN, line[1]));
+              g.addColorStop(1, rgba(ACC, line[1]));
+              ctx.fillStyle = g;
+              ctx.fillRect(tx, y - line[0] / 2, fill, line[0]);
+            }
+            ctx.restore();
+            drawClock(V.formatClock(clock.total), tx + tw + 14, y, size, 0.55 * fade);
+          }
+
+          function renderAt(t) {
+            var songTime = audio.songStart + t;
+            var a = audio.sample(t);
+            var env = V.beatEnvelope(audio, t, M.BEAT_RELEASE);
+            var fade = M.textFade(t);
+            var level = M.glowLevel(a.loud, a.flux, env, INT);
+            var height = M.slabScale(a.loud, a.flux);
+            audio.spectrum(t, spec);
+            var heights = M.waveHeights(
+              V.mirrorBars(V.smoothSpectrum(spec, 1), COUNT, false),
+              INT,
+              WAVE.max,
+            );
+            var ripple = M.waveRipple(COUNT, songTime);
+            for (var hi = 0; hi < COUNT; hi++) heights[hi] *= ripple[hi];
+
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = "source-over";
+            ctx.globalAlpha = 1;
+            ctx.filter = "none";
+            // 1. black
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, W, H);
+            // 2. the glow slab: a wide haze, then the blurred band, light adding on
+            drawGlow(songTime, level, height);
+            ctx.globalCompositeOperation = "lighter";
+            ctx.globalAlpha = Math.min(1, 0.7 * level);
+            ctx.drawImage(hazeOut.canvas, 0, 0, W, H);
+            ctx.globalAlpha = 1;
+            ctx.drawImage(glowOut.canvas, 0, 0, W, H);
+            ctx.drawImage(spotOut.canvas, 0, 0, W, H);
+            if (level > 1) {
+              ctx.globalAlpha = Math.min(1, level - 1);
+              ctx.drawImage(spotOut.canvas, 0, 0, W, H);
+            }
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = "source-over";
+            // 3. the wave lines
+            drawWaves(heights, level);
+            // 4. the left block
+            ctx.setTransform(S, 0, 0, S, 0, 0);
+            var b = layoutBlock();
+            if (fade > 0) {
+              drawCover(b.lay, env, fade);
+              drawMiniBars(b.lay, fade);
+              ctx.save();
+              ctx.shadowColor = "rgba(0,0,0,0.55)";
+              ctx.shadowBlur = 12 * S;
+              for (var li = 0; li < b.caption.length; li++) {
+                var ln = b.caption[li];
+                drawRuns(ln.runs, b.lay.caption.x, ln.y, ln.fit, 0.01, fade);
+              }
+              ctx.restore();
+              drawPills(b.lay, b.pills, fade);
+              drawTimer(b.lay, t, fade);
+            }
+            ctx.restore();
+          }
+          return { render: renderAt, dispose: function () {} };
+        }
+
+        function fail(error) {
+          V.showError(String((error && error.message) || error));
+        }
+        function draw(t) {
+          if (!drawing) return;
+          try {
+            drawing.render(t);
+            lastTime = t;
+          } catch (error) {
+            drawing = null;
+            fail(error);
+          }
+        }
+        /** (Re)create everything that depends on the settings. */
+        function rebuild() {
+          if (drawing) drawing.dispose();
+          drawing = null;
+          try {
+            drawing = setup();
+            var shown = document.getElementById("viz-error");
+            if (shown) shown.remove();
+          } catch (error) {
+            fail(error);
+          }
+        }
+        rebuild();
+        draw(0);
+        function fontsChanged() {
+          fontEpoch++;
+          draw(Math.max(0, lastTime));
+        }
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(fontsChanged);
+        if (document.fonts && document.fonts.addEventListener) {
+          document.fonts.addEventListener("loadingdone", fontsChanged);
+        }
+        window.addEventListener("hf-seek", function (e) {
+          draw(e.detail.time);
+        });
+
+        // Live preview (the editor): new settings or a new preview resolution arrive as
+        // runtime data. Renders never send any, so they look exactly as without this.
+        var hf = window.__hyperframes;
+        if (hf && hf.registerRuntimeDataHandler) {
+          hf.registerRuntimeDataHandler("settings", function (values) {
+            if (!values || typeof values !== "object") return;
+            for (var key in values) if (key in DEFAULTS) vars[key] = values[key];
+            setCover(setting("cover"));
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+          hf.registerRuntimeDataHandler("preview", function (data) {
+            var scale = Number(data && data.scale);
+            if (!(scale > 0 && scale <= 1) || scale === PREVIEW_SCALE) return;
+            PREVIEW_SCALE = scale;
+            rebuild();
+            draw(Math.max(0, lastTime));
+          });
+        }
+
+        // The whole picture fades to black over the song's last 2.5 s (the left block fades
+        // in by itself, drawn from the time).
+        var tl = gsap.timeline({ paused: true });
+        tl.to(
+          "#fade",
+          { opacity: 1, duration: 2.5, ease: "power1.in" },
+          Math.max(0, DURATION - 2.5),
+        );
+        // While the preview plays, the runtime advances this timeline (hf-seek only comes on
+        // jumps), so draw on every timeline update too.
+        tl.eventCallback("onUpdate", function () {
+          var t = tl.time();
+          if (t !== lastTime) draw(t);
+        });
+        window.__timelines["main"] = tl;
+      })();
+    </script>
+  </body>
+</html>
