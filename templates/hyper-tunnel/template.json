@@ -1,0 +1,38 @@
+{
+  "name": "Hyper Tunnel",
+  "description": "A chrome voxel robot in a VR headset inside a neon sci-fi tunnel rushing toward you, the spectrum running down its frames, under a glowing HUD frame.",
+  "groups": [
+    { "name": "Text", "fields": ["title", "artist", "font"] },
+    { "name": "Images", "fields": ["logo"] },
+    { "name": "Colors", "fields": ["mainColor", "accentColor"] },
+    { "name": "Effects", "fields": ["intensity", "finish", "showTimer"] },
+    {
+      "name": "Audio",
+      "fields": ["beatRange", "spectrumLow", "spectrumHigh", "spectrumBoost", "bandCount"]
+    }
+  ],
+  "basic": ["mainColor", "accentColor", "intensity", "finish", "showTimer", "font"],
+  "content": ["title", "artist", "logo"],
+  "presets": [
+    {
+      "name": "Electric",
+      "thumbnail": "presets/electric.jpg",
+      "values": { "mainColor": "#2ad9ff", "accentColor": "#ff2abf", "finish": "silver" }
+    },
+    {
+      "name": "Matrix",
+      "thumbnail": "presets/matrix.jpg",
+      "values": { "mainColor": "#2aff6a", "accentColor": "#c8ffd0", "finish": "silver" }
+    },
+    {
+      "name": "Original",
+      "thumbnail": "presets/original.jpg",
+      "values": { "mainColor": "#ff2abf", "accentColor": "#2ad9ff", "finish": "silver" }
+    },
+    {
+      "name": "Metal",
+      "thumbnail": "presets/metal.jpg",
+      "values": { "mainColor": "#ffb02a", "accentColor": "#ffffff", "finish": "gold" }
+    }
+  ]
+}
